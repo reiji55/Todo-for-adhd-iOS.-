@@ -1,0 +1,14 @@
+.build/
+.swiftpm/
+DerivedData/
+DerivedData-device/
+ci-results/
+ThreeDays-simulator.zip
+test-results.txt
+*.xcuserstate
+xcuserdata/
+.DS_Store
+*.ipa
+*.xcarchive
+*.p12
+*.mobileprovision

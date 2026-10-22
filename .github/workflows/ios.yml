@@ -1,0 +1,62 @@
+name: Validate native iOS app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['App/**', 'Sources/**', 'Tests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/ios.yml']
+  pull_request:
+    paths: ['App/**', 'Sources/**', 'Tests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/ios.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record Xcode and Swift versions
+        run: xcodebuild -version && swift --version
+      - name: Test task selection and persistence
+        run: swift test
+      - name: Build for iPhone Simulator
+        run: >-
+          xcodebuild
+          -project ThreeDays.xcodeproj
+          -scheme ThreeDays
+          -configuration Debug
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath DerivedData
+          CODE_SIGNING_ALLOWED=NO
+          build
+      - name: Build unsigned iPhone app
+        run: >-
+          xcodebuild
+          -project ThreeDays.xcodeproj
+          -scheme ThreeDays
+          -configuration Release
+          -destination 'generic/platform=iOS'
+          -derivedDataPath DerivedData-device
+          CODE_SIGNING_ALLOWED=NO
+          build
+      - name: Launch app in iPhone Simulator and capture screen
+        run: bash scripts/simulator-smoke.sh
+      - name: Package simulator build with executable permissions
+        run: >-
+          ditto -c -k --sequesterRsrc --keepParent
+          DerivedData/Build/Products/Debug-iphonesimulator/ThreeDays.app
+          ThreeDays-simulator.zip
+      - name: Keep simulator build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ThreeDays-simulator
+          path: ThreeDays-simulator.zip
+          retention-days: 7
+      - name: Keep simulator screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: ThreeDays-screen
+          path: ci-results/
+          retention-days: 7
