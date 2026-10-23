@@ -1,0 +1,94 @@
+name: Upload to TestFlight
+
+# Run manually from the Actions tab. Setup steps are in docs/TESTFLIGHT.md.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check that the Apple secrets are set
+        run: |
+          missing=""
+          for name in ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          [ "$HAS_P8" = "true" ] || missing="$missing ASC_KEY_P8"
+          if [ -n "$missing" ]; then
+            echo "::error::GitHubのSecretsが未設定です:$missing（docs/TESTFLIGHT.md を参照）"
+            exit 1
+          fi
+        env:
+          HAS_P8: ${{ secrets.ASC_KEY_P8 != '' }}
+      - name: Record Xcode and Swift versions
+        run: xcodebuild -version && swift --version
+      - name: Test task selection and persistence
+        run: swift test
+      - name: Write the App Store Connect API key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc/AuthKey.p8"
+          grep -q 'BEGIN PRIVATE KEY' "$RUNNER_TEMP/asc/AuthKey.p8" || { echo "::error::ASC_KEY_P8 には .p8 ファイルの中身（BEGIN PRIVATE KEY の行から）を貼ってください"; exit 1; }
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/asc/AuthKey.p8" >> "$GITHUB_ENV"
+      # Archive unsigned: on a fresh runner, signing here would create a new development
+      # certificate on every run until the team limit is hit. Signing happens only on export.
+      - name: Archive
+        run: >-
+          xcodebuild
+          -project ThreeDays.xcodeproj
+          -scheme ThreeDays
+          -configuration Release
+          -destination 'generic/platform=iOS'
+          -archivePath "$RUNNER_TEMP/ThreeDays.xcarchive"
+          CURRENT_PROJECT_VERSION=${{ github.run_number }}
+          DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          CODE_SIGN_IDENTITY=""
+          archive
+      # Signs with a cloud-managed distribution certificate and uploads straight to App Store Connect.
+      - name: Sign and upload
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/ThreeDays.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+      - name: Summary
+        run: |
+          echo "ビルド番号 ${{ github.run_number }} をApp Store Connectへ送りました。処理に5〜30分ほどかかり、終わるとTestFlightに表示されます。" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove the API key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"

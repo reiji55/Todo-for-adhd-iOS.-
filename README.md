@@ -2,7 +2,7 @@
 
 SwiftUIで作成したiOS 17以降向けのアプリです。「必須タスクを見失わず、そのときできるものから始められる」を中心に、既存の3日間タスクとHormeの考え方を組み合わせました。
 
-**クラウドで22件のテスト、iPhone／シミュレータ向けビルド、シミュレータでの起動とスクリーンショット保存が成功しました。Appleの配布署名と実機での動作確認は未実施です。インストール用の署名済みIPAは含みません。** [検証結果](docs/BUILD-VALIDATION.md)
+**クラウドでのテスト、iPhone／シミュレータ向けビルド、シミュレータでの起動とスクリーンショット保存が成功しています。TestFlightへ送るワークフローは用意済みで、Apple側の設定後に実行できます（[手順](docs/TESTFLIGHT.md)）。実機での動作確認はまだです。** [検証結果](docs/BUILD-VALIDATION.md)
 
 ## 入っている機能
 
@@ -11,7 +11,7 @@ SwiftUIで作成したiOS 17以降向けのアプリです。「必須タスク�
 - **アイデア**：文章をそのまま保存・編集。今日または日付なしのタスクへ変換。
 - タイトルだけで追加。直接開始・完了・編集・予定日変更・削除・直前の操作の取り消し。
 - 予定日と締切を別々に保存。MUSTに相当する「必須」は本人が指定。
-- 任意の工程と次の一手、タスクごとの再開メモ、途中での切り替え。
+- 任意の工程と次の一手、タスクごとの再開メモ、途中での切り替え。一手を終えたら、続けて次の一手に進むか、ここで区切るかを選べる。
 - メモ・やり方と、AIへの引き継ぎを別々に保存。引き継ぎは共有シートで書き出し。
 - 端末内への自動保存、JSONバックアップの書き出しと復元。
 - 既存の `tasks.txt` からの追加取り込み（オンライン側への書き込みなし）。
@@ -33,16 +33,16 @@ SwiftUIで作成したiOS 17以降向けのアプリです。「必須タスク�
 
 専用リポジトリ [reiji55/Todo-for-adhd-iOS.-](https://github.com/reiji55/Todo-for-adhd-iOS.-) の `.github/workflows/ios.yml` で、GitHubのMacランナーを使って検証します。アプリのコードをmainへ更新すると自動実行されます。[Actions](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions) から結果を確認できます。
 
-ActionsはSwiftのテスト、シミュレータ向けビルド、署名なしのiPhone向けビルド、シミュレータ起動・画面キャプチャを行います。保存する `ThreeDays-simulator.zip` はシミュレータ用です。実機向けもAppleの配布署名を付けるまではiPhoneにインストールできません。
+ActionsはSwiftのテスト、シミュレータ向けビルド、署名なしのiPhone向けビルド、シミュレータ起動・画面キャプチャを行います。保存する `ThreeDays-simulator.zip` はシミュレータ用で、iPhoneには入りません。
 
-iPhoneへ配布する次の段階では、Apple側の署名と配布環境が必要です。TestFlightを使うなら、Apple Developer Program、App Store Connectのアプリ登録、証明書／プロビジョニングと配布用CIの設定が必要になります。[Apple Developer Program](https://developer.apple.com/jp/programs/)は原則年額99米ドル相当で、TestFlightの利用は会費に含まれます。テスターは無料です。秘密情報はソースに書かず、CIのSecrets等で管理します。この試作には配布用の署名やTestFlightアップロードは設定していません。
+iPhoneに入れるには `.github/workflows/testflight.yml`（手動実行）を使います。GitHubのMacでXcode 26を使ってアーカイブし、App Store Connect APIキーによるクラウド署名でTestFlightへ送ります。証明書ファイルを手元で作る必要はありません。Apple側の準備とGitHub Secretsの登録手順は[TestFlightで自分のiPhoneに入れるまで](docs/TESTFLIGHT.md)にまとめています。
 
 ## Mac／Xcodeで開く場合
 
 1. Xcode 16以降で `ThreeDays.xcodeproj` を開く。
 2. Schemeは `ThreeDays`、実行先はiPhone Simulatorを選ぶ。
 3. Runで起動。設定の「サンプルで試す」で画面を確認できる。
-4. 実機の場合はSigning & Capabilitiesで自分のTeamを選び、Bundle Identifierを自分用に変更する。現在の `jp.local.threedays` は仮の識別子。
+4. 実機の場合はSigning & Capabilitiesで自分のTeamを選ぶ。Bundle Identifierは `io.github.reiji55.threedays`。
 
 CLIでの署名なしビルド：
 
@@ -72,7 +72,7 @@ Swiftファイルを増やした場合は `python3 scripts/generate-project.py` 
 
 ## データについて
 
-端末内のApplication SupportにJSONを保存します。保存エラー時は変更前の状態を維持し、直前の保存を別ファイルに残します。読み取れないファイルは自動上書きしません。アプリ削除前にはバックアップを書き出してください。
+端末内のApplication SupportにJSONを保存します。保存エラー時は変更前の状態を維持し、直前の保存を別ファイルに残します。読み取れないファイルは自動上書きしません。設定から直前の保存へ復旧するか、読めないファイルを端末内に残したまま空から始められます。古い版で保存したデータは、のちの版で項目が増えてもそのまま読めます。アプリ削除前にはバックアップを書き出してください。
 
 `tasks.txt` の予定日、時間帯、種類、案件名、タイトル、完了、MUST、memo、next（AIへの引き継ぎ）を読み込みます。対応していない行は取り込み前に警告します。同じ予定日・時間帯・案件名・タイトルは重複として追加しません。ガイドの `board.json`、カレンダーの `week.json`、HormeのSupabaseデータの自動取り込みは含みません。
 

@@ -22,7 +22,7 @@ xcrun simctl boot "$SIMULATOR_ID" || true
 xcrun simctl bootstatus "$SIMULATOR_ID" -b
 xcrun simctl status_bar "$SIMULATOR_ID" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
 xcrun simctl install "$SIMULATOR_ID" DerivedData/Build/Products/Debug-iphonesimulator/ThreeDays.app
-xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" jp.local.threedays | tee ci-results/launch.txt
+xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays | tee ci-results/launch.txt
 sleep 5
 xcrun simctl io "$SIMULATOR_ID" screenshot ci-results/today.png
 # launch.txt and the screenshot are evidence of a launch, not full interaction tests.

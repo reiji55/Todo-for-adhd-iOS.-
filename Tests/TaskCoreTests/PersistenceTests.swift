@@ -39,6 +39,34 @@ final class PersistenceTests: XCTestCase {
         XCTAssertTrue(names.contains { $0.contains("unreadable-") })
     }
 
+    func testOlderSaveWithoutNewerFieldsStillLoads() throws {
+        let json = """
+        {"version": 1, "tasks": [{"id": "00000000-0000-0000-0000-000000000001", "title": "古い保存",
+          "createdAt": "2026-10-01T00:00:00Z", "steps": [{"id": "00000000-0000-0000-0000-000000000002", "title": "一手"}]}]}
+        """
+        let book = try NotebookCodec.decode(Data(json.utf8))
+        XCTAssertEqual(book.tasks.first?.title, "古い保存")
+        XCTAssertEqual(book.tasks.first?.effort, .medium)
+        XCTAssertEqual(book.tasks.first?.handoff, "")
+        XCTAssertEqual(book.tasks.first?.steps.first?.isDone, false)
+        XCTAssertTrue(book.ideas.isEmpty)
+    }
+
+    func testSettingAsideUnreadableDataAllowsStartingOver() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repo = NotebookRepository(url: directory.appendingPathComponent("notebook.json"))
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("broken".utf8).write(to: repo.url)
+        XCTAssertFalse(repo.hasPrevious)
+        try repo.setAsideUnreadable()
+        XCTAssertTrue(try repo.load().tasks.isEmpty)
+        try repo.save(Notebook(tasks: [TaskItem(title: "再出発")]))
+        XCTAssertEqual(try repo.load().tasks.first?.title, "再出発")
+        let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        XCTAssertTrue(names.contains { $0.contains("unreadable-") })
+    }
+
     func testTaskTextImportKeepsAIHandoffSeparateFromNextActionAndMergesOnce() {
         let input = """
         # 2026-10-21

@@ -124,8 +124,11 @@ struct TaskEditor: View {
 struct FocusView: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var phase
     @State private var note = ""
     @State private var lastLoadedID: UUID?
+    /// Set after a step is finished, so the person can keep the momentum or stop cleanly.
+    @State private var followUp: TaskItem?
 
     var body: some View {
         NavigationStack {
@@ -149,9 +152,7 @@ struct FocusView: View {
                             Text("別のタスクに移っても、このメモは残ります。")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        Button {
-                            if store.finishAction() { dismiss() }
-                        } label: {
+                        Button { finish(task, session: session) } label: {
                             Label(session.stepID == nil ? "タスクを完了" : "この一手を完了", systemImage: "checkmark")
                                 .frame(maxWidth: .infinity).padding(.vertical, 8)
                         }.buttonStyle(.borderedProminent).controlSize(.large)
@@ -159,24 +160,46 @@ struct FocusView: View {
                             if store.pause(note: note) { dismiss() }
                         } label: { Text("ここで中断する").frame(maxWidth: .infinity).padding(.vertical, 8) }
                             .buttonStyle(.bordered).controlSize(.large)
-                        if session.stepID != nil {
-                            Text("工程の完了後も、タスクは一覧に残ります。全部終わったら一覧のチェックで完了にできます。")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
                     }.padding(24)
                 }
                 .navigationTitle("今やるひとつ").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("一覧へ") { dismiss() } } }
                 .onAppear { loadNote(task) }
                 .onChange(of: session.taskID) { _, _ in loadNote(task) }
-                .onChange(of: note) { _, new in
-                    if lastLoadedID == task.id, new != task.resumeNote { store.change(task.id) { $0.resumeNote = new } }
-                }
             } else {
                 ContentUnavailableView("取り組み中のタスクはありません", systemImage: "checkmark.circle")
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } } }
             }
-        }.storeErrorAlert()
+        }
+        // Saving once on leaving keeps the undo history free of per-keystroke entries.
+        .onDisappear(perform: saveNote)
+        .onChange(of: phase) { _, newPhase in if newPhase != .active { saveNote() } }
+        .confirmationDialog(followUpTitle, isPresented: Binding(
+            get: { followUp != nil }, set: { if !$0 { followUp = nil } }
+        ), titleVisibility: .visible, presenting: followUp) { task in
+            if let next = task.nextStep {
+                Button("続けて「\(next.title)」へ") { store.start(task) }
+            } else {
+                Button("タスクを完了にする") { store.complete(task.id); dismiss() }
+            }
+            Button("ここで一区切り", role: .cancel) { dismiss() }
+        }
+        .storeErrorAlert()
+    }
+    private var followUpTitle: String {
+        followUp?.nextStep == nil ? "工程がすべて終わりました" : "一手が終わりました"
+    }
+    private func finish(_ task: TaskItem, session: Session) {
+        guard store.finishAction() else { return }
+        note = ""
+        // Whole-task sessions are done; a finished step asks what comes next instead of closing silently.
+        if session.stepID != nil, let updated = store.task(task.id), !updated.isComplete { followUp = updated }
+        else { dismiss() }
+    }
+    private func saveNote() {
+        guard let id = lastLoadedID, store.notebook.activeSession?.taskID == id,
+              let task = store.task(id), note != task.resumeNote else { return }
+        store.change(id) { $0.resumeNote = note }
     }
     private func loadNote(_ task: TaskItem) { note = task.resumeNote; lastLoadedID = task.id }
     private func actionTitle(_ task: TaskItem, session: Session) -> String {

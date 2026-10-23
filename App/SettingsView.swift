@@ -21,6 +21,7 @@ struct SettingsView: View {
     @State private var importSummary = ""
     @State private var confirmImport = false
     @State private var showDemoConfirm = false
+    @State private var showStartOver = false
     @State private var localError: String?
 
     var body: some View {
@@ -42,7 +43,12 @@ struct SettingsView: View {
                     Text("このアプリのJSONバックアップ、または3日間タスクの tasks.txt を選べます。tasks.txt は重複を避けて追加します。")
                         .font(.caption).foregroundStyle(.secondary)
                     if store.loadFailed {
-                        Button("直前の保存から復旧する") { store.recover() }
+                        if store.canRecoverPrevious {
+                            Button("直前の保存から復旧する") { store.recover() }
+                        }
+                        Button("読めないデータを残して空から始める", role: .destructive) { showStartOver = true }
+                        Text("読めないデータは削除せず端末内に残します。空にしたあと、バックアップを読み込んで戻すこともできます。")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 } header: { Text("データ") }
                 footer: { Text("端末に自動保存します。現在の版は端末間同期・カレンダー連携には対応していません。アプリを削除する前にはバックアップを書き出してください。") }
@@ -100,6 +106,9 @@ struct SettingsView: View {
                 Button("キャンセル", role: .cancel) {}
                 Button("追加") { addDemo() }
             } message: { Text("必須、締切、続きのメモ、アイデアを試せるサンプルです。") }
+            .confirmationDialog("空の状態から始めますか？", isPresented: $showStartOver, titleVisibility: .visible) {
+                Button("空から始める", role: .destructive) { store.startOver() }
+            } message: { Text("読めないデータは端末内に残したまま、新しく保存を始めます。") }
             .alert("読み込み・書き出しのお知らせ", isPresented: Binding(get: { localError != nil }, set: { if !$0 { localError = nil } })) {
                 Button("閉じる", role: .cancel) { localError = nil }
             } message: { Text(localError ?? "") }

@@ -4,16 +4,16 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['App/**', 'Sources/**', 'Tests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/ios.yml']
+    paths: ['App/**', 'Sources/**', 'Tests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/**']
   pull_request:
-    paths: ['App/**', 'Sources/**', 'Tests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/ios.yml']
+    paths: ['App/**', 'Sources/**', 'Tests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/**']
 
 permissions:
   contents: read
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4

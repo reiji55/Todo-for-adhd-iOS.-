@@ -98,4 +98,15 @@ final class TaskStore: ObservableObject {
             history = []; canUndo = false
         } catch { self.error = "直前の保存から復旧できませんでした。\(error.localizedDescription)" }
     }
+
+    var canRecoverPrevious: Bool { repository.hasPrevious }
+
+    /// The unreadable file stays on the device; this only lets the person continue or restore a backup.
+    func startOver() {
+        do {
+            try repository.setAsideUnreadable()
+            notebook = Notebook(); loadFailed = false
+            history = []; canUndo = false
+        } catch { self.error = "読めないデータを退避できませんでした。\(error.localizedDescription)" }
+    }
 }

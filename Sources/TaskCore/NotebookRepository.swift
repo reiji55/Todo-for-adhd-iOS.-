@@ -20,6 +20,12 @@ public struct NotebookRepository {
         }
         try data.write(to: url, options: .atomic)
     }
+    /// Moves an unreadable file aside so the person can start over or restore a backup without losing it.
+    public func setAsideUnreadable() throws {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        try FileManager.default.moveItem(at: url, to: url.appendingPathExtension("unreadable-\(UUID().uuidString)"))
+    }
+    public var hasPrevious: Bool { FileManager.default.fileExists(atPath: previousURL.path) }
     public func recoverPrevious() throws -> Notebook {
         let data = try Data(contentsOf: previousURL)
         let notebook = try NotebookCodec.decode(data)

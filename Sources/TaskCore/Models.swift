@@ -106,6 +106,51 @@ public struct Notebook: Codable, Equatable {
     }
 }
 
+// Decoding tolerates fields missing from older saves, so adding a field later never locks people out of their data.
+extension Step {
+    enum CodingKeys: String, CodingKey { case id, title, isDone }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: try c.decode(UUID.self, forKey: .id), title: try c.decode(String.self, forKey: .title),
+                  isDone: try c.decodeIfPresent(Bool.self, forKey: .isDone) ?? false)
+    }
+}
+
+extension TaskItem {
+    enum CodingKeys: String, CodingKey {
+        case id, title, plannedAt, scheduledTime, deadline, isMust, effort, kind, project, memo, handoff
+        case resumeNote, steps, createdAt, lastStartedAt, completedAt, suggestionDeferredUntil
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func text(_ key: CodingKeys) throws -> String { try c.decodeIfPresent(String.self, forKey: key) ?? "" }
+        self.init(id: try c.decode(UUID.self, forKey: .id), title: try c.decode(String.self, forKey: .title),
+                  plannedAt: try c.decodeIfPresent(Date.self, forKey: .plannedAt),
+                  scheduledTime: try text(.scheduledTime),
+                  deadline: try c.decodeIfPresent(Date.self, forKey: .deadline),
+                  isMust: try c.decodeIfPresent(Bool.self, forKey: .isMust) ?? false,
+                  effort: try c.decodeIfPresent(Effort.self, forKey: .effort) ?? .medium,
+                  kind: try text(.kind), project: try text(.project), memo: try text(.memo),
+                  handoff: try text(.handoff), resumeNote: try text(.resumeNote),
+                  steps: try c.decodeIfPresent([Step].self, forKey: .steps) ?? [],
+                  createdAt: try c.decode(Date.self, forKey: .createdAt),
+                  lastStartedAt: try c.decodeIfPresent(Date.self, forKey: .lastStartedAt),
+                  completedAt: try c.decodeIfPresent(Date.self, forKey: .completedAt),
+                  suggestionDeferredUntil: try c.decodeIfPresent(Date.self, forKey: .suggestionDeferredUntil))
+    }
+}
+
+extension Notebook {
+    enum CodingKeys: String, CodingKey { case version, tasks, ideas, activeSession }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(tasks: try c.decodeIfPresent([TaskItem].self, forKey: .tasks) ?? [],
+                  ideas: try c.decodeIfPresent([Idea].self, forKey: .ideas) ?? [],
+                  activeSession: try c.decodeIfPresent(Session.self, forKey: .activeSession))
+        version = try c.decode(Int.self, forKey: .version)
+    }
+}
+
 public enum NotebookError: LocalizedError {
     case unsupportedVersion, invalidData
     public var errorDescription: String? {
