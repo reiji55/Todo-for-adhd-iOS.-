@@ -1,5 +1,23 @@
 # ビルド検証結果
 
+## 最新：2026年10月23日（Xcode 26）
+
+[GitHub Actions](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/39943886578) が `completed / success` で終了しました。ブランチ `claude/testflight-setup`、コミット `e783676`。
+
+- 環境: GitHubの `macos-26` ランナー、Xcode 26.6（17F113）。App Store Connectへのアップロードに必要なiOS 26 SDKでビルドしています。
+- 対応OS: iOS 17以降
+
+| 検証 | 結果 |
+| --- | --- |
+| `swift test` | 24件成功、失敗0件 |
+| iPhone Simulator向けDebugビルド | `BUILD SUCCEEDED` |
+| iPhone向けReleaseビルド（署名なし） | `BUILD SUCCEEDED` |
+| シミュレータへのインストールと起動 | 成功。ログに `io.github.reiji55.threedays: 7508` |
+
+TestFlightへのアップロード（`testflight.yml`）は、Apple側の設定とSecrets登録が済むまで実行できないため未検証です。
+
+## 初回：2026年10月22日（Xcode 16.4）
+
 2026年10月22日（UTC）に実行した[GitHub Actions](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/39791244400)は `completed / success` で終了しました。2026年10月23日に最終状態を確認しています。
 
 - 対象コミット: [`5cfde6601ae09211d2ef71a9799468074e2fdcbd`](https://github.com/reiji55/Todo-for-adhd-iOS.-/commit/5cfde6601ae09211d2ef71a9799468074e2fdcbd)
