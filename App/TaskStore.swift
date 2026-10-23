@@ -11,11 +11,27 @@ final class TaskStore: ObservableObject {
     private let repository: NotebookRepository
 
     init() {
-        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        var directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("ThreeDays", isDirectory: true)
+        #if DEBUG
+        // Screenshot runs use a throwaway folder so they never touch real data.
+        if DemoLaunch.isOn {
+            directory = FileManager.default.temporaryDirectory.appendingPathComponent("ThreeDays-demo-\(UUID().uuidString)")
+        }
+        #endif
         repository = NotebookRepository(url: directory.appendingPathComponent("notebook.json"))
         do { notebook = try repository.load() }
         catch { loadFailed = true; self.error = "保存データを開けませんでした。\(error.localizedDescription)" }
+        #if DEBUG
+        if DemoLaunch.isOn {
+            var sample = Notebook.sample(now: Date())
+            if DemoLaunch.value("uiOpen") == "focus", let first = sample.tasks.first {
+                sample.startTask(first.id)
+            }
+            notebook = sample
+            try? repository.save(sample)
+        }
+        #endif
     }
 
     @discardableResult
@@ -110,3 +126,39 @@ final class TaskStore: ObservableObject {
         } catch { self.error = "読めないデータを退避できませんでした。\(error.localizedDescription)" }
     }
 }
+
+extension Notebook {
+    /// Shared by "サンプルで試す" and the screenshot runs.
+    static func sample(now: Date) -> Notebook {
+        let calendar = Calendar.current
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: now)
+        let nextWeek = calendar.date(byAdding: .day, value: 6, to: now)
+        return Notebook(tasks: [
+            TaskItem(title: "提出書類を送る", plannedAt: now, deadline: now, isMust: true, effort: .light, project: "手続き",
+                     memo: "これはサンプルです。", steps: [Step(title: "宛先を確認する"), Step(title: "メールに添付して送る")],
+                     createdAt: now.addingTimeInterval(-7200)),
+            TaskItem(title: "予約の電話をする", plannedAt: now, scheduledTime: "14:00", effort: .light, createdAt: now.addingTimeInterval(-7000)),
+            TaskItem(title: "読みかけの本を読む", effort: .light, resumeNote: "42ページの途中まで", createdAt: now.addingTimeInterval(-6800)),
+            TaskItem(title: "提案の下書きをつくる", deadline: tomorrow, effort: .heavy, project: "仕事",
+                     steps: [Step(title: "見出しを3つ書く")], createdAt: now.addingTimeInterval(-6600)),
+            TaskItem(title: "週末の買い物を考える", plannedAt: tomorrow, createdAt: now.addingTimeInterval(-6400)),
+            TaskItem(title: "気になる資料を読む", effort: .medium, createdAt: now.addingTimeInterval(-6200)),
+            TaskItem(title: "年末調整の書類をそろえる", deadline: nextWeek, project: "手続き", createdAt: now.addingTimeInterval(-6000))
+        ], ideas: [
+            Idea(text: "散歩中に聞ける勉強メモを作れそう\nやると決めるまではアイデアに置く。", createdAt: now.addingTimeInterval(-3600)),
+            Idea(text: "部屋の模様替え、机を窓側に？", createdAt: now.addingTimeInterval(-86400))
+        ])
+    }
+}
+
+#if DEBUG
+/// Launch arguments for CI screenshots only (scripts/simulator-smoke.sh). Compiled out of Release builds.
+enum DemoLaunch {
+    static var isOn: Bool { ProcessInfo.processInfo.arguments.contains("-uiDemo") }
+    static func value(_ name: String) -> String? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let i = arguments.firstIndex(of: "-" + name), arguments.indices.contains(i + 1) else { return nil }
+        return arguments[i + 1]
+    }
+}
+#endif

@@ -80,6 +80,7 @@ struct RootView: View {
             set: { if !$0 { store.error = nil } }
         )) { Button("閉じる", role: .cancel) { store.error = nil } } message: { Text(store.error ?? "") }
         .onChange(of: phase) { _, newPhase in if newPhase == .active { refreshDate = Date() } }
+        .onAppear(perform: openDemoScreen)
         .environment(\.refreshClock, refreshDate)
     }
 
@@ -101,6 +102,18 @@ struct RootView: View {
         }
     }
     private func edit(_ task: TaskItem) { editor = TaskRoute(task: task) }
+    private func openDemoScreen() {
+        #if DEBUG
+        guard DemoLaunch.isOn else { return }
+        selectedTab = Int(DemoLaunch.value("uiTab") ?? "") ?? 0
+        switch DemoLaunch.value("uiOpen") {
+        case "focus": focusOpen = store.notebook.activeSession != nil
+        case "editor": if let task = store.notebook.tasks.first { edit(task) }
+        case "settings": settingsOpen = true
+        default: break
+        }
+        #endif
+    }
     private func start(_ task: TaskItem) {
         store.start(task)
         if store.notebook.activeSession?.taskID == task.id { focusOpen = true }

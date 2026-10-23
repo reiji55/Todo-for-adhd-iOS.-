@@ -115,20 +115,9 @@ struct SettingsView: View {
         }.storeErrorAlert()
     }
     private func addDemo() {
-        let now = Date()
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now)
         store.commit { book in
             guard book.tasks.isEmpty, book.ideas.isEmpty else { return }
-            book.tasks = [
-                TaskItem(title: "提出書類を送る", plannedAt: now, deadline: now, isMust: true,
-                         effort: .light, memo: "これはサンプルです。", steps: [Step(title: "宛先を確認する"), Step(title: "メールに添付して送る")]),
-                TaskItem(title: "予約の電話をする", plannedAt: now, effort: .light),
-                TaskItem(title: "読みかけの本を読む", effort: .light, resumeNote: "42ページの途中まで"),
-                TaskItem(title: "提案の下書きをつくる", deadline: tomorrow, effort: .heavy, steps: [Step(title: "見出しを3つ書く")]),
-                TaskItem(title: "週末の買い物を考える", plannedAt: tomorrow),
-                TaskItem(title: "気になる資料を読む", effort: .medium)
-            ]
-            book.ideas = [Idea(text: "散歩中に聞ける勉強メモを作れそう\nやると決めるまではアイデアに置く。")]
+            book = .sample(now: Date())
         }
     }
 }
