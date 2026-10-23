@@ -2,7 +2,7 @@
 
 SwiftUIで作成したiOS 17以降向けのアプリです。「必須タスクを見失わず、そのときできるものから始められる」を中心に、既存の3日間タスクとHormeの考え方を組み合わせました。
 
-**現状はソースの試作です。iOSアプリのビルド・署名・実機での動作確認は未実施です。インストール用のIPAは含みません。**
+**クラウドで22件のテスト、iPhone／シミュレータ向けビルド、シミュレータでの起動とスクリーンショット保存が成功しました。Appleの配布署名と実機での動作確認は未実施です。インストール用の署名済みIPAは含みません。** [検証結果](docs/BUILD-VALIDATION.md)
 
 ## 入っている機能
 
@@ -35,7 +35,7 @@ SwiftUIで作成したiOS 17以降向けのアプリです。「必須タスク�
 
 ActionsはSwiftのテスト、シミュレータ向けビルド、署名なしのiPhone向けビルド、シミュレータ起動・画面キャプチャを行います。保存する `ThreeDays-simulator.zip` はシミュレータ用です。実機向けもAppleの配布署名を付けるまではiPhoneにインストールできません。
 
-iPhoneへ配布する次の段階では、Apple側の署名と配布環境が必要です。TestFlightを使うなら、Apple Developer Program、App Store Connectのアプリ登録、証明書／プロビジョニングと配布用CIの設定が必要になります。秘密情報はソースに書かず、CIのSecrets等で管理します。この試作には配布用の署名やTestFlightアップロードは設定していません。
+iPhoneへ配布する次の段階では、Apple側の署名と配布環境が必要です。TestFlightを使うなら、Apple Developer Program、App Store Connectのアプリ登録、証明書／プロビジョニングと配布用CIの設定が必要になります。[Apple Developer Program](https://developer.apple.com/jp/programs/)は原則年額99米ドル相当で、TestFlightの利用は会費に含まれます。テスターは無料です。秘密情報はソースに書かず、CIのSecrets等で管理します。この試作には配布用の署名やTestFlightアップロードは設定していません。
 
 ## Mac／Xcodeで開く場合
 
@@ -54,9 +54,9 @@ xcodebuild -project ThreeDays.xcodeproj -scheme ThreeDays \
 
 ## 検証済みの範囲
 
-Swift 6.1.2のLinux環境で `swift test` を実行し、22件のテストが成功しました。優先づけ、日付境界、提案の保留、工程なしでの開始、中断・切り替え、保存と復旧、既存タスク取り込みを検証しています。
+2026年10月22日の[GitHub Actions](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/39791244400)が正常終了しました。Xcode 16.4 / Swift 6.1.2で、コアの22テスト、シミュレータ向けDebugビルド、署名なしのiPhone向けReleaseビルド、シミュレータへのインストール・起動・PNG保存に成功しています。Linuxでの22テストも成功済みです。
 
-SwiftUIファイルは構文チェック済みです。LinuxにはiOS SDKがないため、SwiftUIの型検査・iOSビルド・画面操作の検証はまだです。クラウドでの最新結果は上記Actionsを参照してください。
+コアのテストは優先づけ、日付境界、提案の保留、工程なしでの開始、中断・切り替え、保存と復旧、既存タスク取り込みを検証しています。画面操作全体のテスト、スクリーンショットの目視確認、実機での確認、配布署名とTestFlightへのアップロードは未実施です。証跡とダウンロード先は[検証結果](docs/BUILD-VALIDATION.md)に記録しています。
 
 ## 構成
 
