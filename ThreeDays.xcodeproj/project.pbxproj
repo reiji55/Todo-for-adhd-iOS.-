@@ -404,6 +404,8 @@
 				<string>YES</string>
 				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
 				<string>3日間タスク</string>
+				<key>INFOPLIST_KEY_ITSAppUsesNonExemptEncryption</key>
+				<string>NO</string>
 				<key>INFOPLIST_KEY_LSApplicationCategoryType</key>
 				<string>public.app-category.productivity</string>
 				<key>INFOPLIST_KEY_UIApplicationSceneManifest_Generation</key>
@@ -420,7 +422,7 @@
 				<key>MARKETING_VERSION</key>
 				<string>0.1.0</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>jp.local.threedays</string>
+				<string>io.github.reiji55.threedays</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
 				<key>SUPPORTED_PLATFORMS</key>
@@ -483,6 +485,8 @@
 				<string>YES</string>
 				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
 				<string>3日間タスク</string>
+				<key>INFOPLIST_KEY_ITSAppUsesNonExemptEncryption</key>
+				<string>NO</string>
 				<key>INFOPLIST_KEY_LSApplicationCategoryType</key>
 				<string>public.app-category.productivity</string>
 				<key>INFOPLIST_KEY_UIApplicationSceneManifest_Generation</key>
@@ -499,7 +503,7 @@
 				<key>MARKETING_VERSION</key>
 				<string>0.1.0</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
-				<string>jp.local.threedays</string>
+				<string>io.github.reiji55.threedays</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
 				<key>SUPPORTED_PLATFORMS</key>

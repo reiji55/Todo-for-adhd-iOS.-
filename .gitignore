@@ -12,3 +12,9 @@ xcuserdata/
 *.xcarchive
 *.p12
 *.mobileprovision
+*.p8
+*.pem
+*.key
+__pycache__/
+.venv/
+build/

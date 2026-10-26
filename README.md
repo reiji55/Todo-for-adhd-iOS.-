@@ -35,14 +35,16 @@ SwiftUIで作成したiOS 17以降向けのアプリです。「必須タスク�
 
 ActionsはSwiftのテスト、シミュレータ向けビルド、署名なしのiPhone向けビルド、シミュレータ起動・画面キャプチャを行います。保存する `ThreeDays-simulator.zip` はシミュレータ用です。実機向けもAppleの配布署名を付けるまではiPhoneにインストールできません。
 
-iPhoneへ配布する次の段階では、Apple側の署名と配布環境が必要です。TestFlightを使うなら、Apple Developer Program、App Store Connectのアプリ登録、証明書／プロビジョニングと配布用CIの設定が必要になります。[Apple Developer Program](https://developer.apple.com/jp/programs/)は原則年額99米ドル相当で、TestFlightの利用は会費に含まれます。テスターは無料です。秘密情報はソースに書かず、CIのSecrets等で管理します。この試作には配布用の署名やTestFlightアップロードは設定していません。
+iPhoneへ配布するための `Upload to TestFlight` ワークフローを追加しています。[初回設定の手順](docs/TESTFLIGHT.md)に沿って、Appleでのアプリ登録とGitHub Secretsを設定すると、クラウドで署名してアップロードできます。署名・Appleへの送信は、認証情報の設定後に実行・確認する必要があります。
+
+[Apple Developer Program](https://developer.apple.com/jp/programs/)は原則年額99米ドル相当で、TestFlightの利用は会費に含まれます。テスターは無料です。
 
 ## Mac／Xcodeで開く場合
 
-1. Xcode 16以降で `ThreeDays.xcodeproj` を開く。
+1. Xcode 26.3以降で `ThreeDays.xcodeproj` を開く。
 2. Schemeは `ThreeDays`、実行先はiPhone Simulatorを選ぶ。
 3. Runで起動。設定の「サンプルで試す」で画面を確認できる。
-4. 実機の場合はSigning & Capabilitiesで自分のTeamを選び、Bundle Identifierを自分用に変更する。現在の `jp.local.threedays` は仮の識別子。
+4. 実機の場合はSigning & Capabilitiesで自分のTeamを選ぶ。Bundle Identifierは `io.github.reiji55.threedays`。自分のAppleアカウントに同じIDを登録する。
 
 CLIでの署名なしビルド：
 

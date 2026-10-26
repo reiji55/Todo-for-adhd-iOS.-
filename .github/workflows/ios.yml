@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['App/**', 'Sources/**', 'Tests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/ios.yml']
+    paths: ['App/**', 'Sources/**', 'Tests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/ios.yml', '.github/workflows/testflight.yml']
   pull_request:
-    paths: ['App/**', 'Sources/**', 'Tests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/ios.yml']
+    paths: ['App/**', 'Sources/**', 'Tests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/ios.yml', '.github/workflows/testflight.yml']
 
 permissions:
   contents: read
@@ -15,10 +15,24 @@ jobs:
   build:
     runs-on: macos-15
     timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
       - name: Record Xcode and Swift versions
         run: xcodebuild -version && swift --version
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check release scripts and signing tool compatibility
+        run: |
+          python -m pip install -r scripts/release-requirements.txt
+          bash -n scripts/testflight.sh
+          python -m unittest discover -s scripts/tests -v
+          app-store-connect fetch-signing-files --help > /dev/null
+          app-store-connect publish --help > /dev/null
+          xcode-project use-profiles --help > /dev/null
+          ruby -e 'require "xcodeproj"'
       - name: Test task selection and persistence
         run: swift test
       - name: Build for iPhone Simulator
