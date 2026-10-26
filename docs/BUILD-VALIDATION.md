@@ -1,5 +1,19 @@
 # ビルド検証結果
 
+## 2026年10月26日: TestFlight準備とXcode更新
+
+[GitHub Actions 40266983396](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/40266983396)は `completed / success` で終了しました。対象コードは [`a99bb936a363ba55beb60db416c555fc2511d799`](https://github.com/reiji55/Todo-for-adhd-iOS.-/commit/a99bb936a363ba55beb60db416c555fc2511d799) です。
+
+- Xcode 26.3 / Swift 6.2.4 / iOS SDK 26.2。
+- コアの22テストと配布設定の6テストが成功。
+- iPhone SimulatorのDebug、署名なしiPhoneのReleaseが両方 `BUILD SUCCEEDED`。
+- `io.github.reiji55.threedays` のシミュレータ起動とPNG保存が成功。
+- [画面・起動記録](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/40266983396/artifacts/12627041165)と[シミュレータ用アプリ](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/40266983396/artifacts/12626667151)を7日間保存。
+
+TestFlight用の手動ワークフローと[初回設定手順](TESTFLIGHT.md)を追加しました。APIキー・署名用鍵をGitHub Secretsに設定する必要があるため、Appleへの認証・配布署名・アップロードはまだ実行していません。ビルドの成功はTestFlightへの配信成功を意味しません。画面全体の操作テストと実機テストも未実施です。
+
+## 2026年10月22日: 初回ビルド
+
 2026年10月22日（UTC）に実行した[GitHub Actions](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/39791244400)は `completed / success` で終了しました。2026年10月23日に最終状態を確認しています。
 
 - 対象コミット: [`5cfde6601ae09211d2ef71a9799468074e2fdcbd`](https://github.com/reiji55/Todo-for-adhd-iOS.-/commit/5cfde6601ae09211d2ef71a9799468074e2fdcbd)

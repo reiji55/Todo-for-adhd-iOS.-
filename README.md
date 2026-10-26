@@ -56,6 +56,8 @@ xcodebuild -project ThreeDays.xcodeproj -scheme ThreeDays \
 
 ## 検証済みの範囲
 
+2026年10月26日の[Xcode 26.3での再検証](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/40266983396)も正常終了しています。コア22件＋配布設定6件のテスト、シミュレータ／署名なしiPhone向けビルド、シミュレータ起動と画面保存が成功しました。Appleへの署名付きアップロードは、[初回設定](docs/TESTFLIGHT.md)の完了後に実行します。
+
 2026年10月22日の[GitHub Actions](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/39791244400)が正常終了しました。Xcode 16.4 / Swift 6.1.2で、コアの22テスト、シミュレータ向けDebugビルド、署名なしのiPhone向けReleaseビルド、シミュレータへのインストール・起動・PNG保存に成功しています。Linuxでの22テストも成功済みです。
 
 コアのテストは優先づけ、日付境界、提案の保留、工程なしでの開始、中断・切り替え、保存と復旧、既存タスク取り込みを検証しています。画面操作全体のテスト、スクリーンショットの目視確認、実機での確認、配布署名とTestFlightへのアップロードは未実施です。証跡とダウンロード先は[検証結果](docs/BUILD-VALIDATION.md)に記録しています。
