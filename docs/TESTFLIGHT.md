@@ -39,10 +39,12 @@ Issuer ID、Key IDを控え、`AuthKey_XXXXXXXXXX.p8` をダウンロードし�
 
 | Name（この文字列のまま） | Secretに入れる内容 |
 | --- | --- |
-| `APP_STORE_CONNECT_ISSUER_ID` | Appleに表示されたIssuer ID |
-| `APP_STORE_CONNECT_KEY_IDENTIFIER` | Appleに表示された10文字のKey ID |
-| `APP_STORE_CONNECT_PRIVATE_KEY` | ダウンロードした `.p8` をテキストで開いた全文 |
+| `ASC_ISSUER_ID` | Appleに表示されたIssuer ID |
+| `ASC_KEY_ID` | Appleに表示された10文字のKey ID |
+| `ASC_KEY_P8` | ダウンロードした `.p8` をテキストで開いた全文 |
 | `CERTIFICATE_PRIVATE_KEY` | 別途用意した署名用 `certificate-private-key.pem` をテキストで開いた全文 |
+
+旧手順の `APP_STORE_CONNECT_ISSUER_ID`、`APP_STORE_CONNECT_KEY_IDENTIFIER`、`APP_STORE_CONNECT_PRIVATE_KEY` も利用できます。両方を保存している場合は上表の `ASC_...` を優先します。ワークフロー内ではCLIが要求する `APP_STORE_CONNECT_...` に渡します。`APPLE_TEAM_ID` はこの構成では使用せず、署名プロファイルからチームを取得します。
 
 鍵は `-----BEGIN ...-----` から `-----END ...-----` まで、改行を含めて保存します。ファイル名だけ、Base64への再変換、チャットやリポジトリへの貼り付けは不要です。
 
@@ -53,6 +55,8 @@ Issuer ID、Key IDを控え、`AuthKey_XXXXXXXXXX.p8` をダウンロードし�
 ## 4. アップロードする
 
 [Upload to TestFlight](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/workflows/testflight.yml)を開き、`Run workflow` → `main` → `Run workflow` を実行します。
+
+ワークフロー修正後は、上記の `Run workflow` で新しく実行してください。過去の失敗した実行を `Re-run jobs` で再実行すると、その実行時点の古いコード・設定が使われます。
 
 処理は、入力の検証 → Appleでのアプリ存在確認 → 証明書・プロビジョニングの取得／初回作成 → 署名付きビルド → Appleへのアップロードの順です。通常のコード更新ではアップロードを実行しません。
 
