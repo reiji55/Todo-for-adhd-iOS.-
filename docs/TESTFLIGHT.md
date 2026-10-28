@@ -44,7 +44,7 @@ Issuer ID、Key IDを控え、`AuthKey_XXXXXXXXXX.p8` をダウンロードし�
 | `ASC_KEY_P8` | ダウンロードした `.p8` をテキストで開いた全文 |
 | `CERTIFICATE_PRIVATE_KEY` | 別途用意した署名用 `certificate-private-key.pem` をテキストで開いた全文 |
 
-旧手順の `APP_STORE_CONNECT_ISSUER_ID`、`APP_STORE_CONNECT_KEY_IDENTIFIER`、`APP_STORE_CONNECT_PRIVATE_KEY` も利用できます。両方を保存している場合は上表の `ASC_...` を優先します。ワークフロー内ではCLIが要求する `APP_STORE_CONNECT_...` に渡します。`APPLE_TEAM_ID` はこの構成では使用せず、署名プロファイルからチームを取得します。
+旧手順の `APP_STORE_CONNECT_ISSUER_ID`、`APP_STORE_CONNECT_KEY_IDENTIFIER`、`APP_STORE_CONNECT_PRIVATE_KEY` も利用できます。 保存済みの `ASC_ISSURE_ID` という表記もIssuer IDとして読み取ります（`ASC_ISSUER_ID` が空の場合）。両方を保存している場合は上表の `ASC_...` を優先します。ワークフロー内ではCLIが要求する `APP_STORE_CONNECT_...` に渡します。`APPLE_TEAM_ID` はこの構成では使用せず、署名プロファイルからチームを取得します。
 
 鍵は `-----BEGIN ...-----` から `-----END ...-----` まで、改行を含めて保存します。ファイル名だけ、Base64への再変換、チャットやリポジトリへの貼り付けは不要です。
 
