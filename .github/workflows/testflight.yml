@@ -1,4 +1,4 @@
-name: Upload to TestFlight
+name: iPhoneに送る（TestFlight）
 
 on:
   workflow_dispatch:

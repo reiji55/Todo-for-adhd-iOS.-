@@ -1,4 +1,4 @@
-name: Validate native iOS app
+name: アプリのビルド確認
 
 on:
   workflow_dispatch:

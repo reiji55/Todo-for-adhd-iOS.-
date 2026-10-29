@@ -35,7 +35,7 @@ SwiftUIで作成したiOS 17以降向けのアプリです。「必須タスク�
 
 ActionsはSwiftのテスト、シミュレータ向けビルド、署名なしのiPhone向けビルド、シミュレータ起動・画面キャプチャを行います。保存する `ThreeDays-simulator.zip` はシミュレータ用です。実機向けもAppleの配布署名を付けるまではiPhoneにインストールできません。
 
-iPhoneへ配布するための `Upload to TestFlight` ワークフローを追加しています。[初回設定の手順](docs/TESTFLIGHT.md)に沿って、Appleでのアプリ登録とGitHub Secretsを設定すると、クラウドで署名してアップロードできます。署名・Appleへの送信は、認証情報の設定後に実行・確認する必要があります。
+iPhoneへ配布するための `iPhoneに送る（TestFlight）` ワークフローを追加しています。[初回設定の手順](docs/TESTFLIGHT.md)に沿って、Appleでのアプリ登録とGitHub Secretsを設定すると、クラウドで署名してアップロードできます。署名・Appleへの送信は、認証情報の設定後に実行・確認する必要があります。
 
 [Apple Developer Program](https://developer.apple.com/jp/programs/)は原則年額99米ドル相当で、TestFlightの利用は会費に含まれます。テスターは無料です。
 

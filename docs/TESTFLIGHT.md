@@ -1,6 +1,6 @@
 # Macを使わずTestFlightで試す
 
-このリポジトリには `Upload to TestFlight` ワークフローを用意しています。GitHubのMacで署名・アーカイブ・Appleへのアップロードを行います。アプリの登録と4つのSecretsの設定を、最初に一度行ってください。
+このリポジトリには `iPhoneに送る（TestFlight）` ワークフローを用意しています。GitHubのMacで署名・アーカイブ・Appleへのアップロードを行います。アプリの登録と4つのSecretsの設定を、最初に一度行ってください。
 
 ## 1. Appleにアプリを登録する
 
@@ -54,7 +54,7 @@ Issuer ID、Key IDを控え、`AuthKey_XXXXXXXXXX.p8` をダウンロードし�
 
 ## 4. アップロードする
 
-[Upload to TestFlight](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/workflows/testflight.yml)を開き、`Run workflow` → `main` → `Run workflow` を実行します。
+[iPhoneに送る（TestFlight）](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/workflows/testflight.yml)を開き、`Run workflow` → `main` → `Run workflow` を実行します。
 
 ワークフロー修正後は、上記の `Run workflow` で新しく実行してください。過去の失敗した実行を `Re-run jobs` で再実行すると、その実行時点の古いコード・設定が使われます。
 
