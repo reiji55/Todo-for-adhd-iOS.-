@@ -35,7 +35,7 @@ jobs:
           ruby -e 'require "xcodeproj"'
       - name: Test task selection and persistence
         run: swift test
-      - name: Build for iPhone Simulator
+      - name: Build for iPhone and iPad Simulator
         run: >-
           xcodebuild
           -project ThreeDays.xcodeproj
@@ -45,7 +45,7 @@ jobs:
           -derivedDataPath DerivedData
           CODE_SIGNING_ALLOWED=NO
           build
-      - name: Build unsigned iPhone app
+      - name: Build unsigned universal iOS app
         run: >-
           xcodebuild
           -project ThreeDays.xcodeproj
@@ -56,7 +56,9 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           build
       - name: Launch app in iPhone Simulator and capture screen
-        run: bash scripts/simulator-smoke.sh
+        run: bash scripts/simulator-smoke.sh iPhone
+      - name: Launch app in iPad Simulator and capture screen
+        run: bash scripts/simulator-smoke.sh iPad
       - name: Package simulator build with executable permissions
         run: >-
           ditto -c -k --sequesterRsrc --keepParent

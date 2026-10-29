@@ -29,12 +29,62 @@ struct RootView: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.scenePhase) private var phase
     @State private var selectedTab = 0
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var compactColumn: NavigationSplitViewColumn = .detail
     @State private var editor: TaskRoute?
     @State private var focusOpen = false
     @State private var settingsOpen = false
     @State private var refreshDate = Date()
 
     var body: some View {
+        Group {
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                tabletNavigation
+            } else {
+                phoneNavigation
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) { activeTaskBar }
+        .sheet(item: $editor) { route in TaskEditor(task: route.task) }
+        .sheet(isPresented: $focusOpen) { FocusView() }
+        .sheet(isPresented: $settingsOpen) { SettingsView() }
+        .alert("保存・読み込みのお知らせ", isPresented: Binding(
+            get: { selectedTab != 2 && editor == nil && !focusOpen && !settingsOpen && store.error != nil },
+            set: { if !$0 { store.error = nil } }
+        )) { Button("閉じる", role: .cancel) { store.error = nil } } message: { Text(store.error ?? "") }
+        .onChange(of: phase) { _, newPhase in if newPhase == .active { refreshDate = Date() } }
+        .environment(\.refreshClock, refreshDate)
+    }
+
+    private var tabletNavigation: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $compactColumn) {
+            List(selection: Binding<Int?>(
+                get: { selectedTab },
+                set: { if let tab = $0 { selectedTab = tab; compactColumn = .detail } }
+            )) {
+                NavigationLink(value: 0) { Label("今日", systemImage: "sun.max") }
+                NavigationLink(value: 1) { Label("すべて", systemImage: "list.bullet.rectangle") }
+                NavigationLink(value: 2) { Label("アイデア", systemImage: "tray") }
+            }
+            .navigationTitle("3日間タスク")
+            .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
+        } detail: {
+            NavigationStack {
+                Group {
+                    switch selectedTab {
+                    case 1: AllTasksView(onEdit: edit, onStart: start)
+                    case 2: IdeasView(onEditTask: edit)
+                    default: TodayView(onEdit: edit, onStart: start, onAll: { selectedTab = 1 })
+                    }
+                }
+                .navigationTitle(selectedTab == 1 ? "すべてのタスク" : selectedTab == 2 ? "アイデア" : "今日")
+                .toolbar { commonToolbar }
+            }
+        }
+        .navigationSplitViewStyle(.balanced)
+    }
+
+    private var phoneNavigation: some View {
         TabView(selection: $selectedTab) {
             NavigationStack {
                 TodayView(onEdit: edit, onStart: start, onAll: { selectedTab = 1 })
@@ -55,32 +105,24 @@ struct RootView: View {
             }
             .tabItem { Label("アイデア", systemImage: "tray") }.tag(2)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if let session = store.notebook.activeSession, let task = store.task(session.taskID) {
-                Button { focusOpen = true } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "play.circle.fill")
-                        VStack(alignment: .leading) {
-                            Text("取り組み中").font(.caption)
-                            Text(task.actionTitle).font(.subheadline.weight(.medium)).lineLimit(1)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.up")
+    }
+
+    @ViewBuilder private var activeTaskBar: some View {
+        if let session = store.notebook.activeSession, let task = store.task(session.taskID) {
+            Button { focusOpen = true } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "play.circle.fill")
+                    VStack(alignment: .leading) {
+                        Text("取り組み中").font(.caption)
+                        Text(task.actionTitle).font(.subheadline.weight(.medium)).lineLimit(1)
                     }
-                    .padding(.horizontal, 20).padding(.vertical, 10)
-                    .foregroundStyle(.white).background(Palette.accent)
-                }.accessibilityLabel("取り組み中：\(task.actionTitle)。集中画面を開く")
-            }
+                    Spacer()
+                    Image(systemName: "chevron.up")
+                }
+                .padding(.horizontal, 20).padding(.vertical, 10)
+                .foregroundStyle(.white).background(Palette.accent)
+            }.accessibilityLabel("取り組み中：\(task.actionTitle)。集中画面を開く")
         }
-        .sheet(item: $editor) { route in TaskEditor(task: route.task) }
-        .sheet(isPresented: $focusOpen) { FocusView() }
-        .sheet(isPresented: $settingsOpen) { SettingsView() }
-        .alert("保存・読み込みのお知らせ", isPresented: Binding(
-            get: { selectedTab != 2 && editor == nil && !focusOpen && !settingsOpen && store.error != nil },
-            set: { if !$0 { store.error = nil } }
-        )) { Button("閉じる", role: .cancel) { store.error = nil } } message: { Text(store.error ?? "") }
-        .onChange(of: phase) { _, newPhase in if newPhase == .active { refreshDate = Date() } }
-        .environment(\.refreshClock, refreshDate)
     }
 
     @ToolbarContentBuilder private var commonToolbar: some ToolbarContent {
