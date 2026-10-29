@@ -1,5 +1,6 @@
 # 2026年10月29日の更新
 
+- **0.2.0（ビルド1.3.1）のTestFlight送信が成功しました。** [送信結果](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/40898562813)。ソース253a382、コア22件、署名付きアーカイブ、IPA書き出し、Appleの検証とアップロードが正常終了しています。Apple側の処理完了後にTestFlightから更新できます。
 - 0.1.0（ビルド1.2.4）は署名・アーカイブ・検証・Appleへの送信が成功しました。[実行記録](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/40859151910/attempts/4)
 - 実行全体の失敗表示は送信後の完了メッセージによるもので、9093fc6で修正済みです。利用者がTestFlightからインストールできたことを確認しました。
 - 0.2.0のiPad対応では、iPhone・iPad両方の端末種別、iPadの4方向とマルチタスク設定を、ビルドしたInfo.plistで検証します。両シミュレータにサンプルを入れて起動し、画面を保存します。
