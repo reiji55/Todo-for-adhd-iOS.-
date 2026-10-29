@@ -3,6 +3,8 @@
 - 0.1.0（ビルド1.2.4）は署名・アーカイブ・検証・Appleへの送信が成功しました。[実行記録](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/40859151910/attempts/4)
 - 実行全体の失敗表示は送信後の完了メッセージによるもので、9093fc6で修正済みです。利用者がTestFlightからインストールできたことを確認しました。
 - 0.2.0のiPad対応では、iPhone・iPad両方の端末種別、iPadの4方向とマルチタスク設定を、ビルドしたInfo.plistで検証します。両シミュレータにサンプルを入れて起動し、画面を保存します。
+- [iPad対応の検証](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/40896399166)で、コア22件・配布設定6件、シミュレータ／実機向けビルド、iPhone・iPad両方の起動確認が成功しました。[画面](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/40896399166/artifacts/12908081570)を目視し、iPad Air 13-inch (M2)でサイドバーと2列のタスク表示、iPhoneで1列の表示を確認しました。サイドバーの見出しの省略を避けるため、最終調整でインライン表示に変更しています。
+- iPad実機、回転中・ウインドウ変更中の操作、全タブの操作はまだ未確認です。回転・マルチタスクについては、この段階ではビルド設定とInfo.plistの検証です。
 - 下記は初期版の検証履歴です。
 
 # ビルド検証結果

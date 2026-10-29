@@ -67,6 +67,7 @@ struct RootView: View {
                 NavigationLink(value: 2) { Label("アイデア", systemImage: "tray") }
             }
             .navigationTitle("3日間タスク")
+            .navigationBarTitleDisplayMode(.inline)
             .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
         } detail: {
             NavigationStack {
