@@ -91,7 +91,7 @@ xcodebuild -exportArchive -archivePath "$RELEASE_DIR/ThreeDays.xcarchive" \
 app-store-connect publish --path "$RELEASE_DIR/export/*.ipa" --enable-package-validation
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
   cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-Appleへのアップロードが完了しました（ビルド $RELEASE_VERSION）。
+Appleへのアップロードが完了しました（ビルド ${RELEASE_VERSION}）。
 
 [App Store Connect](https://appstoreconnect.apple.com/apps)で処理完了を待ち、
 対象アプリのTestFlightから内部テストのグループに自分を追加してください。
