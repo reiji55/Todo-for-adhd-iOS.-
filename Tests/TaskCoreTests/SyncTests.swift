@@ -131,4 +131,107 @@ final class SyncTests: XCTestCase {
         var replica = SyncReplica()
         XCTAssertThrowsError(try replica.merge([record]))
     }
+
+    func testTwoOfflineConversionsOfOneIdeaProduceOneTask() throws {
+        let idea = Idea(text: "原稿を書く\n見出しから", createdAt: epoch)
+        let book = Notebook(ideas: [idea])
+        var phone = book, pad = book
+        XCTAssertTrue(phone.convertIdea(idea.id, plannedAt: nil))
+        XCTAssertTrue(pad.convertIdea(idea.id, plannedAt: epoch))
+        var a = try seeded(book), b = a
+        try a.apply(before: book, after: phone, device: "a", now: epoch)
+        try b.apply(before: book, after: pad, device: "b", now: epoch)
+        try a.merge(Array(b.records.values))
+        let result = try a.materialize()
+        XCTAssertTrue(result.ideas.isEmpty); XCTAssertEqual(result.tasks.count, 1)
+        XCTAssertEqual(result.tasks[0].id, idea.id); XCTAssertEqual(result.tasks[0].memo, "見出しから")
+    }
+
+    func testConversionNeverOverwritesAnExistingTaskWithSameID() {
+        let idea = Idea(text: "別のアイデア")
+        var book = Notebook(tasks: [TaskItem(id: idea.id, title: "既存")], ideas: [idea])
+        XCTAssertFalse(book.convertIdea(idea.id, plannedAt: nil))
+        XCTAssertEqual(book.ideas.count, 1); XCTAssertEqual(book.tasks.first?.title, "既存")
+    }
+
+    func testEditDuringNetworkRequestSurvivesOlderAcknowledgementAndReload() throws {
+        let book = Notebook(tasks: [TaskItem(title: "最初", createdAt: epoch)])
+        var state = SharedStoreState(notebook: book)
+        state.replica = try seeded(book)
+        state.connection = SyncConnection(accountID: "owner", zoneName: "HormeData", ownerName: "owner", isShared: false)
+        var first = book; first.tasks[0].title = "送信中"
+        try state.edit(first)
+        let sent = try XCTUnwrap(state.replica)
+        var second = first; second.tasks[0].title = "送信中に追加編集"
+        try state.edit(second)
+        try state.receive(Array(sent.records.values))
+        let reloaded = try SharedStoreState.decode(state.encoded())
+        XCTAssertEqual(reloaded.notebook.tasks[0].title, "送信中に追加編集")
+        XCTAssertNotEqual(reloaded.replica?.records, sent.records)
+        XCTAssertTrue(reloaded.hasPendingChanges)
+    }
+
+    func testSessionFollowsPreservedLocalCopyWhenJoiningConflictingTask() {
+        let remoteTask = TaskItem(title: "共有先", createdAt: epoch)
+        var localTask = remoteTask; localTask.title = "端末の内容"
+        let local = Notebook(tasks: [localTask], activeSession: Session(taskID: localTask.id, startedAt: epoch, stepID: nil))
+        let preview = ShareMergePreview(local: local, remote: Notebook(tasks: [remoteTask]))
+        let localCopy = preview.combined.tasks.first { $0.title == "端末の内容" }
+        XCTAssertNotEqual(localCopy?.id, remoteTask.id)
+        XCTAssertEqual(preview.combined.activeSession?.taskID, localCopy?.id)
+    }
+
+    func testCreateThenDeleteBeforeConnectingNeverAppearsOnOtherDevice() throws {
+        var a = SyncReplica(), b = SyncReplica()
+        let book = Notebook(tasks: [TaskItem(title: "取り消す")])
+        try a.apply(before: Notebook(), after: book, device: "a", now: epoch)
+        try a.apply(before: book, after: Notebook(), device: "a", now: epoch)
+        try b.merge(Array(a.records.values))
+        XCTAssertTrue(try b.materialize().tasks.isEmpty)
+        XCTAssertFalse(b.records.isEmpty, "Deletion evidence must remain durable")
+    }
+
+    func testFailedAtomicSaveLeavesCommittedStateAndLegacyIntact() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repo = SharedStoreRepository(directory: directory)
+        let original = try repo.load()
+        var edited = original; try edited.edit(Notebook(tasks: [TaskItem(title: "保存失敗")]))
+        try FileManager.default.createDirectory(at: repo.previousURL, withIntermediateDirectories: true)
+        XCTAssertThrowsError(try repo.save(edited))
+        XCTAssertEqual(try repo.load(), original)
+    }
+
+    func testMultipleReplicasConvergeAcrossReorderedDuplicateDeliveries() throws {
+        let book = Notebook(tasks: [TaskItem(title: "共有", steps: [Step(title: "一"), Step(title: "二")], createdAt: epoch)],
+                            ideas: [Idea(text: "元の発想", createdAt: epoch)])
+        let base = try seeded(book)
+        var replicas = [base, base, base]
+        for index in 0..<3 {
+            var edited = book
+            edited.tasks[0].memo = "メモ\(index)"
+            if index == 0 { edited.tasks[0].steps[0].isDone = true }
+            if index == 1 { edited.tasks[0].steps[1].isDone = true }
+            if index == 2 { edited.ideas[0].text = "広がった発想" }
+            try replicas[index].apply(before: book, after: edited, device: "device\(index)", now: epoch)
+        }
+        let messages = replicas.map { Array($0.records.values) }
+        for index in 0..<3 {
+            for turn in 0..<6 { try replicas[index].merge(messages[(index + turn) % 3]) }
+        }
+        XCTAssertEqual(replicas[0], replicas[1]); XCTAssertEqual(replicas[1], replicas[2])
+        let result = try replicas[0].materialize()
+        XCTAssertTrue(result.tasks[0].steps.allSatisfy(\.isDone))
+        XCTAssertEqual(result.ideas[0].text, "広がった発想")
+    }
+
+    func testInvalidClockAndMissingLivenessAreRejected() throws {
+        var state = SharedStoreState(notebook: Notebook(tasks: [TaskItem(title: "検証")]))
+        state.replica = try seeded(state.notebook)
+        state.connection = SyncConnection(accountID: "owner", zoneName: "data", ownerName: "owner", isShared: false)
+        state.replica?.clock = -1
+        XCTAssertThrowsError(try SharedStoreState.decode(state.encoded()))
+        let missing = SyncRecord(id: "task_\(UUID().uuidString)")
+        XCTAssertThrowsError(try SyncRecord.decode(missing.encoded(), expectedID: missing.id))
+    }
 }

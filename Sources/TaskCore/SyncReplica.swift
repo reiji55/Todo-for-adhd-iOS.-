@@ -39,6 +39,7 @@ public struct SyncRecord: Codable, Equatable {
               record.id == "session" || record.id.hasPrefix("task_") || record.id.hasPrefix("idea_") else {
             throw NotebookError.unsupportedVersion
         }
+        guard record.fields["alive"] != nil else { throw NotebookError.invalidData }
         var validated = Self(id: record.id)
         try validated.merge(record)
         return validated
@@ -208,23 +209,25 @@ public struct ShareMergePreview {
     /// two previously independent data sets, where no common edit history exists.
     public init(local: Notebook, remote: Notebook) {
         combined = remote
+        var remappedTasks: [UUID: UUID] = [:]
         for var task in local.tasks {
             if let existing = remote.tasks.first(where: { $0.id == task.id }) {
                 if (try? NotebookCodec.encode(Notebook(tasks: [existing]))) == (try? NotebookCodec.encode(Notebook(tasks: [task]))) { continue }
-                task.id = UUID(); conflictingTasks += 1
+                let originalID = task.id
+                task.id = UUID(); remappedTasks[originalID] = task.id; conflictingTasks += 1
             }
             combined.tasks.append(task)
         }
         for var idea in local.ideas {
             if let existing = remote.ideas.first(where: { $0.id == idea.id }) {
-                if existing == idea { continue }
+                if (try? NotebookCodec.encode(Notebook(ideas: [existing]))) == (try? NotebookCodec.encode(Notebook(ideas: [idea]))) { continue }
                 idea.id = UUID(); conflictingIdeas += 1
             }
             combined.ideas.append(idea)
         }
-        if combined.activeSession == nil, let active = local.activeSession,
-           combined.tasks.contains(where: { $0.id == active.taskID && !$0.isComplete }) {
-            combined.activeSession = active
+        if combined.activeSession == nil, var active = local.activeSession {
+            active.taskID = remappedTasks[active.taskID] ?? active.taskID
+            if combined.tasks.contains(where: { $0.id == active.taskID && !$0.isComplete }) { combined.activeSession = active }
         }
     }
 }

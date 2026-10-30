@@ -44,6 +44,7 @@ public struct SharedStoreState: Codable, Equatable {
         if let replica = value.replica {
             var validated = SyncReplica()
             try validated.merge(Array(replica.records.values))
+            guard replica.clock >= validated.clock, replica.clock >= 0 else { throw NotebookError.invalidData }
             _ = try validated.materialize()
         }
         return value

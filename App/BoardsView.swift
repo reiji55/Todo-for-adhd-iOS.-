@@ -314,9 +314,7 @@ struct IdeaEditor: View {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("保存") {
                             idea.text = idea.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if store.commit({ book in
-                                if let i = book.ideas.firstIndex(where: { $0.id == idea.id }) { book.ideas[i] = idea }
-                            }) { dismiss() }
+                            if store.saveIdea(idea) { dismiss() }
                         }.disabled(idea.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }

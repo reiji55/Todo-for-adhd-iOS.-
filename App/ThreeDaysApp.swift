@@ -55,7 +55,12 @@ struct RootView: View {
             set: { if !$0 { store.error = nil } }
         )) { Button("閉じる", role: .cancel) { store.error = nil } } message: { Text(store.error ?? "") }
         .modifier(ShareJoinAlert(enabled: editor == nil && !focusOpen && !settingsOpen))
-        .onAppear { store.setForeground(phase == .active) }
+        .onAppear {
+            store.setForeground(phase == .active)
+#if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-horme-settings-preview") { settingsOpen = true }
+#endif
+        }
         .onChange(of: phase) { _, newPhase in
             store.setForeground(newPhase == .active)
             if newPhase == .active { refreshDate = Date() }

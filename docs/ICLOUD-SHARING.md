@@ -25,6 +25,8 @@ Bundle IDは既存の `io.github.reiji55.threedays` を引き続き使用する�
 6. **Development** 環境のSchema / Record Typesで **`HormeItem`** を作り、**`payload`** という **Bytes** 型のフィールドを追加する。アプリはレコード変更取得APIを使うので独自の検索インデックスは不要。
 7. Schemaの **Deploy Schema Changes** でProductionへ反映する。TestFlight版はProduction環境を使用する。利用者のタスクをConsoleに入力する必要はない。
 
+TestFlight用のワークフローは、ダウンロードした配布プロファイルに上記コンテナ・CloudKit・Productionの通知権限が含まれることを検証する。設定変更で古いプロファイルが無効になっていれば通常は自動で作り直される。設定済みでも検証が止まる場合はApple DeveloperのProfilesでこのアプリのApp Store配布プロファイルを編集・再生成し、最新のmainからワークフローを実行する。証明書や秘密鍵を作り直す必要はない。
+
 記載の画面名はApple側の言語設定によって異なる。[Apple：capability設定](https://developer.apple.com/help/account/identifiers/enable-app-capabilities/)、[Apple：CloudKit共有](https://developer.apple.com/videos/play/tech-talks/10874/)。
 
 ## 保存と競合の扱い
@@ -34,6 +36,7 @@ Bundle IDは既存の `io.github.reiji55.threedays` を引き続き使用する�
 - CloudKitのprivate/sharedデータベースとzone sharingを使用。招待はprivate・read/writeのみで、公開リンクとして一般公開しない。
 - タスク・アイデアごとにレコードを分け、項目ごとの論理時刻と端末IDで統合する。別の項目への変更は両方を残し、同じ項目の競合は時刻・端末IDによる決定的な順序で解決する。同時編集した文章の意味的な合成はしない。
 - 手順はIDごとに統合する。削除記録を保持し、古い端末の編集による削除済み項目の復活を防ぐ。明示的な取り消し・バックアップ復元は新しい変更になる。
+- 同じアイデアを両端末でオフライン中にタスク化しても、同じIDの一つのタスクへ統合する。
 - 他端末から変更を受け取った際は、端末の直前の内容を `before-sync.json` に残す。これは直前の一回分で、無期限の編集履歴ではない。古い全体スナップショットのUndoで他端末の変更を消さないよう、リモート変更の受信時にUndo履歴をクリアする。
 - 共有参加前は `before-sharing.json` に保存する。設定画面から各バックアップを書き出して内容を確認できる。同期を解除してもクラウドのデータは削除しない。
 - 開いたままの編集画面は、本人が編集した項目だけを最新のタスクへ反映する。別端末でタスク全体が削除された場合は勝手に復活させない。

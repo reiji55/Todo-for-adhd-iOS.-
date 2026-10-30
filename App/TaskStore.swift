@@ -129,11 +129,20 @@ final class TaskStore: ObservableObject {
     }
 
     func convert(_ idea: Idea, plannedAt: Date?) -> Bool {
-        commit { book in
-            let lines = idea.text.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines)
-            book.tasks.append(TaskItem(title: lines.first ?? idea.text, plannedAt: plannedAt,
-                                       memo: lines.dropFirst().joined(separator: "\n"), createdAt: idea.createdAt))
-            book.ideas.removeAll { $0.id == idea.id }
+        guard notebook.ideas.contains(where: { $0.id == idea.id }), task(idea.id) == nil else {
+            error = "このアイデアはすでに削除またはタスク化されています。最新の一覧を確認してください。"
+            return false
+        }
+        return commit { $0.convertIdea(idea.id, plannedAt: plannedAt) }
+    }
+
+    func saveIdea(_ idea: Idea) -> Bool {
+        guard notebook.ideas.contains(where: { $0.id == idea.id }) else {
+            error = "このアイデアは別の端末で削除またはタスク化されました。入力した内容をコピーしてから閉じてください。"
+            return false
+        }
+        return commit { book in
+            if let index = book.ideas.firstIndex(where: { $0.id == idea.id }) { book.ideas[index].text = idea.text }
         }
     }
 
@@ -267,7 +276,6 @@ final class TaskStore: ObservableObject {
     func disconnectSync() {
         guard !loadFailed else { return }
         do {
-            try repository.backup(notebook, beforeSharing: true)
             var next = state
             next.connection = nil; next.replica = nil; next.lastSyncedAt = nil; next.hasPendingChanges = false
             try repository.save(next)

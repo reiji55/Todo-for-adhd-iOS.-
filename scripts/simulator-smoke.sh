@@ -83,9 +83,13 @@ import json, sys
 directory = Path(sys.argv[1]) / 'Library/Application Support/ThreeDays'
 legacy = json.loads((directory / 'notebook.json').read_text())
 state = json.loads((directory / 'horme-state.json').read_text())
-assert [t['id'] for t in state['notebook']['tasks']] == [t['id'] for t in legacy['tasks']]
+assert [t['id'].lower() for t in state['notebook']['tasks']] == [t['id'].lower() for t in legacy['tasks']], 'Task identities must survive UUID normalization'
+assert [t['title'] for t in state['notebook']['tasks']] == [t['title'] for t in legacy['tasks']], 'Task text must survive migration'
 assert len(state['notebook']['tasks']) == 6, 'Existing sample tasks must survive migration'
 assert state.get('connection') is None, 'Sharing must require user setup'
 print('Verified atomic migration of existing tasks; cloud sync stays off until configured')
 PY
+xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -horme-settings-preview
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/sharing-settings.png"
 # Screenshots and launch logs verify startup and layout, not every interaction.

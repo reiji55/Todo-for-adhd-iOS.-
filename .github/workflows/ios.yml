@@ -71,6 +71,7 @@ jobs:
           path: ThreeDays-simulator.zip
           retention-days: 7
       - name: Keep simulator screenshot
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ThreeDays-screen
