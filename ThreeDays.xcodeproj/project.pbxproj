@@ -403,7 +403,7 @@
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
-				<string>3日間タスク</string>
+				<string>Horme</string>
 				<key>INFOPLIST_KEY_ITSAppUsesNonExemptEncryption</key>
 				<string>NO</string>
 				<key>INFOPLIST_KEY_LSApplicationCategoryType</key>
@@ -424,7 +424,7 @@
 					<string>@executable_path/Frameworks</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.2.0</string>
+				<string>0.2.1</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>io.github.reiji55.threedays</string>
 				<key>PRODUCT_NAME</key>
@@ -488,7 +488,7 @@
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
-				<string>3日間タスク</string>
+				<string>Horme</string>
 				<key>INFOPLIST_KEY_ITSAppUsesNonExemptEncryption</key>
 				<string>NO</string>
 				<key>INFOPLIST_KEY_LSApplicationCategoryType</key>
@@ -509,7 +509,7 @@
 					<string>@executable_path/Frameworks</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.2.0</string>
+				<string>0.2.1</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>io.github.reiji55.threedays</string>
 				<key>PRODUCT_NAME</key>

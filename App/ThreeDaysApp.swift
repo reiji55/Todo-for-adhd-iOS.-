@@ -66,7 +66,7 @@ struct RootView: View {
                 NavigationLink(value: 1) { Label("すべて", systemImage: "list.bullet.rectangle") }
                 NavigationLink(value: 2) { Label("アイデア", systemImage: "tray") }
             }
-            .navigationTitle("3日間タスク")
+            .navigationTitle("Horme")
             .navigationBarTitleDisplayMode(.inline)
             .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
         } detail: {
@@ -89,7 +89,7 @@ struct RootView: View {
         TabView(selection: $selectedTab) {
             NavigationStack {
                 TodayView(onEdit: edit, onStart: start, onAll: { selectedTab = 1 })
-                    .navigationTitle("3日間タスク")
+                    .navigationTitle("Horme")
                     .toolbar { commonToolbar }
             }
             .tabItem { Label("今日", systemImage: "sun.max") }.tag(0)

@@ -51,7 +51,7 @@ struct SettingsView: View {
                         .disabled(store.loadFailed || !store.notebook.tasks.isEmpty || !store.notebook.ideas.isEmpty)
                 } footer: { Text("初期状態が空のときだけ使えます。サンプルは自由に編集・削除できます。") }
                 Section("この版について") {
-                    Text("3日間タスク · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
+                    Text("Horme · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
                     Text("タスクの追加・整理・着手と再開を中心にした版です。週のカレンダー表示、独立したガイド、通知、AI自動連携はこの版には含めていません。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
