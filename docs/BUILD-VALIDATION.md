@@ -1,3 +1,11 @@
+# 2026年10月30日：Hormeの名前と正式アイコン
+
+- 利用者が選んだ「03 ORGANIZE」のアイコンを、透過なし・1024×1024のRGB PNGとして採用しました。ホーム画面の表示名、iPhoneの見出し、iPadのサイドバー、設定の名前をHormeに変更しています。
+- ソース `c70c93100f46d062a96d2b80fa6c37758e9d6ae3` の[ビルド確認](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/41001780895)が成功しました。コア22件＋配布設定6件、シミュレータ／実機向けビルド、iPhone・iPadの起動確認を通過しています。
+- [画面の記録](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/41001780895/artifacts/12953099843)でHormeの見出しとiPadレイアウトを目視確認しました。ビルドしたアプリのInfo.plistは表示名Horme・バージョン0.2.1・端末種別1,2で、iPhone/iPad用AppIconへの参照と実際の小サイズアイコンも確認しました。
+- **0.2.1（ビルド1.4.1）のAppleへのアップロードが成功しました。** [送信結果](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/41002442763)。署名付きアーカイブ、IPA書き出し、Appleの検証・アップロード、ワークフロー全体が正常終了しています。Apple側の処理完了後にTestFlightから更新できます。
+- Bundle ID `io.github.reiji55.threedays`、データ保存先、バックアップ形式を維持し、既存アプリへの更新として配布しています。新しい版の実機インストール・全操作の確認は利用者側で行います。
+
 # 2026年10月29日の更新
 
 - **0.2.0（ビルド1.3.1）のTestFlight送信が成功しました。** [送信結果](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/40898562813)。ソース253a382、コア22件、署名付きアーカイブ、IPA書き出し、Appleの検証とアップロードが正常終了しています。Apple側の処理完了後にTestFlightから更新できます。
