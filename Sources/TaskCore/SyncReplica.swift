@@ -268,14 +268,14 @@ public struct ShareMergePreview {
         }
         for var card in local.boardCards {
             if let existing = remote.boardCards.first(where: { $0.id == card.id }) {
-                if existing == card { continue }
+                if Self.samePersistedContents(Notebook(boardCards: [existing]), Notebook(boardCards: [card])) { continue }
                 card.id = UUID(); conflictingCards += 1
             }
             combined.boardCards.append(card)
         }
         for var routine in local.routines {
             if let existing = remote.routines.first(where: { $0.id == routine.id }) {
-                if existing == routine { continue }
+                if Self.samePersistedContents(Notebook(routines: [existing]), Notebook(routines: [routine])) { continue }
                 routine.id = UUID(); conflictingRoutines += 1
             }
             combined.routines.append(routine)
@@ -284,5 +284,13 @@ public struct ShareMergePreview {
             active.taskID = remappedTasks[active.taskID] ?? active.taskID
             if combined.tasks.contains(where: { $0.id == active.taskID && !$0.isComplete }) { combined.activeSession = active }
         }
+    }
+
+    private static func samePersistedContents(_ left: Notebook, _ right: Notebook) -> Bool {
+        // Cloud payloads keep whole seconds. Compare decoded values as well so
+        // a routine's Set of completed days does not depend on JSON array order.
+        guard let first = try? NotebookCodec.decode(NotebookCodec.encode(left)),
+              let second = try? NotebookCodec.decode(NotebookCodec.encode(right)) else { return false }
+        return first == second
     }
 }

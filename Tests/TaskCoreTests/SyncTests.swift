@@ -2,6 +2,32 @@ import XCTest
 @testable import TaskCore
 
 final class SyncTests: XCTestCase {
+    func testJoiningDoesNotDuplicateBoardsAndRoutinesAfterCloudDateRounding() throws {
+        let created = Date(timeIntervalSince1970: 1_790_000_000.75)
+        var routine = Routine(title: "学習", createdAt: created)
+        routine.doneDays = ["2026-10-29", "2026-10-30"]
+        let local = Notebook(boardCards: [BoardCard(title: "手順", detail: "本文", createdAt: created)], routines: [routine])
+        let remote = try seeded(local).materialize()
+        let preview = ShareMergePreview(local: local, remote: remote)
+        XCTAssertEqual(preview.combined.boardCards.count, 1)
+        XCTAssertEqual(preview.combined.routines.count, 1)
+        XCTAssertEqual(preview.combined.routines[0].doneDays, routine.doneDays)
+    }
+
+    func testJoiningPreservesDifferentBoardAndRoutineContentAsCopies() throws {
+        let created = Date(timeIntervalSince1970: 1_790_000_000.75)
+        let remote = Notebook(boardCards: [BoardCard(title: "手順", detail: "元の本文", createdAt: created)],
+                              routines: [Routine(title: "学習", time: "19:00-20:00", createdAt: created)])
+        var local = try NotebookCodec.decode(NotebookCodec.encode(remote))
+        local.boardCards[0].detail = "端末で追記した本文"
+        local.routines[0].time = "20:00-21:00"
+        let preview = ShareMergePreview(local: local, remote: remote)
+        XCTAssertEqual(Set(preview.combined.boardCards.map(\.detail)), ["元の本文", "端末で追記した本文"])
+        XCTAssertEqual(Set(preview.combined.boardCards.map(\.id)).count, 2)
+        XCTAssertEqual(Set(preview.combined.routines.map(\.time)), ["19:00-20:00", "20:00-21:00"])
+        XCTAssertEqual(Set(preview.combined.routines.map(\.id)).count, 2)
+    }
+
     private let epoch = Date(timeIntervalSince1970: 100)
     private func seeded(_ book: Notebook) throws -> SyncReplica {
         var replica = SyncReplica()

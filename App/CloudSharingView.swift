@@ -11,11 +11,15 @@ struct PendingCloudJoin: Identifiable {
         self.snapshot = snapshot; self.openShareAfterJoin = openShareAfterJoin
         let remote = try snapshot.replica.materialize()
         let preview = ShareMergePreview(local: local, remote: remote)
-        message = "この端末：タスク\(local.tasks.count)件・アイデア\(local.ideas.count)件\n共有先：タスク\(remote.tasks.count)件・アイデア\(remote.ideas.count)件\n統合後：タスク\(preview.combined.tasks.count)件・アイデア\(preview.combined.ideas.count)件\n\n"
-        if preview.conflictingTasks + preview.conflictingIdeas > 0 {
-            message += "同じデータで内容が異なる\(preview.conflictingTasks + preview.conflictingIdeas)件は、両方を別の項目として残します。\n\n"
+        func counts(_ book: Notebook) -> String {
+            "タスク\(book.tasks.count)件・アイデア\(book.ideas.count)件・ボード\(book.boardCards.count)件・ルーティン\(book.routines.count)件"
         }
-        message += "タスク・アイデア・メモ・完了状態を共有します。この端末の内容も共有先へ追加されます。開始前のバックアップを端末に残します。"
+        message = "この端末：\(counts(local))\n共有先：\(counts(remote))\n統合後：\(counts(preview.combined))\n\n"
+        let conflicts = preview.conflictingTasks + preview.conflictingIdeas + preview.conflictingCards + preview.conflictingRoutines
+        if conflicts > 0 {
+            message += "同じデータで内容が異なる\(conflicts)件は、両方を別の項目として残します。\n\n"
+        }
+        message += "上記のデータと、メモ・手順・完了状態を共有します。この端末の内容も共有先へ追加されます。開始前のバックアップを端末に残します。"
     }
 }
 
@@ -41,7 +45,7 @@ struct CloudSharingView: UIViewControllerRepresentable {
     final class Coordinator: NSObject, UICloudSharingControllerDelegate {
         let store: TaskStore
         init(store: TaskStore) { self.store = store }
-        func itemTitle(for csc: UICloudSharingController) -> String? { "Hormeのタスクとアイデア" }
+        func itemTitle(for csc: UICloudSharingController) -> String? { "Hormeの共有データ" }
         func cloudSharingController(_ csc: UICloudSharingController, failedToSaveShareWithError error: Error) {
             store.syncError = TaskStore.describe(error)
         }
@@ -83,7 +87,7 @@ struct SharingSection: View {
             }
         } header: { Text("端末間の共有") }
         footer: {
-            Text("別々のApple Accountでも、招待を承認すると同じタスクとアイデアを使えます。入力は端末へ保存し、通信できるときに同期します。同じ箇所を同時に変更した場合は変更の順序で決まり、同期直前の内容は下のデータ欄から書き出せます。")
+            Text("別々のApple Accountでも、招待を承認するとタスク・アイデア・ボード・ルーティンを共有できます。入力は端末へ保存し、通信できるときに同期します。同じ箇所を同時に変更した場合は変更の順序で決まり、同期直前の内容は下のデータ欄から書き出せます。")
         }
         .confirmationDialog("この端末の同期を解除しますか？", isPresented: $confirmDisconnect, titleVisibility: .visible) {
             Button("端末のデータを残して解除", role: .destructive) { store.disconnectSync() }

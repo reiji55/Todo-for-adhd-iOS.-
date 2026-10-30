@@ -108,7 +108,7 @@ final class CloudSyncTransport {
         }
         guard !connection.isShared else { throw CloudSyncError.invalidRecord }
         let share = CKShare(recordZoneID: zone.zoneID)
-        share[CKShare.SystemFieldKey.title] = "Hormeのタスクとアイデア" as CKRecordValue
+        share[CKShare.SystemFieldKey.title] = "Hormeの共有データ" as CKRecordValue
         share.publicPermission = .none
         let result = try await database.modifyRecords(saving: [share], deleting: [], savePolicy: .ifServerRecordUnchanged, atomically: true)
         guard let saved = try result.saveResults[share.recordID]?.get() as? CKShare else { throw CloudSyncError.invalidRecord }
