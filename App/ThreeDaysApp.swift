@@ -255,98 +255,6 @@ struct SectionHeading: View {
     }
 }
 
-@MainActor
-struct TaskCard: View {
-    @EnvironmentObject private var store: TaskStore
-    let task: TaskItem
-    var reason: String? = nil
-    var emphasized = false
-    var showDefer = false
-    let onEdit: (TaskItem) -> Void
-    let onStart: (TaskItem) -> Void
-    @Environment(\.openGuide) private var openGuide
-
-    var body: some View {
-        let guide = openGuide == nil ? nil : store.linkedCard(for: task)
-        VStack(alignment: .leading, spacing: 10) {
-            if let reason {
-                Label(reason, systemImage: emphasized ? "exclamationmark.circle" : "sparkle")
-                    .font(.caption.weight(.medium)).foregroundStyle(emphasized ? Palette.must : Palette.accent)
-            }
-            HStack(alignment: .top, spacing: 6) {
-                Button { store.complete(task.id) } label: {
-                    Image(systemName: task.isComplete ? "checkmark.circle.fill" : "circle")
-                        .font(.title2).frame(width: 44, height: 44)
-                }.accessibilityLabel(task.isComplete ? "\(task.title)を未完了に戻す" : "\(task.title)を完了")
-                Button { onEdit(task) } label: {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(task.title).font(.body.weight(.medium)).foregroundStyle(.primary)
-                            .strikethrough(task.isComplete).fixedSize(horizontal: false, vertical: true)
-                        if let step = task.nextStep {
-                            Text("次：\(step.title)").font(.subheadline).foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                }.buttonStyle(.plain)
-                Menu {
-                    Button("編集", systemImage: "pencil") { onEdit(task) }
-                    if let guide, let openGuide {
-                        Button("やり方を見る（\(guide.title)）", systemImage: "book") { openGuide(guide.id) }
-                    }
-                    Button(task.isMust ? "必須を外す" : "必須にする", systemImage: "pin") {
-                        store.change(task.id) { $0.isMust.toggle() }
-                    }
-                    Button("今日に移す", systemImage: "calendar") { store.change(task.id) { $0.plannedAt = Date() } }
-                    Button("明日に移す", systemImage: "arrow.right") {
-                        store.change(task.id) { $0.plannedAt = Calendar.current.date(byAdding: .day, value: 1, to: Date()) }
-                    }
-                    Button("日付を外す") { store.change(task.id) { $0.plannedAt = nil } }
-                    if showDefer {
-                        Button("候補から1時間外す", systemImage: "clock") {
-                            store.change(task.id) { $0.suggestionDeferredUntil = Date().addingTimeInterval(3600) }
-                        }
-                    }
-                    Button("削除", systemImage: "trash", role: .destructive) { store.delete(task.id) }
-                } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
-                .accessibilityLabel("\(task.title)の操作")
-            }
-            if !task.resumeNote.isEmpty {
-                Label(task.resumeNote, systemImage: "bookmark")
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(3)
-            }
-            if let guide, let openGuide {
-                Button { openGuide(guide.id) } label: {
-                    Label("やり方：\(guide.title)", systemImage: "book").font(.caption.weight(.medium)).lineLimit(1)
-                }.buttonStyle(.borderless).accessibilityHint("ボードのカードを開きます")
-            }
-            ViewThatFits(in: .horizontal) {
-                HStack { metadata; Spacer(minLength: 8); startButton }
-                VStack(alignment: .leading, spacing: 8) { metadata; startButton }
-            }
-        }
-        .padding(14)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
-        .overlay(alignment: .leading) {
-            if emphasized { RoundedRectangle(cornerRadius: 2).fill(Palette.must).frame(width: 3).padding(.vertical, 14) }
-        }
-    }
-    private var metadata: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text([task.isMust ? "必須" : "", task.project, task.effort.label].filter { !$0.isEmpty }.joined(separator: " · "))
-            if let deadline = task.deadline { Text("締切 \(deadline.shortDay)").foregroundStyle(Palette.must) }
-            if let planned = task.plannedAt {
-                Text("予定 \(planned.shortDay)\(task.scheduledTime.isEmpty ? "" : " · " + (task.slot?.label ?? task.scheduledTime))")
-            }
-        }.font(.caption).foregroundStyle(.secondary)
-    }
-    @ViewBuilder private var startButton: some View {
-        if !task.isComplete {
-            Button { onStart(task) } label: { Label("今やる", systemImage: "play.fill").font(.subheadline.weight(.medium)).padding(.vertical, 5) }
-                .buttonStyle(.bordered).buttonBorderShape(.capsule)
-        }
-    }
-}
-
 /// A board card opened from a task, over whatever screen the person was on.
 @MainActor
 struct GuideSheet: View {
@@ -354,7 +262,7 @@ struct GuideSheet: View {
     let cardID: UUID
     var body: some View {
         NavigationStack {
-            GuideCardView(cardID: cardID)
+            GuidePager(startID: cardID, cardIDs: [cardID])
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
         }
     }
