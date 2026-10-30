@@ -227,6 +227,10 @@ final class TaskStore: ObservableObject {
 
     func linkedCard(for task: TaskItem) -> BoardCard? { BoardLink.card(for: task, in: notebook.boardCards) }
 
+    func linkedRoutines(for card: BoardCard) -> [Routine] {
+        notebook.routines.filter { BoardLink.card(forProject: $0.project, in: notebook.boardCards)?.id == card.id }
+    }
+
     func linkedTasks(for card: BoardCard) -> [TaskItem] {
         BoardLink.tasks(for: card, in: notebook.tasks, cards: notebook.boardCards)
     }

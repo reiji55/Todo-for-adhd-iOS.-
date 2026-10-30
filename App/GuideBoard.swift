@@ -20,11 +20,13 @@ extension EnvironmentValues {
 
 enum GuideSummary {
     /// "未完了 2件 · 今日 1件", or nil when nothing is open.
-    static func text(_ tasks: [TaskItem], now: Date = Date()) -> String? {
+    static func text(_ tasks: [TaskItem], routines: Int = 0, now: Date = Date()) -> String? {
         let open = tasks.filter { !$0.isComplete }
-        guard !open.isEmpty else { return nil }
         let today = open.filter { $0.plannedAt.map { Calendar.current.isDate($0, inSameDayAs: now) } == true }.count
-        return today > 0 ? "未完了 \(open.count)件 · 今日 \(today)件" : "未完了 \(open.count)件"
+        var parts: [String] = []
+        if !open.isEmpty { parts.append(today > 0 ? "未完了 \(open.count)件 · 今日 \(today)件" : "未完了 \(open.count)件") }
+        if routines > 0 { parts.append("ルーティン \(routines)件") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     static func place(_ task: TaskItem, now: Date = Date()) -> String {
@@ -104,7 +106,8 @@ struct GuideBoardView: View {
 
     private func face(_ card: BoardCard, stacked: Bool, ids: [UUID]) -> some View {
         NavigationLink(value: GuideRoute(id: card.id)) {
-            GuideCardFace(card: card, tasks: store.linkedTasks(for: card), stacked: stacked)
+            GuideCardFace(card: card, tasks: store.linkedTasks(for: card),
+                          routines: store.linkedRoutines(for: card).filter { !$0.isPaused }.count, stacked: stacked)
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -143,6 +146,7 @@ struct GuideBoardView: View {
 struct GuideCardFace: View {
     let card: BoardCard
     let tasks: [TaskItem]
+    var routines = 0
     let stacked: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -150,7 +154,7 @@ struct GuideCardFace: View {
                 Text(card.createdAt.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits)))
                     .font(.caption.weight(.semibold)).monospacedDigit().foregroundStyle(Color.primary.opacity(0.5))
                 Spacer()
-                if let summary = GuideSummary.text(tasks) {
+                if let summary = GuideSummary.text(tasks, routines: routines) {
                     Text(summary).font(.caption2.weight(.semibold)).padding(.horizontal, 8).padding(.vertical, 3)
                         .background(Color.primary.opacity(0.08), in: Capsule())
                 }
@@ -238,6 +242,7 @@ private struct HeaderHeightKey: PreferenceKey {
 struct GuideCardView: View {
     @EnvironmentObject private var store: TaskStore
     @State private var headerHeight: CGFloat = 0
+    @State private var editingRoutine: Routine?
     let cardID: UUID
     /// Nil when shown over a task (editor, focus): the task list and adding tasks belong to the board tab.
     var onEdit: ((TaskItem) -> Void)? = nil
@@ -279,6 +284,7 @@ struct GuideCardView: View {
                     .onPreferenceChange(HeaderHeightKey.self) { headerHeight = $0 }
                 }
             }
+            .sheet(item: $editingRoutine) { RoutineEditor(routine: $0) }
         } else {
             ContentUnavailableView("このカードはありません", systemImage: "book.closed",
                                    description: Text("削除されたか、取り消しで元に戻りました。"))
@@ -345,6 +351,11 @@ struct GuideCardView: View {
             .environment(\.openGuide, nil)
             if tasks.count > open.count {
                 Text("完了 \(tasks.count - open.count)件").font(.caption).foregroundStyle(.secondary)
+            }
+            let routines = store.linkedRoutines(for: card)
+            if !routines.isEmpty {
+                Text("このカードのルーティン").font(.subheadline.weight(.semibold)).padding(.top, 6)
+                ForEach(routines) { routine in RoutineRow(routine: routine) { editingRoutine = $0 } }
             }
             Button { onEdit(TaskItem(title: "", plannedAt: Date(), project: card.title)) } label: {
                 Label("このカードのタスクを今日に追加", systemImage: "plus")
