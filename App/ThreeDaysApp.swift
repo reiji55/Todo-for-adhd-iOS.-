@@ -88,7 +88,8 @@ struct RootView: View {
         .task {
             #if DEBUG
             // Screenshot runs must not be covered by the permission dialog.
-            if ProcessInfo.processInfo.arguments.contains("-uiTab") || ProcessInfo.processInfo.arguments.contains("-uiNoPrompt") { return }
+            let arguments = ProcessInfo.processInfo.arguments
+            if ["-uiTab", "-uiNoPrompt", "-horme-settings-preview"].contains(where: arguments.contains) { return }
             #endif
             await Reminders.shared.requestIfNeeded(for: store.notebook)
             Reminders.shared.reschedule(store.notebook)
