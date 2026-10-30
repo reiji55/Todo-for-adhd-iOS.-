@@ -14,6 +14,8 @@ permissions:
 jobs:
   build:
     runs-on: macos-15
+    permissions:
+      contents: write
     timeout-minutes: 30
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
@@ -59,6 +61,11 @@ jobs:
         run: bash scripts/simulator-smoke.sh iPhone
       - name: Launch app in iPad Simulator and capture screen
         run: bash scripts/simulator-smoke.sh iPad
+      - name: Publish screenshots to the screenshots branch
+        if: github.event_name != 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash scripts/publish-screenshots.sh
       - name: Package simulator build with executable permissions
         run: >-
           ditto -c -k --sequesterRsrc --keepParent

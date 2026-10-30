@@ -18,6 +18,7 @@ struct SettingsView: View {
     @State private var document = BackupDocument()
     @State private var importedBook: Notebook?
     @State private var importedTasks: TaskImport?
+    @State private var importedCards: [BoardCard]?
     @State private var importSummary = ""
     @State private var confirmImport = false
     @State private var showDemoConfirm = false
@@ -39,7 +40,7 @@ struct SettingsView: View {
                     }.disabled(store.loadFailed)
                     Button("ファイルを読み込む", systemImage: "square.and.arrow.down") { importer = true }
                         .disabled(store.loadFailed)
-                    Text("このアプリのJSONバックアップ、または3日間タスクの tasks.txt を選べます。tasks.txt は重複を避けて追加します。")
+                    Text("このアプリのJSONバックアップ、または3日間タスクの tasks.txt・board.json を選べます。tasks.txt と board.json は重複を避けて追加します。")
                         .font(.caption).foregroundStyle(.secondary)
                     if store.loadFailed {
                         Button("直前の保存から復旧する") { store.recover() }
@@ -48,11 +49,11 @@ struct SettingsView: View {
                 footer: { Text("端末に自動保存します。現在の版は端末間同期・カレンダー連携には対応していません。アプリを削除する前にはバックアップを書き出してください。") }
                 Section {
                     Button("サンプルで試す") { showDemoConfirm = true }
-                        .disabled(store.loadFailed || !store.notebook.tasks.isEmpty || !store.notebook.ideas.isEmpty)
+                        .disabled(store.loadFailed || !store.notebook.isEmpty)
                 } footer: { Text("初期状態が空のときだけ使えます。サンプルは自由に編集・削除できます。") }
                 Section("この版について") {
                     Text("Horme · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
-                    Text("タスクの追加・整理・着手と再開を中心にした版です。週のカレンダー表示、独立したガイド、通知、AI自動連携はこの版には含めていません。")
+                    Text("タスクの追加・整理・着手と再開、やり方を書き溜めるボードを中心にした版です。週のカレンダー表示、通知、AI自動連携はこの版には含めていません。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -67,11 +68,18 @@ struct SettingsView: View {
                     let access = url.startAccessingSecurityScopedResource()
                     defer { if access { url.stopAccessingSecurityScopedResource() } }
                     let data = try Data(contentsOf: url)
-                    importedBook = nil; importedTasks = nil
-                    if url.pathExtension.lowercased() == "json" {
+                    importedBook = nil; importedTasks = nil; importedCards = nil
+                    if url.pathExtension.lowercased() == "json", BoardImporter.isBoardFile(data) {
+                        let parsed = try BoardImporter.parse(data)
+                        guard !parsed.cards.isEmpty else { throw NotebookError.invalidData }
+                        importedCards = parsed.cards
+                        let added = BoardImporter.merge(parsed.cards, into: store.notebook.boardCards).count - store.notebook.boardCards.count
+                        importSummary = "ボードにカードを\(added)件追加します。同じ見出しのカードはそのまま残します。"
+                        if parsed.skipped > 0 { importSummary += "\n\n見出しのないカード\(parsed.skipped)件は取り込みません。" }
+                    } else if url.pathExtension.lowercased() == "json" {
                         let book = try NotebookCodec.decode(data)
                         importedBook = book
-                        importSummary = "現在の内容を、バックアップのタスク\(book.tasks.count)件・アイデア\(book.ideas.count)件に置き換えます。直前の内容は取り消し操作で戻せます。"
+                        importSummary = "現在の内容を、バックアップのタスク\(book.tasks.count)件・アイデア\(book.ideas.count)件・ボードのカード\(book.boardCards.count)件に置き換えます。直前の内容は取り消し操作で戻せます。"
                     } else {
                         guard let text = String(data: data, encoding: .utf8) else { throw NotebookError.invalidData }
                         let parsed = TaskTextImporter.parse(text)
@@ -87,19 +95,22 @@ struct SettingsView: View {
                 } catch { localError = error.localizedDescription }
             }
             .alert("取り込み内容の確認", isPresented: $confirmImport) {
-                Button("キャンセル", role: .cancel) { importedBook = nil; importedTasks = nil }
+                Button("キャンセル", role: .cancel) { importedBook = nil; importedTasks = nil; importedCards = nil }
                 Button(importedBook == nil ? "追加する" : "置き換える", role: importedBook == nil ? nil : .destructive) {
                     if let book = importedBook { store.commit { $0 = book } }
+                    else if let cards = importedCards {
+                        store.commit { $0.boardCards = BoardImporter.merge(cards, into: $0.boardCards) }
+                    }
                     else if let tasks = importedTasks?.tasks {
                         store.commit { $0.tasks = TaskTextImporter.merge(tasks, into: $0.tasks) }
                     }
-                    importedBook = nil; importedTasks = nil
+                    importedBook = nil; importedTasks = nil; importedCards = nil
                 }
             } message: { Text(importSummary) }
             .alert("サンプルを追加します", isPresented: $showDemoConfirm) {
                 Button("キャンセル", role: .cancel) {}
                 Button("追加") { addDemo() }
-            } message: { Text("必須、締切、続きのメモ、アイデアを試せるサンプルです。") }
+            } message: { Text("必須、締切、続きのメモ、アイデア、ボードのカードを試せるサンプルです。") }
             .alert("読み込み・書き出しのお知らせ", isPresented: Binding(get: { localError != nil }, set: { if !$0 { localError = nil } })) {
                 Button("閉じる", role: .cancel) { localError = nil }
             } message: { Text(localError ?? "") }
@@ -109,7 +120,7 @@ struct SettingsView: View {
         let now = Date()
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now)
         store.commit { book in
-            guard book.tasks.isEmpty, book.ideas.isEmpty else { return }
+            guard book.isEmpty else { return }
             book.tasks = [
                 TaskItem(title: "提出書類を送る", plannedAt: now, deadline: now, isMust: true,
                          effort: .light, memo: "これはサンプルです。", steps: [Step(title: "宛先を確認する"), Step(title: "メールに添付して送る")]),
@@ -117,7 +128,14 @@ struct SettingsView: View {
                 TaskItem(title: "読みかけの本を読む", effort: .light, resumeNote: "42ページの途中まで"),
                 TaskItem(title: "提案の下書きをつくる", deadline: tomorrow, effort: .heavy, steps: [Step(title: "見出しを3つ書く")]),
                 TaskItem(title: "週末の買い物を考える", plannedAt: tomorrow),
-                TaskItem(title: "気になる資料を読む", effort: .medium)
+                TaskItem(title: "気になる資料を読む", effort: .medium),
+                TaskItem(title: "部屋をリセットする（15分）", plannedAt: now, kind: "ルーチン", project: "部屋のリセット")
+            ]
+            book.boardCards = [
+                BoardCard(title: "部屋のリセット",
+                          purpose: "散らかった机が目に入ると、始める前に気力が削られるため。",
+                          goal: "机の上に、いま使う物しかない状態。",
+                          detail: "これはサンプルです。\n\n1. タイマーを15分にする\n2. 床の物を1か所に集める\n3. 机の上を「戻す・捨てる・保留」に分ける\n4. 保留は箱に入れて、今日は考えない\n\n▸ 15分で止める。全部やろうとしない")
             ]
             book.ideas = [Idea(text: "散歩中に聞ける勉強メモを作れそう\nやると決めるまではアイデアに置く。")]
         }

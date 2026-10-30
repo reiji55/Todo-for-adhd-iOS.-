@@ -28,6 +28,24 @@
 			<key>fileRef</key>
 			<string>AF79E0942E7E865DB5FB83D7</string>
 		</dict>
+		<key>36B0BA04D51CBF0868C9C026</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuideBoard.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>28A1F2A4CEC5603A945B9561</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>36B0BA04D51CBF0868C9C026</string>
+		</dict>
 		<key>FC89C398383BAACF950D819D</key>
 		<dict>
 			<key>isa</key>
@@ -111,6 +129,7 @@
 			<key>children</key>
 			<array>
 				<string>AF79E0942E7E865DB5FB83D7</string>
+				<string>36B0BA04D51CBF0868C9C026</string>
 				<string>FC89C398383BAACF950D819D</string>
 				<string>348C80DB98B5530E1DC809E5</string>
 				<string>6DAF7D9F41E9A03D9DEBDC6E</string>
@@ -118,6 +137,24 @@
 				<string>3685E330EC5277A9DD5661C6</string>
 				<string>96ED5C5789B174A01557791C</string>
 			</array>
+		</dict>
+		<key>B3F2B32DDE59E07996E44A83</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>BoardCards.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>DA9DFC85A15CD38B5DC4AD96</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>B3F2B32DDE59E07996E44A83</string>
 		</dict>
 		<key>B9068717B4F16362ED563C6E</key>
 		<dict>
@@ -219,6 +256,7 @@
 			<string>&lt;group&gt;</string>
 			<key>children</key>
 			<array>
+				<string>B3F2B32DDE59E07996E44A83</string>
 				<string>B9068717B4F16362ED563C6E</string>
 				<string>83E2D9306B6BAB588AB1709B</string>
 				<string>238634D5F55937D3185810E3</string>
@@ -310,10 +348,12 @@
 			<key>files</key>
 			<array>
 				<string>3AC6AB1AB7619E4E2562FD65</string>
+				<string>28A1F2A4CEC5603A945B9561</string>
 				<string>C733C6442A281599567C6C83</string>
 				<string>FFA4503F2922DC1EA21BD521</string>
 				<string>A874B7DB4976D33CD1F4D42F</string>
 				<string>0F12C69EBBC0D0AA799B905A</string>
+				<string>DA9DFC85A15CD38B5DC4AD96</string>
 				<string>56A4C7509848820EFA563687</string>
 				<string>7A5DD4477130562F21A5D3E0</string>
 				<string>E7D922F0B6375D75F2C15998</string>

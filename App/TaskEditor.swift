@@ -7,6 +7,14 @@ struct TaskEditor: View {
     @State var task: TaskItem
     @State private var newStep = ""
     @State private var showDelete = false
+    @State private var confirmDiscard = false
+    @State private var guide: GuideRoute?
+    private let original: TaskItem
+
+    init(task: TaskItem) {
+        original = task
+        _task = State(initialValue: task)
+    }
 
     var body: some View {
         NavigationStack {
@@ -66,8 +74,18 @@ struct TaskEditor: View {
                 Section("続きに戻るためのメモ") {
                     TextField("どこまで進んだ？", text: $task.resumeNote, axis: .vertical).lineLimit(2...6)
                 }
-                Section("メモ・やり方") {
-                    TextField("手順や覚えておきたいこと", text: $task.memo, axis: .vertical).lineLimit(3...12)
+                Section {
+                    TextField("このタスクについて覚えておきたいこと", text: $task.memo, axis: .vertical).lineLimit(3...12)
+                    if let card = store.linkedCard(for: task) {
+                        Button { guide = GuideRoute(id: card.id) } label: {
+                            Label("ボードのやり方：\(card.title)", systemImage: "book")
+                        }
+                    }
+                } header: { Text("メモ") }
+                footer: {
+                    Text(store.linkedCard(for: task) == nil
+                         ? "繰り返し使う手順は、ボードのカードに書いてプロジェクトで結ぶと、どのタスクからも開けます。"
+                         : "手順はボードのカードにあります。このタスクだけのことはメモへ。")
                 }
                 Section {
                     TextField("AIに頼みたいこと", text: $task.handoff, axis: .vertical).lineLimit(2...8)
@@ -79,7 +97,17 @@ struct TaskEditor: View {
                 } header: { Text("AIへの引き継ぎ") }
                 footer: { Text("内容を保存して共有できます。AIへの自動送信はありません。") }
                 Section("任意の属性") {
-                    TextField("プロジェクト", text: $task.project)
+                    HStack {
+                        TextField("プロジェクト", text: $task.project)
+                        if !store.notebook.boardCards.isEmpty {
+                            Menu {
+                                ForEach(store.notebook.boardCards) { card in
+                                    Button(card.title) { task.project = card.title }
+                                }
+                            } label: { Image(systemName: "book").frame(width: 44, height: 44) }
+                                .accessibilityLabel("ボードのカードから選ぶ")
+                        }
+                    }
                     TextField("種類（前進・ルーチンなど）", text: $task.kind)
                     Picker("取り組む負荷", selection: $task.effort) {
                         ForEach(Effort.allCases) { Text($0.label).tag($0) }
@@ -95,7 +123,9 @@ struct TaskEditor: View {
             .navigationTitle(store.task(task.id) == nil ? "タスクを追加" : "タスクを編集")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("キャンセル") { if changed { confirmDiscard = true } else { dismiss() } }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
                         task.title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -111,8 +141,16 @@ struct TaskEditor: View {
                     if store.task(task.id) == nil { dismiss() }
                 }
             }
-        }.storeErrorAlert()
+            // A swipe down must not silently drop what was typed.
+            .interactiveDismissDisabled(changed)
+            .sheet(item: $guide) { route in GuideSheet(cardID: route.id) }
+        }
+        .confirmationDialog("編集した内容を破棄しますか？", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("破棄して閉じる", role: .destructive) { dismiss() }
+        }
+        .storeErrorAlert()
     }
+    private var changed: Bool { task != original || !newStep.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private func addStep() {
         let title = newStep.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
@@ -124,6 +162,7 @@ struct TaskEditor: View {
 struct FocusView: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var phase
     @State private var note = ""
     @State private var lastLoadedID: UUID?
 
@@ -139,8 +178,18 @@ struct FocusView: View {
                             Text("経過 \(max(0, Int(context.date.timeIntervalSince(session.startedAt) / 60)))分")
                                 .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                         }
+                        if let card = store.linkedCard(for: task) {
+                            // The method is what people forget mid-task; keep it one tap away.
+                            DisclosureGroup {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    if !card.goal.isEmpty { Text("ゴール：\(card.goal)").font(.subheadline.weight(.medium)) }
+                                    if !card.detail.isEmpty { Text(card.detail).textSelection(.enabled) }
+                                    if card.isBlank { Text("このカードにはまだ何も書いていません。").foregroundStyle(.secondary) }
+                                }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+                            } label: { Label("やり方：\(card.title)", systemImage: "book") }
+                        }
                         if !task.memo.isEmpty {
-                            DisclosureGroup("メモ・やり方") { Text(task.memo).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8) }
+                            DisclosureGroup("メモ") { Text(task.memo).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8) }
                         }
                         VStack(alignment: .leading, spacing: 8) {
                             Text("続きのメモ（任意）").font(.headline)
@@ -169,14 +218,20 @@ struct FocusView: View {
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("一覧へ") { dismiss() } } }
                 .onAppear { loadNote(task) }
                 .onChange(of: session.taskID) { _, _ in loadNote(task) }
-                .onChange(of: note) { _, new in
-                    if lastLoadedID == task.id, new != task.resumeNote { store.change(task.id) { $0.resumeNote = new } }
-                }
             } else {
                 ContentUnavailableView("取り組み中のタスクはありません", systemImage: "checkmark.circle")
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } } }
             }
-        }.storeErrorAlert()
+        }
+        // Saving once on leaving keeps the undo history free of one entry per keystroke.
+        .onDisappear(perform: saveNote)
+        .onChange(of: phase) { _, newPhase in if newPhase != .active { saveNote() } }
+        .storeErrorAlert()
+    }
+    private func saveNote() {
+        guard let id = lastLoadedID, store.notebook.activeSession?.taskID == id,
+              let task = store.task(id), note != task.resumeNote else { return }
+        store.change(id) { $0.resumeNote = note }
     }
     private func loadNote(_ task: TaskItem) { note = task.resumeNote; lastLoadedID = task.id }
     private func actionTitle(_ task: TaskItem, session: Session) -> String {

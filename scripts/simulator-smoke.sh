@@ -68,11 +68,27 @@ tasks = [
     task('読みかけの本を読む', resumeNote='42ページの途中まで'),
     task('気になる資料を読む', effort='medium'),
     task('週末の買い物を考える', plannedAt=date(now + timedelta(days=1))),
+    task('金フレ 未チェック語を回す', project='TOEIC', kind='ルーチン', scheduledTime='19:00-20:30'),
+]
+cards = [
+    dict(id=str(uuid.uuid4()), title='TOEIC対策', createdAt=date(now - timedelta(days=30)),
+         purpose='11月は実測を兼ねた本番。形式と時間配分を体に入れる。',
+         goal='11月の試験で650点。',
+         detail='━━━ 90分の使い方 ━━━\n\n■ 20分 ── 単語（金フレ）\n■ 40分 ── 隔日で交互に\n■ 30分 ── Part7 を時間を計って精読\n\n━━━ 単語のやり方 ━━━\n\n1. 日本語側を赤シートで隠す\n2. 英語を見て2秒で意味を言う\n3. 出なければ即×。粘らない'),
+    dict(id=str(uuid.uuid4()), title='瞑想手法', createdAt=date(now - timedelta(days=20)),
+         purpose='タスク中の思考の散らかりを抑える', goal='', detail='【朝：3分｜呼吸カウント】\n吐くたびに1から10まで数える'),
 ]
 path.parent.mkdir(parents=True, exist_ok=True)
-path.write_text(json.dumps(dict(version=1, tasks=tasks, ideas=[]), ensure_ascii=False))
+path.write_text(json.dumps(dict(version=1, tasks=tasks, ideas=[], boardCards=cards), ensure_ascii=False))
 PY
 xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP | tee "$RESULT_DIR/launch.txt"
 sleep 5
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/today.png"
+# -uiTab and -uiOpenFirstCard exist only in Debug builds, for these captures.
+xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -uiTab 3 >/dev/null
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board.png"
+xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -uiTab 3 -uiOpenFirstCard >/dev/null
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board-card.png"
 # Screenshots and launch logs verify startup and layout, not every interaction.

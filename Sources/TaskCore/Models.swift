@@ -86,6 +86,35 @@ public struct Idea: Codable, Identifiable, Equatable {
     }
 }
 
+/// A long-form "how to do it" note. Tasks say what to do now; cards say how, and outlive any one task.
+public struct BoardCard: Codable, Identifiable, Equatable {
+    public var id: UUID
+    public var title: String
+    /// Why this is worth doing.
+    public var purpose: String
+    /// What "done" looks like.
+    public var goal: String
+    /// Steps, methods and notes. Can be long.
+    public var detail: String
+    public var createdAt: Date
+    public init(id: UUID = UUID(), title: String, purpose: String = "", goal: String = "",
+                detail: String = "", createdAt: Date = Date()) {
+        self.id = id; self.title = title; self.purpose = purpose; self.goal = goal
+        self.detail = detail; self.createdAt = createdAt
+    }
+    public var isBlank: Bool {
+        [purpose, goal, detail].allSatisfy { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+    /// Plain text for the share sheet, e.g. to hand a method to an AI.
+    public var shareText: String {
+        var parts = [title]
+        if !purpose.isEmpty { parts.append("目的：\(purpose)") }
+        if !goal.isEmpty { parts.append("ゴール：\(goal)") }
+        if !detail.isEmpty { parts.append(detail) }
+        return parts.joined(separator: "\n\n")
+    }
+}
+
 public struct Session: Codable, Equatable {
     public var taskID: UUID
     public var startedAt: Date
@@ -100,9 +129,69 @@ public struct Notebook: Codable, Equatable {
     public var version: Int = 1
     public var tasks: [TaskItem]
     public var ideas: [Idea]
+    /// Kept in the person's chosen order.
+    public var boardCards: [BoardCard]
     public var activeSession: Session?
-    public init(tasks: [TaskItem] = [], ideas: [Idea] = [], activeSession: Session? = nil) {
-        self.tasks = tasks; self.ideas = ideas; self.activeSession = activeSession
+    public init(tasks: [TaskItem] = [], ideas: [Idea] = [], boardCards: [BoardCard] = [], activeSession: Session? = nil) {
+        self.tasks = tasks; self.ideas = ideas; self.boardCards = boardCards; self.activeSession = activeSession
+    }
+    public var isEmpty: Bool { tasks.isEmpty && ideas.isEmpty && boardCards.isEmpty }
+}
+
+// Decoding tolerates fields missing from older saves and backups, so adding a field never locks people out of their data.
+extension Step {
+    enum CodingKeys: String, CodingKey { case id, title, isDone }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: try c.decode(UUID.self, forKey: .id), title: try c.decode(String.self, forKey: .title),
+                  isDone: try c.decodeIfPresent(Bool.self, forKey: .isDone) ?? false)
+    }
+}
+
+extension TaskItem {
+    enum CodingKeys: String, CodingKey {
+        case id, title, plannedAt, scheduledTime, deadline, isMust, effort, kind, project, memo, handoff
+        case resumeNote, steps, createdAt, lastStartedAt, completedAt, suggestionDeferredUntil
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func text(_ key: CodingKeys) throws -> String { try c.decodeIfPresent(String.self, forKey: key) ?? "" }
+        self.init(id: try c.decode(UUID.self, forKey: .id), title: try c.decode(String.self, forKey: .title),
+                  plannedAt: try c.decodeIfPresent(Date.self, forKey: .plannedAt),
+                  scheduledTime: try text(.scheduledTime),
+                  deadline: try c.decodeIfPresent(Date.self, forKey: .deadline),
+                  isMust: try c.decodeIfPresent(Bool.self, forKey: .isMust) ?? false,
+                  effort: try c.decodeIfPresent(Effort.self, forKey: .effort) ?? .medium,
+                  kind: try text(.kind), project: try text(.project), memo: try text(.memo),
+                  handoff: try text(.handoff), resumeNote: try text(.resumeNote),
+                  steps: try c.decodeIfPresent([Step].self, forKey: .steps) ?? [],
+                  createdAt: try c.decode(Date.self, forKey: .createdAt),
+                  lastStartedAt: try c.decodeIfPresent(Date.self, forKey: .lastStartedAt),
+                  completedAt: try c.decodeIfPresent(Date.self, forKey: .completedAt),
+                  suggestionDeferredUntil: try c.decodeIfPresent(Date.self, forKey: .suggestionDeferredUntil))
+    }
+}
+
+extension BoardCard {
+    enum CodingKeys: String, CodingKey { case id, title, purpose, goal, detail, createdAt }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func text(_ key: CodingKeys) throws -> String { try c.decodeIfPresent(String.self, forKey: key) ?? "" }
+        self.init(id: try c.decode(UUID.self, forKey: .id), title: try c.decode(String.self, forKey: .title),
+                  purpose: try text(.purpose), goal: try text(.goal), detail: try text(.detail),
+                  createdAt: try c.decode(Date.self, forKey: .createdAt))
+    }
+}
+
+extension Notebook {
+    enum CodingKeys: String, CodingKey { case version, tasks, ideas, boardCards, activeSession }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(tasks: try c.decodeIfPresent([TaskItem].self, forKey: .tasks) ?? [],
+                  ideas: try c.decodeIfPresent([Idea].self, forKey: .ideas) ?? [],
+                  boardCards: try c.decodeIfPresent([BoardCard].self, forKey: .boardCards) ?? [],
+                  activeSession: try c.decodeIfPresent(Session.self, forKey: .activeSession))
+        version = try c.decode(Int.self, forKey: .version)
     }
 }
 
@@ -131,7 +220,9 @@ public enum NotebookCodec {
         guard Set(notebook.tasks.map(\.id)).count == notebook.tasks.count,
               Set(notebook.ideas.map(\.id)).count == notebook.ideas.count,
               notebook.tasks.allSatisfy({ !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && Set($0.steps.map(\.id)).count == $0.steps.count }),
-              notebook.ideas.allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+              notebook.ideas.allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              Set(notebook.boardCards.map(\.id)).count == notebook.boardCards.count,
+              notebook.boardCards.allSatisfy({ !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
         else { throw NotebookError.invalidData }
         if let session = notebook.activeSession {
             guard notebook.tasks.contains(where: { $0.id == session.taskID && !$0.isComplete }) else {

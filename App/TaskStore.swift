@@ -92,6 +92,31 @@ final class TaskStore: ObservableObject {
         }
     }
 
+    func card(_ id: UUID) -> BoardCard? { notebook.boardCards.first { $0.id == id } }
+
+    func linkedCard(for task: TaskItem) -> BoardCard? { BoardLink.card(for: task, in: notebook.boardCards) }
+
+    func linkedTasks(for card: BoardCard) -> [TaskItem] {
+        BoardLink.tasks(for: card, in: notebook.tasks, cards: notebook.boardCards)
+    }
+
+    /// New cards go on top, where the person just typed.
+    @discardableResult
+    func upsertCard(_ card: BoardCard) -> Bool {
+        commit { book in
+            if let i = book.boardCards.firstIndex(where: { $0.id == card.id }) { book.boardCards[i] = card }
+            else { book.boardCards.insert(card, at: 0) }
+        }
+    }
+
+    func deleteCard(_ id: UUID) {
+        commit { $0.boardCards.removeAll { $0.id == id } }
+    }
+
+    func moveCards(from source: IndexSet, to destination: Int) {
+        commit { $0.boardCards.move(fromOffsets: source, toOffset: destination) }
+    }
+
     func recover() {
         do {
             notebook = try repository.recoverPrevious(); loadFailed = false

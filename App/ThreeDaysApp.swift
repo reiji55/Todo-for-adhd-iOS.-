@@ -34,6 +34,7 @@ struct RootView: View {
     @State private var editor: TaskRoute?
     @State private var focusOpen = false
     @State private var settingsOpen = false
+    @State private var guide: GuideRoute?
     @State private var refreshDate = Date()
 
     var body: some View {
@@ -48,12 +49,15 @@ struct RootView: View {
         .sheet(item: $editor) { route in TaskEditor(task: route.task) }
         .sheet(isPresented: $focusOpen) { FocusView() }
         .sheet(isPresented: $settingsOpen) { SettingsView() }
+        .sheet(item: $guide) { route in GuideSheet(cardID: route.id) }
         .alert("保存・読み込みのお知らせ", isPresented: Binding(
-            get: { selectedTab != 2 && editor == nil && !focusOpen && !settingsOpen && store.error != nil },
+            get: { selectedTab != 2 && editor == nil && !focusOpen && !settingsOpen && guide == nil && store.error != nil },
             set: { if !$0 { store.error = nil } }
         )) { Button("閉じる", role: .cancel) { store.error = nil } } message: { Text(store.error ?? "") }
         .onChange(of: phase) { _, newPhase in if newPhase == .active { refreshDate = Date() } }
         .environment(\.refreshClock, refreshDate)
+        .environment(\.openGuide, OpenGuideAction { guide = GuideRoute(id: $0) })
+        .onAppear(perform: openTabForScreenshot)
     }
 
     private var tabletNavigation: some View {
@@ -65,6 +69,7 @@ struct RootView: View {
                 NavigationLink(value: 0) { Label("今日", systemImage: "sun.max") }
                 NavigationLink(value: 1) { Label("すべて", systemImage: "list.bullet.rectangle") }
                 NavigationLink(value: 2) { Label("アイデア", systemImage: "tray") }
+                NavigationLink(value: 3) { Label("ボード", systemImage: "book.closed") }
             }
             .navigationTitle("Horme")
             .navigationBarTitleDisplayMode(.inline)
@@ -75,12 +80,15 @@ struct RootView: View {
                     switch selectedTab {
                     case 1: AllTasksView(onEdit: edit, onStart: start)
                     case 2: IdeasView(onEditTask: edit)
+                    case 3: GuideBoardView(onEdit: edit, onStart: start)
                     default: TodayView(onEdit: edit, onStart: start, onAll: { selectedTab = 1 })
                     }
                 }
-                .navigationTitle(selectedTab == 1 ? "すべてのタスク" : selectedTab == 2 ? "アイデア" : "今日")
+                .navigationTitle(["今日", "すべてのタスク", "アイデア", "ボード"][selectedTab])
                 .toolbar { commonToolbar }
             }
+            // One stack serves every section; a card pushed on the board must not stay on top of 今日.
+            .id(selectedTab)
         }
         .navigationSplitViewStyle(.balanced)
     }
@@ -105,6 +113,12 @@ struct RootView: View {
                     .toolbar { commonToolbar }
             }
             .tabItem { Label("アイデア", systemImage: "tray") }.tag(2)
+            NavigationStack {
+                GuideBoardView(onEdit: edit, onStart: start)
+                    .navigationTitle("ボード")
+                    .toolbar { commonToolbar }
+            }
+            .tabItem { Label("ボード", systemImage: "book.closed") }.tag(3)
         }
     }
 
@@ -132,7 +146,7 @@ struct RootView: View {
                 .disabled(!store.canUndo).accessibilityLabel("直前の操作を取り消す")
         }
         ToolbarItem(placement: .topBarTrailing) {
-            if selectedTab != 2 {
+            if selectedTab < 2 {
                 Button { edit(TaskItem(title: "", plannedAt: selectedTab == 0 ? Date() : nil)) }
                 label: { Image(systemName: "plus") }
                     .accessibilityLabel("タスクを追加")
@@ -144,6 +158,14 @@ struct RootView: View {
         }
     }
     private func edit(_ task: TaskItem) { editor = TaskRoute(task: task) }
+    private func openTabForScreenshot() {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if let i = arguments.firstIndex(of: "-uiTab"), arguments.indices.contains(i + 1), let tab = Int(arguments[i + 1]) {
+            selectedTab = tab
+        }
+        #endif
+    }
     private func start(_ task: TaskItem) {
         store.start(task)
         if store.notebook.activeSession?.taskID == task.id { focusOpen = true }
@@ -194,8 +216,10 @@ struct TaskCard: View {
     var showDefer = false
     let onEdit: (TaskItem) -> Void
     let onStart: (TaskItem) -> Void
+    @Environment(\.openGuide) private var openGuide
 
     var body: some View {
+        let guide = openGuide == nil ? nil : store.linkedCard(for: task)
         VStack(alignment: .leading, spacing: 10) {
             if let reason {
                 Label(reason, systemImage: emphasized ? "exclamationmark.circle" : "sparkle")
@@ -218,6 +242,9 @@ struct TaskCard: View {
                 }.buttonStyle(.plain)
                 Menu {
                     Button("編集", systemImage: "pencil") { onEdit(task) }
+                    if let guide, let openGuide {
+                        Button("やり方を見る（\(guide.title)）", systemImage: "book") { openGuide(guide.id) }
+                    }
                     Button(task.isMust ? "必須を外す" : "必須にする", systemImage: "pin") {
                         store.change(task.id) { $0.isMust.toggle() }
                     }
@@ -238,6 +265,11 @@ struct TaskCard: View {
             if !task.resumeNote.isEmpty {
                 Label(task.resumeNote, systemImage: "bookmark")
                     .font(.caption).foregroundStyle(.secondary).lineLimit(3)
+            }
+            if let guide, let openGuide {
+                Button { openGuide(guide.id) } label: {
+                    Label("やり方：\(guide.title)", systemImage: "book").font(.caption.weight(.medium)).lineLimit(1)
+                }.buttonStyle(.borderless).accessibilityHint("ボードのカードを開きます")
             }
             ViewThatFits(in: .horizontal) {
                 HStack { metadata; Spacer(minLength: 8); startButton }
@@ -263,6 +295,19 @@ struct TaskCard: View {
         if !task.isComplete {
             Button { onStart(task) } label: { Label("今やる", systemImage: "play.fill").font(.subheadline.weight(.medium)).padding(.vertical, 5) }
                 .buttonStyle(.bordered).buttonBorderShape(.capsule)
+        }
+    }
+}
+
+/// A board card opened from a task, over whatever screen the person was on.
+@MainActor
+struct GuideSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let cardID: UUID
+    var body: some View {
+        NavigationStack {
+            GuideCardView(cardID: cardID)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
         }
     }
 }
