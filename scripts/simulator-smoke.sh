@@ -94,7 +94,7 @@ routines = [
 ]
 path.write_text(json.dumps(dict(version=1, tasks=tasks, ideas=[], boardCards=cards, routines=routines), ensure_ascii=False))
 PY
-xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP | tee "$RESULT_DIR/launch.txt"
+xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -uiNoPrompt | tee "$RESULT_DIR/launch.txt"
 sleep 5
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/today.png"
 python3 - "$SIMULATOR_DATA" <<'PY'

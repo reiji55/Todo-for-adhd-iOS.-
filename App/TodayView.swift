@@ -50,7 +50,8 @@ struct TodayView: View {
             return copy
         }
         let calendar = Calendar.current
-        let agenda = Agenda.items(on: now, tasks: tasks, routines: store.notebook.routines)
+        // Held time (sleep, work) is context for the week grid, not something to do; keep it out of this list.
+        let agenda = Agenda.items(on: now, tasks: tasks, routines: store.notebook.routines).filter { !$0.isBlock }
         let visible = agenda.filter { !$0.isDone || store.recentlyDone.contains($0.id) }
         let doneEarlier = agenda.filter { $0.isDone && !store.recentlyDone.contains($0.id) }
         // Today's planned work is already in the timetable; this list is what would otherwise be missed.

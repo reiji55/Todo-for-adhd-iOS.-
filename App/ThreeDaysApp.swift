@@ -86,6 +86,10 @@ struct RootView: View {
         .onChange(of: selectedTab) { _, _ in store.clearRecentlyDone() }
         .onChange(of: store.notebook) { _, book in Reminders.shared.reschedule(book) }
         .task {
+            #if DEBUG
+            // Screenshot runs must not be covered by the permission dialog.
+            if ProcessInfo.processInfo.arguments.contains("-uiTab") || ProcessInfo.processInfo.arguments.contains("-uiNoPrompt") { return }
+            #endif
             await Reminders.shared.requestIfNeeded(for: store.notebook)
             Reminders.shared.reschedule(store.notebook)
         }

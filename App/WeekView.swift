@@ -380,8 +380,9 @@ private struct WeekBackground: View {
                     VStack(spacing: 1) {
                         Text(day.formatted(.dateTime.weekday(.narrow))).font(.caption2)
                             .foregroundStyle(calendar.isDateInWeekend(day) ? Palette.must : .secondary)
-                        Text(day.formatted(.dateTime.day())).font(.system(.subheadline, design: .rounded).weight(.semibold))
-                            .monospacedDigit()
+                        // The bare number: the localized "26日" does not fit a narrow column.
+                        Text("\(calendar.component(.day, from: day))").font(.system(.subheadline, design: .rounded).weight(.semibold))
+                            .monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
                             .foregroundStyle(isToday ? Color.white : .primary)
                             .frame(width: 26, height: 22)
                             .background { if isToday { Capsule().fill(Color.red) } }
