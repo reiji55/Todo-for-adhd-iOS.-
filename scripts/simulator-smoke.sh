@@ -38,6 +38,8 @@ expected = {'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUps
             'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'}
 assert set(info['UISupportedInterfaceOrientations~ipad']) == expected
 assert not info.get('UIRequiresFullScreen', False), 'iPad multitasking must remain available'
+assert info.get('CKSharingSupported') is True, 'CloudKit invitations must be supported'
+assert 'remote-notification' in info.get('UIBackgroundModes', []), 'Silent sync refresh must be enabled'
 print('Verified universal device family, all iPad orientations, and multitasking metadata')
 PY
 xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
@@ -75,4 +77,15 @@ PY
 xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP | tee "$RESULT_DIR/launch.txt"
 sleep 5
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/today.png"
+python3 - "$SIMULATOR_DATA" <<'PY'
+from pathlib import Path
+import json, sys
+directory = Path(sys.argv[1]) / 'Library/Application Support/ThreeDays'
+legacy = json.loads((directory / 'notebook.json').read_text())
+state = json.loads((directory / 'horme-state.json').read_text())
+assert [t['id'] for t in state['notebook']['tasks']] == [t['id'] for t in legacy['tasks']]
+assert len(state['notebook']['tasks']) == 6, 'Existing sample tasks must survive migration'
+assert state.get('connection') is None, 'Sharing must require user setup'
+print('Verified atomic migration of existing tasks; cloud sync stays off until configured')
+PY
 # Screenshots and launch logs verify startup and layout, not every interaction.

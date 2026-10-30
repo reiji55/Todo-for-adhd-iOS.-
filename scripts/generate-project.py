@@ -20,6 +20,8 @@ core = filegroup('core', 'Sources/TaskCore')
 assets = add('assets', isa='PBXFileReference', lastKnownFileType='folder.assetcatalog', path='Assets.xcassets', sourceTree='<group>')
 privacy = add('privacy', isa='PBXFileReference', lastKnownFileType='text.xml', path='PrivacyInfo.xcprivacy', sourceTree='<group>')
 objects[app]['children'] += [assets, privacy]
+for name, kind in [('Info.plist', 'text.plist.xml'), ('Horme.entitlements', 'text.plist.entitlements')]:
+    objects[app]['children'].append(add(name, isa='PBXFileReference', lastKnownFileType=kind, path=name, sourceTree='<group>'))
 resources = [add('build:' + key, isa='PBXBuildFile', fileRef=ref) for key, ref in [('assets', assets), ('privacy', privacy)]]
 product = add('product', isa='PBXFileReference', explicitFileType='wrapper.application', includeInIndex='0', path='ThreeDays.app', sourceTree='BUILT_PRODUCTS_DIR')
 products = add('products', isa='PBXGroup', name='Products', children=[product], sourceTree='<group>')
@@ -31,6 +33,10 @@ for mode in ['Debug', 'Release']:
     if mode == 'Debug': common.update({'ENABLE_TESTABILITY':'YES', 'SWIFT_ACTIVE_COMPILATION_CONDITIONS':'DEBUG $(inherited)', 'ONLY_ACTIVE_ARCH':'YES'})
     projectConfigs.append(add('project:' + mode, isa='XCBuildConfiguration', name=mode, buildSettings=common))
     settings = {'ASSETCATALOG_COMPILER_APPICON_NAME':'AppIcon', 'ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME':'AccentColor', 'CODE_SIGN_STYLE':'Automatic', 'CURRENT_PROJECT_VERSION':'1', 'GENERATE_INFOPLIST_FILE':'YES', 'INFOPLIST_KEY_CFBundleDisplayName':'Horme', 'INFOPLIST_KEY_ITSAppUsesNonExemptEncryption':'NO', 'INFOPLIST_KEY_LSApplicationCategoryType':'public.app-category.productivity', 'INFOPLIST_KEY_UIApplicationSceneManifest_Generation':'YES', 'INFOPLIST_KEY_UILaunchScreen_Generation':'YES', 'INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone':'UIInterfaceOrientationPortrait', 'INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad':'UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight', 'INFOPLIST_KEY_UIRequiresFullScreen':'NO', 'LD_RUNPATH_SEARCH_PATHS':['$(inherited)', '@executable_path/Frameworks'], 'MARKETING_VERSION':'0.2.1', 'PRODUCT_BUNDLE_IDENTIFIER':'io.github.reiji55.threedays', 'PRODUCT_NAME':'$(TARGET_NAME)', 'SUPPORTED_PLATFORMS':'iphoneos iphonesimulator', 'SUPPORTS_MACCATALYST':'NO', 'TARGETED_DEVICE_FAMILY':'1,2', 'SWIFT_EMIT_LOC_STRINGS':'YES'}
+    settings.update({'MARKETING_VERSION': '0.3.0', 'INFOPLIST_FILE': 'App/Info.plist',
+                     'CODE_SIGN_ENTITLEMENTS': 'App/Horme.entitlements',
+                     'CLOUDKIT_ENVIRONMENT': 'Development' if mode == 'Debug' else 'Production',
+                     'APS_ENVIRONMENT': 'development' if mode == 'Debug' else 'production'})
     targetConfigs.append(add('target:' + mode, isa='XCBuildConfiguration', name=mode, buildSettings=settings))
 pConfig = add('projectConfig', isa='XCConfigurationList', buildConfigurations=projectConfigs, defaultConfigurationIsVisible='0', defaultConfigurationName='Release')
 tConfig = add('targetConfig', isa='XCConfigurationList', buildConfigurations=targetConfigs, defaultConfigurationIsVisible='0', defaultConfigurationName='Release')

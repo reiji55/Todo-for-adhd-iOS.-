@@ -28,6 +28,60 @@
 			<key>fileRef</key>
 			<string>AF79E0942E7E865DB5FB83D7</string>
 		</dict>
+		<key>3597650054D25428D141097E</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CloudAppDelegate.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>19C55000B6DBCE4320426FC1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>3597650054D25428D141097E</string>
+		</dict>
+		<key>60A30F2E0B01BB8C82049CA8</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CloudSharingView.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>B174B77323CE6FB77B3EB753</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>60A30F2E0B01BB8C82049CA8</string>
+		</dict>
+		<key>4FD55C6CF8F61990123A29D9</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>CloudSyncTransport.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>A126386360F61480A7AF45EB</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>4FD55C6CF8F61990123A29D9</string>
+		</dict>
 		<key>FC89C398383BAACF950D819D</key>
 		<dict>
 			<key>isa</key>
@@ -111,12 +165,17 @@
 			<key>children</key>
 			<array>
 				<string>AF79E0942E7E865DB5FB83D7</string>
+				<string>3597650054D25428D141097E</string>
+				<string>60A30F2E0B01BB8C82049CA8</string>
+				<string>4FD55C6CF8F61990123A29D9</string>
 				<string>FC89C398383BAACF950D819D</string>
 				<string>348C80DB98B5530E1DC809E5</string>
 				<string>6DAF7D9F41E9A03D9DEBDC6E</string>
 				<string>BECE9A032FF7DDFCF09A5D7C</string>
 				<string>3685E330EC5277A9DD5661C6</string>
 				<string>96ED5C5789B174A01557791C</string>
+				<string>7B594B6DB375E1BF3F23CDD6</string>
+				<string>39584A88E8E2542922D16978</string>
 			</array>
 		</dict>
 		<key>B9068717B4F16362ED563C6E</key>
@@ -173,6 +232,42 @@
 			<key>fileRef</key>
 			<string>238634D5F55937D3185810E3</string>
 		</dict>
+		<key>F6075BD3C7566872227FFA18</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>SharedStoreRepository.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>2A7C578160C5AD3CF431857E</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>F6075BD3C7566872227FFA18</string>
+		</dict>
+		<key>CAEDD2250D58DB2532BA8CF8</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>SyncReplica.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>892BD8710E65355EE123A39D</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>CAEDD2250D58DB2532BA8CF8</string>
+		</dict>
 		<key>DDE657C60CB0581A9D4D9C89</key>
 		<dict>
 			<key>isa</key>
@@ -222,6 +317,8 @@
 				<string>B9068717B4F16362ED563C6E</string>
 				<string>83E2D9306B6BAB588AB1709B</string>
 				<string>238634D5F55937D3185810E3</string>
+				<string>F6075BD3C7566872227FFA18</string>
+				<string>CAEDD2250D58DB2532BA8CF8</string>
 				<string>DDE657C60CB0581A9D4D9C89</string>
 				<string>231DD800721140848975E00B</string>
 			</array>
@@ -245,6 +342,28 @@
 			<string>text.xml</string>
 			<key>path</key>
 			<string>PrivacyInfo.xcprivacy</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>7B594B6DB375E1BF3F23CDD6</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.xml</string>
+			<key>path</key>
+			<string>Info.plist</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>39584A88E8E2542922D16978</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.entitlements</string>
+			<key>path</key>
+			<string>Horme.entitlements</string>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
 		</dict>
@@ -310,6 +429,9 @@
 			<key>files</key>
 			<array>
 				<string>3AC6AB1AB7619E4E2562FD65</string>
+				<string>19C55000B6DBCE4320426FC1</string>
+				<string>B174B77323CE6FB77B3EB753</string>
+				<string>A126386360F61480A7AF45EB</string>
 				<string>C733C6442A281599567C6C83</string>
 				<string>FFA4503F2922DC1EA21BD521</string>
 				<string>A874B7DB4976D33CD1F4D42F</string>
@@ -317,6 +439,8 @@
 				<string>56A4C7509848820EFA563687</string>
 				<string>7A5DD4477130562F21A5D3E0</string>
 				<string>E7D922F0B6375D75F2C15998</string>
+				<string>2A7C578160C5AD3CF431857E</string>
+				<string>892BD8710E65355EE123A39D</string>
 				<string>5AFFFE3B9A275ED4EBEF78E9</string>
 				<string>85CB91C8571261DE0F3BBD33</string>
 			</array>
@@ -424,7 +548,7 @@
 					<string>@executable_path/Frameworks</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.2.1</string>
+				<string>0.3.0</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>io.github.reiji55.threedays</string>
 				<key>PRODUCT_NAME</key>
@@ -437,6 +561,14 @@
 				<string>1,2</string>
 				<key>SWIFT_EMIT_LOC_STRINGS</key>
 				<string>YES</string>
+				<key>INFOPLIST_FILE</key>
+				<string>App/Info.plist</string>
+				<key>CODE_SIGN_ENTITLEMENTS</key>
+				<string>App/Horme.entitlements</string>
+				<key>CLOUDKIT_ENVIRONMENT</key>
+				<string>Development</string>
+				<key>APS_ENVIRONMENT</key>
+				<string>development</string>
 			</dict>
 		</dict>
 		<key>5283471FF90C511CFE244FFF</key>
@@ -509,7 +641,7 @@
 					<string>@executable_path/Frameworks</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>0.2.1</string>
+				<string>0.3.0</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>io.github.reiji55.threedays</string>
 				<key>PRODUCT_NAME</key>
@@ -522,6 +654,14 @@
 				<string>1,2</string>
 				<key>SWIFT_EMIT_LOC_STRINGS</key>
 				<string>YES</string>
+				<key>INFOPLIST_FILE</key>
+				<string>App/Info.plist</string>
+				<key>CODE_SIGN_ENTITLEMENTS</key>
+				<string>App/Horme.entitlements</string>
+				<key>CLOUDKIT_ENVIRONMENT</key>
+				<string>Production</string>
+				<key>APS_ENVIRONMENT</key>
+				<string>production</string>
 			</dict>
 		</dict>
 		<key>389E3AB3166B5E85D4DB22E9</key>

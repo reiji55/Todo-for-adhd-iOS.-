@@ -5,6 +5,7 @@ struct TaskEditor: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.dismiss) private var dismiss
     @State var task: TaskItem
+    let original: TaskItem?
     @State private var newStep = ""
     @State private var showDelete = false
 
@@ -101,7 +102,7 @@ struct TaskEditor: View {
                         task.title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
                         task.steps = task.steps.filter { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                         addStep()
-                        if store.upsert(task) { dismiss() }
+                        if store.upsert(task, original: original) { dismiss() }
                     }.disabled(task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }

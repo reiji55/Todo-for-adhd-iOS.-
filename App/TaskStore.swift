@@ -1,21 +1,51 @@
 import Foundation
 import SwiftUI
+import CloudKit
+import Network
 
 @MainActor
 final class TaskStore: ObservableObject {
+    static let shared = TaskStore()
     @Published private(set) var notebook = Notebook()
     @Published var error: String?
     @Published private(set) var loadFailed = false
     @Published private(set) var canUndo = false
     private var history: [Notebook] = []
-    private let repository: NotebookRepository
+    private let repository: SharedStoreRepository
+    private var state = SharedStoreState()
+    private let cloud = CloudSyncTransport()
+    @Published private(set) var isSyncing = false
+    @Published private(set) var isPreparingShare = false
+    @Published var syncError: String?
+    @Published var pendingJoin: PendingCloudJoin?
+    @Published var sharingSheet: CloudSharingSheet?
+    private var syncGeneration = UUID()
+    private var scheduledSync: Task<Void, Never>?
+    private var foregroundRefresh: Task<Void, Never>?
+    private var retryAfter = Date.distantPast
+    private let network = NWPathMonitor()
+    private var accountObserver: NSObjectProtocol?
+
+    var connection: SyncConnection? { state.connection }
+    var lastSyncedAt: Date? { state.lastSyncedAt }
+    var hasPendingChanges: Bool { state.hasPendingChanges }
+    var hasSharingBackup: Bool { FileManager.default.fileExists(atPath: repository.safetyBackupURL.path) }
+    var hasSyncBackup: Bool { FileManager.default.fileExists(atPath: repository.syncBackupURL.path) }
 
     init() {
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("ThreeDays", isDirectory: true)
-        repository = NotebookRepository(url: directory.appendingPathComponent("notebook.json"))
-        do { notebook = try repository.load() }
+        repository = SharedStoreRepository(directory: directory)
+        do { state = try repository.load(); notebook = state.notebook }
         catch { loadFailed = true; self.error = "保存データを開けませんでした。\(error.localizedDescription)" }
+        network.pathUpdateHandler = { [weak self] path in
+            guard path.status == .satisfied else { return }
+            Task { @MainActor [weak self] in self?.requestSync() }
+        }
+        network.start(queue: DispatchQueue(label: "Horme.network"))
+        accountObserver = NotificationCenter.default.addObserver(forName: .CKAccountChanged, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.requestSync() }
+        }
     }
 
     @discardableResult
@@ -25,10 +55,13 @@ final class TaskStore: ObservableObject {
         update(&next)
         guard next != notebook else { return true }
         do {
-            try repository.save(next)
+            var changed = state
+            try changed.edit(next)
+            try repository.save(changed)
             history.append(notebook)
             if history.count > 20 { history.removeFirst() }
-            notebook = next; canUndo = !history.isEmpty
+            state = changed; notebook = next; canUndo = !history.isEmpty
+            requestSync()
             return true
         } catch { self.error = "保存できませんでした。変更は反映していません。\(error.localizedDescription)"; return false }
     }
@@ -36,17 +69,29 @@ final class TaskStore: ObservableObject {
     func undo() {
         guard let previous = history.last else { return }
         do {
-            try repository.save(previous)
-            notebook = previous; history.removeLast(); canUndo = !history.isEmpty
+            var changed = state
+            try changed.edit(previous)
+            try repository.save(changed)
+            state = changed; notebook = previous; history.removeLast(); canUndo = !history.isEmpty
+            requestSync()
         } catch { self.error = error.localizedDescription }
     }
 
     func task(_ id: UUID) -> TaskItem? { notebook.tasks.first { $0.id == id } }
 
-    func upsert(_ task: TaskItem) -> Bool {
-        commit { book in
-            if let i = book.tasks.firstIndex(where: { $0.id == task.id }) { book.tasks[i] = task }
-            else { book.tasks.append(task) }
+    func upsert(_ task: TaskItem, original: TaskItem? = nil) -> Bool {
+        var edited = task
+        if let original {
+            guard let current = self.task(task.id) else {
+                error = "このタスクは別の端末で削除されました。入力した内容をコピーしてから閉じてください。"
+                return false
+            }
+            do { edited = try SyncReplica.editedTask(original: original, edited: task, current: current) }
+            catch { self.error = error.localizedDescription; return false }
+        }
+        return commit { book in
+            if let i = book.tasks.firstIndex(where: { $0.id == edited.id }) { book.tasks[i] = edited }
+            else { book.tasks.append(edited) }
         }
     }
 
@@ -94,8 +139,176 @@ final class TaskStore: ObservableObject {
 
     func recover() {
         do {
-            notebook = try repository.recoverPrevious(); loadFailed = false
+            state = try repository.recoverPrevious(); notebook = state.notebook; loadFailed = false
             history = []; canUndo = false
         } catch { self.error = "直前の保存から復旧できませんでした。\(error.localizedDescription)" }
+    }
+
+    func setForeground(_ active: Bool) {
+        foregroundRefresh?.cancel(); foregroundRefresh = nil
+        guard active else { return }
+        requestSync()
+        foregroundRefresh = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                self?.requestSync()
+            }
+        }
+    }
+
+    func requestSync() {
+        guard connection != nil, !loadFailed else { return }
+        scheduledSync?.cancel()
+        scheduledSync = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            guard !Task.isCancelled else { return }
+            // Clear the debounce task before entering network work; a new edit
+            // must not cancel a sync that already has writes in flight.
+            self?.scheduledSync = nil
+            await self?.synchronize()
+        }
+    }
+
+    func synchronize() async {
+        guard !isSyncing, !loadFailed, Date() >= retryAfter,
+              let connection, let replica = state.replica else { return }
+        let generation = syncGeneration
+        isSyncing = true
+        defer { if generation == syncGeneration { isSyncing = false } }
+        do {
+            let result = try await cloud.synchronize(connection, local: replica) { [weak self] in
+                self?.syncGeneration == generation && self?.connection == connection
+            }
+            guard generation == syncGeneration, state.connection == connection else { return }
+            var next = state
+            try next.receive(Array(result.records.values))
+            next.hasPendingChanges = next.replica?.records != result.records
+            next.lastSyncedAt = Date()
+            if !Self.sameContents(notebook, next.notebook) {
+                try repository.backup(notebook, beforeSharing: false)
+                // Do not apply a stale whole-book undo over a remote change.
+                history = []; canUndo = false
+            }
+            try repository.save(next)
+            state = next; notebook = next.notebook; syncError = nil; retryAfter = .distantPast
+            if next.hasPendingChanges { requestSync() }
+        } catch {
+            guard generation == syncGeneration else { return }
+            syncError = Self.describe(error)
+            let delay = (error as? CKError)?.retryAfterSeconds ?? 30
+            retryAfter = Date().addingTimeInterval(max(5, delay))
+            // The replica remains durable. Foreground refresh, reconnection and
+            // silent notifications retry without blocking task entry.
+        }
+    }
+
+    func prepareSharing() async {
+        guard !loadFailed, !isPreparingShare else { return }
+        isPreparingShare = true
+        defer { isPreparingShare = false }
+        do {
+            if let connection {
+                await synchronize()
+                // An outstanding local change is not a reason to lose access to
+                // the existing share-management UI.
+                let share = try await cloud.share(for: connection)
+                sharingSheet = CloudSharingSheet(share: share, container: cloud.container)
+            } else {
+                let snapshot = try await cloud.prepareOwnData()
+                pendingJoin = try PendingCloudJoin(snapshot: snapshot, local: notebook, openShareAfterJoin: true)
+            }
+            syncError = nil
+        } catch { syncError = Self.describe(error) }
+    }
+
+    func acceptInvitation(_ metadata: CKShare.Metadata) async {
+        guard !loadFailed, !isPreparingShare else { return }
+        guard metadata.containerIdentifier == CloudSyncTransport.containerID else { syncError = CloudSyncError.wrongContainer.localizedDescription; return }
+        if let connection {
+            let id = metadata.share.recordID.zoneID
+            if connection.zoneName == id.zoneName && connection.ownerName == id.ownerName {
+                await synchronize(); return
+            }
+            error = CloudSyncError.differentShare.localizedDescription; return
+        }
+        isPreparingShare = true
+        defer { isPreparingShare = false }
+        do {
+            let snapshot = try await cloud.accept(metadata)
+            pendingJoin = try PendingCloudJoin(snapshot: snapshot, local: notebook, openShareAfterJoin: false)
+            syncError = nil
+        } catch { self.error = Self.describe(error) }
+    }
+
+    func confirmJoin(_ pending: PendingCloudJoin) async {
+        guard connection == nil, !loadFailed else { return }
+        pendingJoin = nil
+        do {
+            try await cloud.verify(pending.snapshot.connection)
+            var replica = pending.snapshot.replica
+            let remote = try replica.materialize()
+            // Rebuild the preview from the current local data in case the user
+            // kept editing while the invitation was being fetched.
+            let merge = ShareMergePreview(local: notebook, remote: remote)
+            var next = state
+            try replica.apply(before: remote, after: merge.combined, device: next.deviceID)
+            next.replica = replica; next.connection = pending.snapshot.connection
+            next.notebook = try replica.materialize(); next.lastSyncedAt = nil; next.hasPendingChanges = true
+            try repository.backup(notebook, beforeSharing: true)
+            try repository.save(next)
+            syncGeneration = UUID(); state = next; notebook = next.notebook
+            history = []; canUndo = false; syncError = nil; retryAfter = .distantPast
+            UIApplication.shared.registerForRemoteNotifications()
+            await synchronize()
+            if pending.openShareAfterJoin, syncError == nil { await prepareSharing() }
+        } catch { syncError = Self.describe(error) }
+    }
+
+    func disconnectSync() {
+        guard !loadFailed else { return }
+        do {
+            try repository.backup(notebook, beforeSharing: true)
+            var next = state
+            next.connection = nil; next.replica = nil; next.lastSyncedAt = nil; next.hasPendingChanges = false
+            try repository.save(next)
+            syncGeneration = UUID(); scheduledSync?.cancel(); scheduledSync = nil
+            state = next; notebook = next.notebook; isSyncing = false
+            pendingJoin = nil; sharingSheet = nil; syncError = nil
+        } catch { self.error = error.localizedDescription }
+    }
+
+    func sharingStopped() {
+        sharingSheet = nil
+        if connection?.isShared == true { disconnectSync() }
+        else { requestSync() }
+    }
+
+    func backupData(beforeSharing: Bool) throws -> Data {
+        try Data(contentsOf: beforeSharing ? repository.safetyBackupURL : repository.syncBackupURL)
+    }
+
+    private static func sameContents(_ left: Notebook, _ right: Notebook) -> Bool {
+        func normalized(_ value: Notebook) -> Data? {
+            var copy = value
+            copy.tasks.sort { $0.id.uuidString < $1.id.uuidString }
+            copy.ideas.sort { $0.id.uuidString < $1.id.uuidString }
+            return try? NotebookCodec.encode(copy)
+        }
+        return normalized(left) == normalized(right)
+    }
+
+    static func describe(_ error: Error) -> String {
+        guard let cloud = error as? CKError else { return error.localizedDescription }
+        switch cloud.code {
+        case .networkUnavailable, .networkFailure, .serviceUnavailable, .requestRateLimited, .zoneBusy:
+            return "接続を待っています。入力した内容は端末に保存済みです。通信が戻ると同期を再試行します。"
+        case .notAuthenticated: return CloudSyncError.accountUnavailable.localizedDescription
+        case .permissionFailure, .zoneNotFound, .userDeletedZone:
+            return "共有にアクセスできません。共有元の権限や招待を確認してください。端末のデータは残っています。"
+        case .quotaExceeded: return "iCloudの空き容量を確認してください。入力した内容は端末に保存されています。"
+        case .badContainer, .badDatabase, .serverRejectedRequest, .invalidArguments, .missingEntitlement:
+            return "この版のiCloud設定を確認する必要があります。アプリの開発者にお知らせください。端末のデータは保存されています。"
+        default: return "同期できませんでした。少し待ってから「今すぐ同期」を試してください。端末のデータは保存されています。"
+        }
     }
 }
