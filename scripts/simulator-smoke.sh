@@ -38,6 +38,8 @@ expected = {'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUps
             'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'}
 assert set(info['UISupportedInterfaceOrientations~ipad']) == expected
 assert not info.get('UIRequiresFullScreen', False), 'iPad multitasking must remain available'
+assert info.get('CKSharingSupported') is True, 'CloudKit invitations must be supported'
+assert 'remote-notification' in info.get('UIBackgroundModes', []), 'Silent sync refresh must be enabled'
 print('Verified universal device family, all iPad orientations, and multitasking metadata')
 PY
 xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
@@ -84,6 +86,22 @@ PY
 xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP | tee "$RESULT_DIR/launch.txt"
 sleep 5
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/today.png"
+python3 - "$SIMULATOR_DATA" <<'PY'
+from pathlib import Path
+import json, sys
+directory = Path(sys.argv[1]) / 'Library/Application Support/ThreeDays'
+legacy = json.loads((directory / 'notebook.json').read_text())
+state = json.loads((directory / 'horme-state.json').read_text())
+assert [t['id'].lower() for t in state['notebook']['tasks']] == [t['id'].lower() for t in legacy['tasks']], 'Task identities must survive UUID normalization'
+assert [t['title'] for t in state['notebook']['tasks']] == [t['title'] for t in legacy['tasks']], 'Task text must survive migration'
+assert len(state['notebook']['tasks']) == len(legacy['tasks']), 'Existing sample tasks must survive migration'
+assert [c['title'] for c in state['notebook']['boardCards']] == [c['title'] for c in legacy['boardCards']], 'Board cards must survive migration'
+assert state.get('connection') is None, 'Sharing must require user setup'
+print('Verified atomic migration of existing tasks; cloud sync stays off until configured')
+PY
+xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -horme-settings-preview
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/sharing-settings.png"
 # -uiTab and -uiOpenFirstCard exist only in Debug builds, for these captures.
 xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -uiTab 3 >/dev/null
 sleep 4

@@ -78,4 +78,36 @@ final class BoardCardTests: XCTestCase {
         let card = BoardCard(title: "重複")
         XCTAssertThrowsError(try NotebookCodec.decode(NotebookCodec.encode(Notebook(boardCards: [card, card]))))
     }
+
+    func testCardsSyncWithOrderAndSurviveMaterialize() throws {
+        let a = BoardCard(title: "TOEIC対策", detail: "手順", createdAt: Date(timeIntervalSince1970: 1_790_000_000))
+        let b = BoardCard(title: "瞑想", createdAt: Date(timeIntervalSince1970: 1_790_000_100))
+        let book = Notebook(tasks: [TaskItem(title: "単語", project: "TOEIC", createdAt: Date(timeIntervalSince1970: 1_790_000_000))],
+                            boardCards: [b, a])
+        var phone = SyncReplica()
+        try phone.apply(before: Notebook(), after: book, device: "phone")
+        var pad = SyncReplica()
+        try pad.merge(Array(phone.records.values))
+        XCTAssertEqual(try pad.materialize().boardCards.map(\.title), ["瞑想", "TOEIC対策"])
+
+        // Reorder on one device and edit the detail on the other; both changes survive.
+        var reordered = book; reordered.boardCards = [a, b]
+        try phone.apply(before: book, after: reordered, device: "phone")
+        var edited = book; edited.boardCards[1].detail = "新しい手順"
+        try pad.apply(before: book, after: edited, device: "pad")
+        try phone.merge(Array(pad.records.values))
+        try pad.merge(Array(phone.records.values))
+        XCTAssertEqual(try phone.materialize(), try pad.materialize())
+        XCTAssertEqual(try phone.materialize().boardCards.map(\.title), ["TOEIC対策", "瞑想"])
+        XCTAssertEqual(try phone.materialize().boardCards.first?.detail, "新しい手順")
+    }
+
+    func testJoiningKeepsCardsFromBothSides() {
+        let shared = BoardCard(title: "共通")
+        var changed = shared; changed.detail = "こちらだけの手順"
+        let preview = ShareMergePreview(local: Notebook(boardCards: [changed, BoardCard(title: "端末だけ")]),
+                                        remote: Notebook(boardCards: [shared]))
+        XCTAssertEqual(preview.combined.boardCards.count, 3)
+        XCTAssertEqual(preview.conflictingCards, 1)
+    }
 }

@@ -27,6 +27,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                SharingSection()
                 Section("優先づけのルール") {
                     Label("必須・今日までの締切は上段に常時表示", systemImage: "pin")
                     Text("候補は最大3件。明日が締切 → 今日の予定 → 中断した続き → それ以外の順に並びます。同じ優先度の中で、選んだ調子に近い負荷を先に出します。")
@@ -40,13 +41,19 @@ struct SettingsView: View {
                     }.disabled(store.loadFailed)
                     Button("ファイルを読み込む", systemImage: "square.and.arrow.down") { importer = true }
                         .disabled(store.loadFailed)
+                    if store.hasSharingBackup {
+                        Button("共有開始前のバックアップを書き出す") { exportSafetyBackup(beforeSharing: true) }
+                    }
+                    if store.hasSyncBackup {
+                        Button("同期直前のバックアップを書き出す") { exportSafetyBackup(beforeSharing: false) }
+                    }
                     Text("このアプリのJSONバックアップ、または3日間タスクの tasks.txt・board.json を選べます。tasks.txt と board.json は重複を避けて追加します。")
                         .font(.caption).foregroundStyle(.secondary)
                     if store.loadFailed {
                         Button("直前の保存から復旧する") { store.recover() }
                     }
                 } header: { Text("データ") }
-                footer: { Text("端末に自動保存します。現在の版は端末間同期・カレンダー連携には対応していません。アプリを削除する前にはバックアップを書き出してください。") }
+                footer: { Text("端末に自動保存します。共有を設定すると他の端末と同期します。同期中にバックアップで置き換えると、共有先にも変更が反映されます。アプリを削除する前にはバックアップを書き出してください。") }
                 Section {
                     Button("サンプルで試す") { showDemoConfirm = true }
                         .disabled(store.loadFailed || !store.notebook.isEmpty)
@@ -59,6 +66,8 @@ struct SettingsView: View {
             }
             .navigationTitle("設定とデータ").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } } }
+            .sheet(item: $store.sharingSheet) { item in CloudSharingView(item: item) }
+            .modifier(ShareJoinAlert())
             .fileExporter(isPresented: $exporter, document: document, contentType: .json, defaultFilename: "3days-backup") { result in
                 if case .failure(let error) = result { localError = error.localizedDescription }
             }
@@ -80,6 +89,7 @@ struct SettingsView: View {
                         let book = try NotebookCodec.decode(data)
                         importedBook = book
                         importSummary = "現在の内容を、バックアップのタスク\(book.tasks.count)件・アイデア\(book.ideas.count)件・ボードのカード\(book.boardCards.count)件に置き換えます。直前の内容は取り消し操作で戻せます。"
+                        if store.connection != nil { importSummary += "\n\nこの置き換えと削除は、共有している他の端末にも反映されます。" }
                     } else {
                         guard let text = String(data: data, encoding: .utf8) else { throw NotebookError.invalidData }
                         let parsed = TaskTextImporter.parse(text)
@@ -115,6 +125,10 @@ struct SettingsView: View {
                 Button("閉じる", role: .cancel) { localError = nil }
             } message: { Text(localError ?? "") }
         }.storeErrorAlert()
+    }
+    private func exportSafetyBackup(beforeSharing: Bool) {
+        do { document = BackupDocument(data: try store.backupData(beforeSharing: beforeSharing)); exporter = true }
+        catch { localError = error.localizedDescription }
     }
     private func addDemo() {
         let now = Date()

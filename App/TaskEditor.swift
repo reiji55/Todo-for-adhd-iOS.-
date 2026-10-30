@@ -5,14 +5,18 @@ struct TaskEditor: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.dismiss) private var dismiss
     @State var task: TaskItem
+    /// The saved task when editing began, for merging with changes synced from other devices meanwhile.
+    let original: TaskItem?
     @State private var newStep = ""
     @State private var showDelete = false
     @State private var confirmDiscard = false
     @State private var guide: GuideRoute?
-    private let original: TaskItem
+    /// What the form showed when it opened, to tell whether anything was typed.
+    private let initial: TaskItem
 
-    init(task: TaskItem) {
-        original = task
+    init(task: TaskItem, original: TaskItem?) {
+        self.original = original
+        initial = task
         _task = State(initialValue: task)
     }
 
@@ -131,7 +135,7 @@ struct TaskEditor: View {
                         task.title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
                         task.steps = task.steps.filter { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                         addStep()
-                        if store.upsert(task) { dismiss() }
+                        if store.upsert(task, original: original) { dismiss() }
                     }.disabled(task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -150,7 +154,7 @@ struct TaskEditor: View {
         }
         .storeErrorAlert()
     }
-    private var changed: Bool { task != original || !newStep.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var changed: Bool { task != initial || !newStep.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private func addStep() {
         let title = newStep.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }

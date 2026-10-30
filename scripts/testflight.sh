@@ -43,6 +43,7 @@ app-store-connect fetch-signing-files "$BUNDLE_ID" \
   --type IOS_APP_STORE --strict-match-identifier --create \
   --certificates-dir "$RELEASE_DIR/certificates" \
   --profiles-dir "$RELEASE_DIR/profiles"
+python3 scripts/cloud_profile.py "$RELEASE_DIR/profiles"
 # Xcode searches its standard profile directory during archive/export.
 python3 - "$RELEASE_DIR" <<'PY'
 import pathlib, shutil, sys

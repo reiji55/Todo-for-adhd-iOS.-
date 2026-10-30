@@ -3,7 +3,8 @@ import SwiftUI
 @main
 @MainActor
 struct ThreeDaysApp: App {
-    @StateObject private var store = TaskStore()
+    @UIApplicationDelegateAdaptor(HormeAppDelegate.self) private var appDelegate
+    @StateObject private var store = TaskStore.shared
     var body: some Scene {
         WindowGroup { RootView().environmentObject(store).tint(Palette.accent) }
     }
@@ -21,6 +22,7 @@ extension Date {
 
 struct TaskRoute: Identifiable {
     var task: TaskItem
+    var original: TaskItem?
     var id: UUID { task.id }
 }
 
@@ -46,7 +48,7 @@ struct RootView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { activeTaskBar }
-        .sheet(item: $editor) { route in TaskEditor(task: route.task) }
+        .sheet(item: $editor) { route in TaskEditor(task: route.task, original: route.original) }
         .sheet(isPresented: $focusOpen) { FocusView() }
         .sheet(isPresented: $settingsOpen) { SettingsView() }
         .sheet(item: $guide) { route in GuideSheet(cardID: route.id) }
@@ -54,7 +56,17 @@ struct RootView: View {
             get: { selectedTab != 2 && editor == nil && !focusOpen && !settingsOpen && guide == nil && store.error != nil },
             set: { if !$0 { store.error = nil } }
         )) { Button("閉じる", role: .cancel) { store.error = nil } } message: { Text(store.error ?? "") }
-        .onChange(of: phase) { _, newPhase in if newPhase == .active { refreshDate = Date() } }
+        .modifier(ShareJoinAlert(enabled: editor == nil && !focusOpen && !settingsOpen))
+        .onAppear {
+            store.setForeground(phase == .active)
+#if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-horme-settings-preview") { settingsOpen = true }
+#endif
+        }
+        .onChange(of: phase) { _, newPhase in
+            store.setForeground(newPhase == .active)
+            if newPhase == .active { refreshDate = Date() }
+        }
         .environment(\.refreshClock, refreshDate)
         .environment(\.openGuide, OpenGuideAction { guide = GuideRoute(id: $0) })
         .onAppear(perform: openTabForScreenshot)
@@ -153,11 +165,17 @@ struct RootView: View {
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
+            if store.connection != nil && (store.hasPendingChanges || store.syncError != nil) {
+                Button { settingsOpen = true } label: { Image(systemName: store.syncError == nil ? "icloud.and.arrow.up" : "icloud.slash") }
+                    .accessibilityLabel("同期状況を確認")
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
             Button { settingsOpen = true } label: { Image(systemName: "gearshape") }
                 .accessibilityLabel("設定とデータ")
         }
     }
-    private func edit(_ task: TaskItem) { editor = TaskRoute(task: task) }
+    private func edit(_ task: TaskItem) { editor = TaskRoute(task: task, original: store.task(task.id)) }
     private func openTabForScreenshot() {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments

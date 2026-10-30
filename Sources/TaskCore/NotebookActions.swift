@@ -1,6 +1,18 @@
 import Foundation
 
 public extension Notebook {
+    /// Stable identity prevents two offline devices from turning one idea into
+    /// two tasks. Existing unrelated records with that ID are never overwritten.
+    @discardableResult
+    mutating func convertIdea(_ id: UUID, plannedAt: Date?) -> Bool {
+        guard let idea = ideas.first(where: { $0.id == id }), !tasks.contains(where: { $0.id == id }) else { return false }
+        let lines = idea.text.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines)
+        tasks.append(TaskItem(id: idea.id, title: lines.first ?? idea.text, plannedAt: plannedAt,
+                              memo: lines.dropFirst().joined(separator: "\n"), createdAt: idea.createdAt))
+        ideas.removeAll { $0.id == id }
+        return true
+    }
+
     mutating func startTask(_ id: UUID, at now: Date = Date()) {
         guard let target = tasks.firstIndex(where: { $0.id == id && !$0.isComplete }) else { return }
         guard activeSession?.taskID != id else { return }
