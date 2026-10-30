@@ -56,7 +56,9 @@ final class BoardCardTests: XCTestCase {
     }
 
     func testCardsSurviveSaveAndOlderSavesStillLoad() throws {
-        let card = BoardCard(title: "TOEIC対策", purpose: "なぜ", goal: "どこまで", detail: "手順")
+        // Saves keep whole seconds, so use a whole-second date to compare the round trip exactly.
+        let card = BoardCard(title: "TOEIC対策", purpose: "なぜ", goal: "どこまで", detail: "手順",
+                             createdAt: Date(timeIntervalSince1970: 1_790_000_000))
         let decoded = try NotebookCodec.decode(NotebookCodec.encode(Notebook(boardCards: [card])))
         XCTAssertEqual(decoded.boardCards, [card])
 
