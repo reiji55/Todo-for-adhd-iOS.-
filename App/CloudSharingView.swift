@@ -60,8 +60,7 @@ struct SharingSection: View {
                 LabeledContent("接続先", value: store.connection?.isShared == true ? "招待された共有データ" : "自分のiCloud")
                 HStack {
                     if store.isSyncing { ProgressView().accessibilityLabel("同期中") }
-                    Label(store.isSyncing ? "同期中" : store.hasPendingChanges ? "端末に保存済み・送信待ち" : "同期済み",
-                          systemImage: store.hasPendingChanges ? "icloud.and.arrow.up" : "checkmark.icloud")
+                    Label(syncStatus, systemImage: store.syncError != nil ? "icloud.slash" : store.hasPendingChanges ? "icloud.and.arrow.up" : "checkmark.icloud")
                 }
                 if let date = store.lastSyncedAt {
                     LabeledContent("最終同期") { Text(date, format: .dateTime.month().day().hour().minute()).foregroundStyle(.secondary) }
@@ -89,6 +88,12 @@ struct SharingSection: View {
         .confirmationDialog("この端末の同期を解除しますか？", isPresented: $confirmDisconnect, titleVisibility: .visible) {
             Button("端末のデータを残して解除", role: .destructive) { store.disconnectSync() }
         } message: { Text("この端末のデータは残ります。送信待ちの変更は同期されなくなります。共有先や他の端末のデータは削除しません。") }
+    }
+
+    private var syncStatus: String {
+        if store.isSyncing { return "同期中" }
+        if store.syncError != nil { return "同期できていません" }
+        return store.hasPendingChanges ? "端末に保存済み・送信待ち" : "同期済み"
     }
 }
 

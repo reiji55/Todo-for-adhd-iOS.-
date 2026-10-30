@@ -61,7 +61,8 @@ final class CloudSyncTransport {
         guard metadata.containerIdentifier == Self.containerID else { throw CloudSyncError.wrongContainer }
         guard metadata.participantPermission == .readWrite else { throw CloudSyncError.readOnly }
         let account = try await accountID()
-        _ = try await container.accept(metadata)
+        guard metadata.participantStatus == .pending || metadata.participantStatus == .accepted else { throw CloudSyncError.readOnly }
+        if metadata.participantStatus == .pending { _ = try await container.accept(metadata) }
         let id = metadata.share.recordID.zoneID
         let connection = SyncConnection(accountID: account, zoneName: id.zoneName, ownerName: id.ownerName, isShared: true)
         let fetched = try await fetch(connection)
@@ -77,7 +78,14 @@ final class CloudSyncTransport {
         _ = try merged.materialize()
         let database = database(for: connection)
         let zoneID = zoneID(for: connection)
-        for id in merged.records.keys.sorted() {
+        // Save a converted task before its source idea's deletion marker. If a
+        // connection drops between writes, another device can still find either
+        // the idea or the task, and the durable replica completes the retry.
+        let ids = merged.records.keys.sorted { left, right in
+            if left.hasPrefix("task_") != right.hasPrefix("task_") { return left.hasPrefix("task_") }
+            return left < right
+        }
+        for id in ids {
             guard let desired = merged.records[id], fetched[id]?.value != desired else { continue }
             try Task.checkCancellation()
             // Recheck the identity before each write, including a resumed operation.
