@@ -1,3 +1,11 @@
+# 2026年10月30日：0.3.0のiCloud共有
+
+- ソース [`d6e2d92`](https://github.com/reiji55/Todo-for-adhd-iOS.-/commit/d6e2d92d95df83f0b9ee2a1585eb8e1306edce8f) の[検証実行](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/41073478624)は **success**。Xcode 26.3 / Swift 6.2.4で、コア62件＋配布設定9件のテスト、シミュレータDebug／署名なし実機Releaseのビルド、iPhone・iPadの起動確認がすべて成功しました。Linuxでもコア62件が成功しています。
+- 以前の保存ファイルからタスク・ボード・ルーティンを引き継ぎ、共有の接続先が未設定のままであることを両シミュレータで確認しました。オフライン変更、競合の統合、削除記録、再起動、保存失敗、同じアイデアの同時タスク化、ボードの並び順、ルーティンの日別チェック、共有参加時の重複防止などはコアテストの対象です。
+- [画面と起動記録](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/41073478624/artifacts/12986902438)のiPhone・iPadの共有設定画面を目視確認しました。共有対象にタスク・アイデア・ボード・ルーティンが表示され、端末ごとの画面に収まっています。招待の確認画面や共有開始後の操作は、実際のApple Accountが必要なため未検証です。
+- [シミュレータ用アプリ](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/41073478624/artifacts/12986677581)のInfo.plistから、表示名Horme、バージョン0.3.0、既存Bundle ID、端末種別1,2、CloudKit招待対応、remote-notificationを確認しました。シミュレータ用アプリは実機へインストールする配布物ではありません。Artifactsの保存期限は2026年11月6日です。
+- **0.3.0のAppleへの署名付きアップロードと、別々のApple Accountを使う実機2台での同期確認は未実施です。** [Apple側の一度だけの設定](ICLOUD-SHARING.md#apple側で一度だけ行う設定)が完了してから、最新mainでTestFlight用ワークフローを実行します。ビルド成功だけでは、Productionスキーマ・共有権限・実際の通知配信は確認できません。
+
 # 2026年10月30日：Hormeの名前と正式アイコン
 
 - 利用者が選んだ「03 ORGANIZE」のアイコンを、透過なし・1024×1024のRGB PNGとして採用しました。ホーム画面の表示名、iPhoneの見出し、iPadのサイドバー、設定の名前をHormeに変更しています。
