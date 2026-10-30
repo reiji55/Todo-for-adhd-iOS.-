@@ -58,7 +58,7 @@ def date(value):
     return value.strftime('%Y-%m-%dT%H:%M:%SZ')
 def task(title, **changes):
     item = dict(id=str(uuid.uuid4()), title=title, plannedAt=date(now),
-                scheduledTime='', isMust=False, effort='light', kind='', project='',
+                scheduledTime='', isMust=False, effort='light', project='',
                 memo='', handoff='', resumeNote='', steps=[], createdAt=date(now))
     item.update(changes)
     return item
@@ -70,7 +70,8 @@ tasks = [
     task('読みかけの本を読む', resumeNote='42ページの途中まで'),
     task('気になる資料を読む', effort='medium'),
     task('週末の買い物を考える', plannedAt=date(now + timedelta(days=1))),
-    task('金フレ 未チェック語を回す', project='TOEIC', kind='ルーチン', scheduledTime='19:00-20:30'),
+    task('提案の下書き 見出し3つ', project='仕事', scheduledTime='10:00-11:30', plannedAt=date(now + timedelta(days=1))),
+    task('歯医者の予約', scheduledTime='13:00-13:30', plannedAt=date(now + timedelta(days=2))),
 ]
 cards = [
     dict(id=str(uuid.uuid4()), title='TOEIC対策', createdAt=date(now - timedelta(days=30)),
@@ -81,7 +82,17 @@ cards = [
          purpose='タスク中の思考の散らかりを抑える', goal='', detail='【朝：3分｜呼吸カウント】\n吐くたびに1から10まで数える'),
 ]
 path.parent.mkdir(parents=True, exist_ok=True)
-path.write_text(json.dumps(dict(version=1, tasks=tasks, ideas=[], boardCards=cards), ensure_ascii=False))
+def routine(title, time, **changes):
+    item = dict(id=str(uuid.uuid4()), title=title, project='', memo='', weekdays=[1, 2, 3, 4, 5, 6, 7], time=time,
+                notify=True, isBlock=False, isPaused=False, createdAt=date(now - timedelta(days=30)), doneDays=[], moves={})
+    item.update(changes)
+    return item
+routines = [
+    routine('金フレ 未チェック語を回す', '19:00-20:30', project='TOEIC', weekdays=[2, 3, 4, 5, 6]),
+    routine('睡眠', '0:00-7:00', isBlock=True, notify=False),
+    routine('仕事（通勤含む）', '8:00-18:00', isBlock=True, notify=False, weekdays=[2, 3, 4, 5]),
+]
+path.write_text(json.dumps(dict(version=1, tasks=tasks, ideas=[], boardCards=cards, routines=routines), ensure_ascii=False))
 PY
 xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP | tee "$RESULT_DIR/launch.txt"
 sleep 5
@@ -96,6 +107,7 @@ assert [t['id'].lower() for t in state['notebook']['tasks']] == [t['id'].lower()
 assert [t['title'] for t in state['notebook']['tasks']] == [t['title'] for t in legacy['tasks']], 'Task text must survive migration'
 assert len(state['notebook']['tasks']) == len(legacy['tasks']), 'Existing sample tasks must survive migration'
 assert [c['title'] for c in state['notebook']['boardCards']] == [c['title'] for c in legacy['boardCards']], 'Board cards must survive migration'
+assert len(state['notebook']['routines']) == len(legacy['routines']), 'Routines must survive migration'
 assert state.get('connection') is None, 'Sharing must require user setup'
 print('Verified atomic migration of existing tasks; cloud sync stays off until configured')
 PY
@@ -103,10 +115,13 @@ xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji5
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/sharing-settings.png"
 # -uiTab and -uiOpenFirstCard exist only in Debug builds, for these captures.
-xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -uiTab 3 >/dev/null
+xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -uiTab 1 >/dev/null
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/week.png"
+xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -uiTab 4 >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board.png"
-xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -uiTab 3 -uiOpenFirstCard >/dev/null
+xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -uiTab 4 -uiOpenFirstCard >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board-card.png"
 # Screenshots and launch logs verify startup and layout, not every interaction.

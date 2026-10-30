@@ -95,6 +95,18 @@ public struct SharedStoreRepository {
         try data.write(to: beforeSharing ? safetyBackupURL : syncBackupURL, options: .atomic)
     }
 
+    /// Moves an unreadable state file aside and starts with empty data, without migrating the old
+    /// notebook again. Used when there is no earlier save to recover from.
+    public func startFresh() throws -> SharedStoreState {
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.moveItem(at: url, to: url.appendingPathExtension("unreadable-\(UUID().uuidString)"))
+        }
+        let state = SharedStoreState()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try state.encoded().write(to: url, options: .atomic)
+        return state
+    }
+
     public func recoverPrevious() throws -> SharedStoreState {
         // A failed first migration still uses the original recovery path.
         guard FileManager.default.fileExists(atPath: url.path) else {

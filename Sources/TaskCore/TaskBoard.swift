@@ -39,13 +39,15 @@ public struct TaskBoard {
 
     public func scheduled(_ tasks: [TaskItem], for date: Date) -> [TaskItem] {
         tasks.filter { !$0.isComplete && $0.plannedAt.map { calendar.isDate($0, inSameDayAs: date) } == true }
-            .sorted { a, b in
-                if a.isMust != b.isMust { return a.isMust }
-                let at = a.scheduledTime.isEmpty ? "99:99" : a.scheduledTime
-                let bt = b.scheduledTime.isEmpty ? "99:99" : b.scheduledTime
-                if at != bt { return at < bt }
-                return stableOrder(a, b)
-            }
+            .sorted(by: scheduledOrder)
+    }
+
+    /// Must first, then by start time, untimed last.
+    public func scheduledOrder(_ a: TaskItem, _ b: TaskItem) -> Bool {
+        if a.isMust != b.isMust { return a.isMust }
+        let at = a.slot?.start ?? Int.max, bt = b.slot?.start ?? Int.max
+        if at != bt { return at < bt }
+        return stableOrder(a, b)
     }
 
     public func pastPlanned(_ tasks: [TaskItem], now: Date) -> [TaskItem] {

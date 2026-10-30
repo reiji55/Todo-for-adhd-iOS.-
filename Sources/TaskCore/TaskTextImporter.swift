@@ -55,7 +55,6 @@ public enum TaskTextImporter {
                 result.tasks.append(TaskItem(
                     title: title, plannedAt: day,
                     scheduledTime: hasFields ? value(fields[0]) : "",
-                    kind: hasFields ? value(fields[1]) : "",
                     project: hasFields ? value(fields[2]) : "",
                     createdAt: now.addingTimeInterval(Double(offset)),
                     completedAt: line.hasPrefix("- [ ] ") ? nil : now

@@ -39,6 +39,20 @@ final class PersistenceTests: XCTestCase {
         XCTAssertTrue(names.contains { $0.contains("unreadable-") })
     }
 
+    func testStartingFreshKeepsUnreadableStateAndDoesNotMigrateAgain() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repo = SharedStoreRepository(directory: directory)
+        try repo.legacy.save(Notebook(tasks: [TaskItem(title: "移行前")]))
+        _ = try repo.load()
+        try Data("broken".utf8).write(to: repo.url)
+        XCTAssertThrowsError(try repo.load())
+        XCTAssertTrue(try repo.startFresh().notebook.isEmpty)
+        XCTAssertTrue(try repo.load().notebook.isEmpty)
+        let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        XCTAssertTrue(names.contains { $0.contains("unreadable-") })
+    }
+
     func testTaskTextImportKeepsAIHandoffSeparateFromNextActionAndMergesOnce() {
         let input = """
         # 2026-10-21
@@ -56,8 +70,8 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(result.tasks[0].handoff, "AIに検索を頼む")
         XCTAssertTrue(result.tasks[0].steps.isEmpty)
         XCTAssertTrue(result.tasks[0].isMust)
-        XCTAssertEqual(result.tasks[0].kind, "前進")
         XCTAssertEqual(result.tasks[0].scheduledTime, "10:00-11:00")
+        XCTAssertEqual(result.tasks[0].slot, TimeSlot(start: 600, duration: 60))
         XCTAssertNil(result.tasks[1].plannedAt)
         XCTAssertTrue(result.tasks[2].isComplete)
         let twice = TaskTextImporter.merge(TaskTextImporter.parse(input).tasks, into: result.tasks)

@@ -22,12 +22,19 @@ struct SettingsView: View {
     @State private var importSummary = ""
     @State private var confirmImport = false
     @State private var showDemoConfirm = false
+    @State private var showStartOver = false
     @State private var localError: String?
 
     var body: some View {
         NavigationStack {
             Form {
                 SharingSection()
+                NotificationSettingsSection()
+                Section {
+                    NavigationLink { RoutineSettingsView() } label: {
+                        LabeledContent("ルーティン", value: "\(store.notebook.routines.filter { !$0.isPaused }.count)件")
+                    }
+                } footer: { Text("くり返しの予定。「すべて」の画面からも開けます。") }
                 Section("優先づけのルール") {
                     Label("必須・今日までの締切は上段に常時表示", systemImage: "pin")
                     Text("候補は最大3件。明日が締切 → 今日の予定 → 中断した続き → それ以外の順に並びます。同じ優先度の中で、選んだ調子に近い負荷を先に出します。")
@@ -50,7 +57,12 @@ struct SettingsView: View {
                     Text("このアプリのJSONバックアップ、または3日間タスクの tasks.txt・board.json を選べます。tasks.txt と board.json は重複を避けて追加します。")
                         .font(.caption).foregroundStyle(.secondary)
                     if store.loadFailed {
-                        Button("直前の保存から復旧する") { store.recover() }
+                        if store.canRecoverPrevious {
+                            Button("直前の保存から復旧する") { store.recover() }
+                        }
+                        Button("読めないデータを残して空から始める", role: .destructive) { showStartOver = true }
+                        Text("読めないデータは削除せず端末内に残します。空にしたあと、バックアップを読み込んで戻せます。")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 } header: { Text("データ") }
                 footer: { Text("端末に自動保存します。共有を設定すると他の端末と同期します。同期中にバックアップで置き換えると、共有先にも変更が反映されます。アプリを削除する前にはバックアップを書き出してください。") }
@@ -60,7 +72,7 @@ struct SettingsView: View {
                 } footer: { Text("初期状態が空のときだけ使えます。サンプルは自由に編集・削除できます。") }
                 Section("この版について") {
                     Text("Horme · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
-                    Text("タスクの追加・整理・着手と再開、やり方を書き溜めるボードを中心にした版です。週のカレンダー表示、通知、AI自動連携はこの版には含めていません。")
+                    Text("タスクとルーティン、週の時間割、通知、やり方を書き溜めるボードを備えた版です。Claudeとの自動連携はまだ含めていません。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -68,6 +80,9 @@ struct SettingsView: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } } }
             .sheet(item: $store.sharingSheet) { item in CloudSharingView(item: item) }
             .modifier(ShareJoinAlert())
+            .confirmationDialog("空の状態から始めますか？", isPresented: $showStartOver, titleVisibility: .visible) {
+                Button("空から始める", role: .destructive) { store.startOver() }
+            } message: { Text("読めないデータは端末内に残したまま、新しく保存を始めます。") }
             .fileExporter(isPresented: $exporter, document: document, contentType: .json, defaultFilename: "3days-backup") { result in
                 if case .failure(let error) = result { localError = error.localizedDescription }
             }
@@ -88,7 +103,7 @@ struct SettingsView: View {
                     } else if url.pathExtension.lowercased() == "json" {
                         let book = try NotebookCodec.decode(data)
                         importedBook = book
-                        importSummary = "現在の内容を、バックアップのタスク\(book.tasks.count)件・アイデア\(book.ideas.count)件・ボードのカード\(book.boardCards.count)件に置き換えます。直前の内容は取り消し操作で戻せます。"
+                        importSummary = "現在の内容を、バックアップのタスク\(book.tasks.count)件・アイデア\(book.ideas.count)件・ボードのカード\(book.boardCards.count)件・ルーティン\(book.routines.count)件に置き換えます。直前の内容は取り消し操作で戻せます。"
                         if store.connection != nil { importSummary += "\n\nこの置き換えと削除は、共有している他の端末にも反映されます。" }
                     } else {
                         guard let text = String(data: data, encoding: .utf8) else { throw NotebookError.invalidData }
@@ -138,12 +153,15 @@ struct SettingsView: View {
             book.tasks = [
                 TaskItem(title: "提出書類を送る", plannedAt: now, deadline: now, isMust: true,
                          effort: .light, memo: "これはサンプルです。", steps: [Step(title: "宛先を確認する"), Step(title: "メールに添付して送る")]),
-                TaskItem(title: "予約の電話をする", plannedAt: now, effort: .light),
                 TaskItem(title: "読みかけの本を読む", effort: .light, resumeNote: "42ページの途中まで"),
                 TaskItem(title: "提案の下書きをつくる", deadline: tomorrow, effort: .heavy, steps: [Step(title: "見出しを3つ書く")]),
                 TaskItem(title: "週末の買い物を考える", plannedAt: tomorrow),
                 TaskItem(title: "気になる資料を読む", effort: .medium),
-                TaskItem(title: "部屋をリセットする（15分）", plannedAt: now, kind: "ルーチン", project: "部屋のリセット")
+                TaskItem(title: "予約の電話をする（14時から受付）", plannedAt: now, scheduledTime: "14:00-14:15", effort: .light)
+            ]
+            book.routines = [
+                Routine(title: "部屋をリセットする", project: "部屋のリセット", time: "21:00-21:15", createdAt: now),
+                Routine(title: "睡眠", time: "0:00-7:00", notify: false, isBlock: true, createdAt: now)
             ]
             book.boardCards = [
                 BoardCard(title: "部屋のリセット",

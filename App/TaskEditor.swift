@@ -44,7 +44,9 @@ struct TaskEditor: View {
                             Button("明日") { task.plannedAt = Calendar.current.date(byAdding: .day, value: 1, to: Date()) }
                         }.buttonStyle(.borderless)
                     }
-                    TextField("時間帯（例：10:00-11:00・午前）", text: $task.scheduledTime)
+                    if task.plannedAt != nil {
+                        TimeSlotFields(slot: $task.slot, legacyLabel: task.scheduledTime) { task.scheduledTime = "" }
+                    }
                 }
                 Section {
                     Toggle("締切がある", isOn: Binding(
@@ -56,6 +58,11 @@ struct TaskEditor: View {
                         ), displayedComponents: .date)
                     }
                 } footer: { Text("予定日を変えても締切は変わりません。締切日になったら必ず上段に表示します。") }
+                if (task.plannedAt != nil && task.slot != nil) || task.deadline != nil {
+                    Section {
+                        Toggle("通知", isOn: $task.notify)
+                    } footer: { Text("始まる時刻と締切の日の朝にバナーで知らせます。タイミングは設定で変えられます。") }
+                }
                 Section {
                     ForEach($task.steps) { $step in
                         HStack {
@@ -112,7 +119,6 @@ struct TaskEditor: View {
                                 .accessibilityLabel("ボードのカードから選ぶ")
                         }
                     }
-                    TextField("種類（前進・ルーチンなど）", text: $task.kind)
                     Picker("取り組む負荷", selection: $task.effort) {
                         ForEach(Effort.allCases) { Text($0.label).tag($0) }
                     }
@@ -169,6 +175,7 @@ struct FocusView: View {
     @Environment(\.scenePhase) private var phase
     @State private var note = ""
     @State private var lastLoadedID: UUID?
+    @State private var followUp: TaskItem?
 
     var body: some View {
         NavigationStack {
@@ -202,9 +209,7 @@ struct FocusView: View {
                             Text("別のタスクに移っても、このメモは残ります。")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        Button {
-                            if store.finishAction() { dismiss() }
-                        } label: {
+                        Button { finish(task, session: session) } label: {
                             Label(session.stepID == nil ? "タスクを完了" : "この一手を完了", systemImage: "checkmark")
                                 .frame(maxWidth: .infinity).padding(.vertical, 8)
                         }.buttonStyle(.borderedProminent).controlSize(.large)
@@ -212,10 +217,6 @@ struct FocusView: View {
                             if store.pause(note: note) { dismiss() }
                         } label: { Text("ここで中断する").frame(maxWidth: .infinity).padding(.vertical, 8) }
                             .buttonStyle(.bordered).controlSize(.large)
-                        if session.stepID != nil {
-                            Text("工程の完了後も、タスクは一覧に残ります。全部終わったら一覧のチェックで完了にできます。")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
                     }.padding(24)
                 }
                 .navigationTitle("今やるひとつ").navigationBarTitleDisplayMode(.inline)
@@ -227,11 +228,29 @@ struct FocusView: View {
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } } }
             }
         }
+        .confirmationDialog(followUp?.nextStep == nil ? "工程がすべて終わりました" : "一手が終わりました", isPresented: Binding(
+            get: { followUp != nil }, set: { if !$0 { followUp = nil } }
+        ), titleVisibility: .visible, presenting: followUp) { task in
+            if let next = task.nextStep {
+                Button("続けて「\(next.title)」へ") { store.start(task) }
+            } else {
+                Button("タスクを完了にする") { store.complete(task.id); dismiss() }
+            }
+            Button("ここで一区切り", role: .cancel) { dismiss() }
+        }
         // Saving once on leaving keeps the undo history free of one entry per keystroke.
         .onDisappear(perform: saveNote)
         .onChange(of: phase) { _, newPhase in if newPhase != .active { saveNote() } }
         .storeErrorAlert()
     }
+    private func finish(_ task: TaskItem, session: Session) {
+        guard store.finishAction() else { return }
+        note = ""
+        // A finished step asks what comes next instead of closing silently; a finished task just closes.
+        if session.stepID != nil, let updated = store.task(task.id), !updated.isComplete { followUp = updated }
+        else { dismiss() }
+    }
+
     private func saveNote() {
         guard let id = lastLoadedID, store.notebook.activeSession?.taskID == id,
               let task = store.task(id), note != task.resumeNote else { return }

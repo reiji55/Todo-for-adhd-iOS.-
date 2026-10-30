@@ -8,6 +8,9 @@ final class TaskStore: ObservableObject {
     static let shared = TaskStore()
     @Published private(set) var notebook = Notebook()
     @Published var error: String?
+    /// Items checked off while this screen is open. They stay visible, struck through, so a mistaken tap
+    /// can be seen and undone; leaving the screen clears them. Never saved or synced.
+    @Published private(set) var recentlyDone: Set<String> = []
     @Published private(set) var loadFailed = false
     @Published private(set) var canUndo = false
     private var history: [Notebook] = []
@@ -102,11 +105,85 @@ final class TaskStore: ObservableObject {
     }
 
     func complete(_ id: UUID) {
-        commit { book in
+        let finishing = task(id)?.isComplete == false
+        let saved = commit { book in
             guard let i = book.tasks.firstIndex(where: { $0.id == id }) else { return }
             book.tasks[i].completedAt = book.tasks[i].isComplete ? nil : Date()
             if book.activeSession?.taskID == id { book.activeSession = nil }
         }
+        if saved && finishing { recentlyDone.insert("task-\(id.uuidString)") }
+    }
+
+    /// Checks or unchecks one agenda row, whether it is a task or one day of a routine.
+    func toggle(_ item: AgendaItem) {
+        switch item.source {
+        case .task(let id): complete(id)
+        case .routine(let id, let day):
+            let finishing = !item.isDone
+            if commit({ $0.toggleRoutine(id, originalDay: day) }) && finishing { recentlyDone.insert(item.id) }
+        }
+    }
+
+    func clearRecentlyDone() { if !recentlyDone.isEmpty { recentlyDone = [] } }
+
+    /// Moves a row to another day and time. A routine moves for that one day only.
+    func move(_ item: AgendaItem, to day: Date, slot: TimeSlot?) {
+        commit { book in
+            switch item.source {
+            case .task(let id): book.moveTask(id, to: day, slot: slot)
+            case .routine(let id, let original):
+                book.moveRoutine(id, originalDay: original, toDay: DayKey.of(day), time: slot?.label ?? "")
+            }
+        }
+    }
+
+    // MARK: Leftovers from earlier days
+
+    func plan(_ ids: Set<UUID>, on day: Date?) {
+        commit { book in
+            for i in book.tasks.indices where ids.contains(book.tasks[i].id) {
+                book.tasks[i].plannedAt = day
+                // A time from an earlier day rarely still fits; keep the day, let the person pick a time again.
+                if day == nil { book.tasks[i].slot = nil }
+            }
+        }
+    }
+
+    func completeAll(_ ids: Set<UUID>) {
+        commit { book in
+            for i in book.tasks.indices where ids.contains(book.tasks[i].id) && !book.tasks[i].isComplete {
+                book.tasks[i].completedAt = Date()
+            }
+            if let active = book.activeSession, ids.contains(active.taskID) { book.activeSession = nil }
+        }
+    }
+
+    func deleteAll(_ ids: Set<UUID>) {
+        commit { book in
+            book.tasks.removeAll { ids.contains($0.id) }
+            if let active = book.activeSession, ids.contains(active.taskID) { book.activeSession = nil }
+        }
+    }
+
+    // MARK: Routines
+
+    func routine(_ id: UUID) -> Routine? { notebook.routines.first { $0.id == id } }
+
+    @discardableResult
+    func upsertRoutine(_ routine: Routine) -> Bool {
+        commit { book in
+            if let i = book.routines.firstIndex(where: { $0.id == routine.id }) {
+                // Keep checks and moves made elsewhere while the editor was open.
+                var merged = routine
+                merged.doneDays = book.routines[i].doneDays
+                merged.moves = book.routines[i].moves
+                book.routines[i] = merged
+            } else { book.routines.append(routine) }
+        }
+    }
+
+    func deleteRoutine(_ id: UUID) {
+        commit { $0.routines.removeAll { $0.id == id } }
     }
 
     func delete(_ id: UUID) {
@@ -158,8 +235,18 @@ final class TaskStore: ObservableObject {
     @discardableResult
     func upsertCard(_ card: BoardCard) -> Bool {
         commit { book in
-            if let i = book.boardCards.firstIndex(where: { $0.id == card.id }) { book.boardCards[i] = card }
-            else { book.boardCards.insert(card, at: 0) }
+            if let i = book.boardCards.firstIndex(where: { $0.id == card.id }) {
+                // Renaming a card would silently cut its link to tasks named after it, so carry them along.
+                if BoardLink.normalized(book.boardCards[i].title) != BoardLink.normalized(card.title) {
+                    let linkedTasks = Set(BoardLink.tasks(for: book.boardCards[i], in: book.tasks, cards: book.boardCards).map(\.id))
+                    for j in book.tasks.indices where linkedTasks.contains(book.tasks[j].id) { book.tasks[j].project = card.title }
+                    for j in book.routines.indices
+                    where BoardLink.card(forProject: book.routines[j].project, in: book.boardCards)?.id == card.id {
+                        book.routines[j].project = card.title
+                    }
+                }
+                book.boardCards[i] = card
+            } else { book.boardCards.insert(card, at: 0) }
         }
     }
 
@@ -169,6 +256,16 @@ final class TaskStore: ObservableObject {
 
     func moveCards(from source: IndexSet, to destination: Int) {
         commit { $0.boardCards.move(fromOffsets: source, toOffset: destination) }
+    }
+
+    var canRecoverPrevious: Bool { FileManager.default.fileExists(atPath: repository.previousURL.path) }
+
+    /// The unreadable file stays on the device; this only lets the person continue or restore a backup.
+    func startOver() {
+        do {
+            state = try repository.startFresh(); notebook = state.notebook; loadFailed = false
+            history = []; canUndo = false
+        } catch { self.error = "読めないデータを退避できませんでした。\(error.localizedDescription)" }
     }
 
     func recover() {
@@ -325,6 +422,7 @@ final class TaskStore: ObservableObject {
             var copy = value
             copy.tasks.sort { $0.id.uuidString < $1.id.uuidString }
             copy.ideas.sort { $0.id.uuidString < $1.id.uuidString }
+            copy.routines.sort { $0.id.uuidString < $1.id.uuidString }
             return try? NotebookCodec.encode(copy)
         }
         return normalized(left) == normalized(right)

@@ -46,7 +46,6 @@ public struct TaskItem: Codable, Identifiable, Equatable {
     /// Explicitly chosen by the person; it is never inferred from mood or score.
     public var isMust: Bool
     public var effort: Effort
-    public var kind: String
     public var project: String
     public var memo: String
     public var handoff: String
@@ -57,19 +56,21 @@ public struct TaskItem: Codable, Identifiable, Equatable {
     public var completedAt: Date?
     /// Only affects suggestions. Never hides a task from the obligation or all-task lists.
     public var suggestionDeferredUntil: Date?
+    /// Announce the start time with a banner. On unless the person turns it off for this task.
+    public var notify: Bool
 
     public init(id: UUID = UUID(), title: String, plannedAt: Date? = nil,
                 scheduledTime: String = "", deadline: Date? = nil, isMust: Bool = false,
-                effort: Effort = .medium, kind: String = "", project: String = "", memo: String = "",
+                effort: Effort = .medium, project: String = "", memo: String = "",
                 handoff: String = "", resumeNote: String = "", steps: [Step] = [],
                 createdAt: Date = Date(), lastStartedAt: Date? = nil, completedAt: Date? = nil,
-                suggestionDeferredUntil: Date? = nil) {
+                suggestionDeferredUntil: Date? = nil, notify: Bool = true) {
         self.id = id; self.title = title; self.plannedAt = plannedAt
         self.scheduledTime = scheduledTime; self.deadline = deadline; self.isMust = isMust
-        self.effort = effort; self.kind = kind; self.project = project; self.memo = memo; self.handoff = handoff
+        self.effort = effort; self.project = project; self.memo = memo; self.handoff = handoff
         self.resumeNote = resumeNote; self.steps = steps; self.createdAt = createdAt
         self.lastStartedAt = lastStartedAt; self.completedAt = completedAt
-        self.suggestionDeferredUntil = suggestionDeferredUntil
+        self.suggestionDeferredUntil = suggestionDeferredUntil; self.notify = notify
     }
     public var isComplete: Bool { completedAt != nil }
     public var nextStep: Step? { steps.first { !$0.isDone } }
@@ -131,11 +132,14 @@ public struct Notebook: Codable, Equatable {
     public var ideas: [Idea]
     /// Kept in the person's chosen order.
     public var boardCards: [BoardCard]
+    public var routines: [Routine]
     public var activeSession: Session?
-    public init(tasks: [TaskItem] = [], ideas: [Idea] = [], boardCards: [BoardCard] = [], activeSession: Session? = nil) {
-        self.tasks = tasks; self.ideas = ideas; self.boardCards = boardCards; self.activeSession = activeSession
+    public init(tasks: [TaskItem] = [], ideas: [Idea] = [], boardCards: [BoardCard] = [], routines: [Routine] = [],
+                activeSession: Session? = nil) {
+        self.tasks = tasks; self.ideas = ideas; self.boardCards = boardCards; self.routines = routines
+        self.activeSession = activeSession
     }
-    public var isEmpty: Bool { tasks.isEmpty && ideas.isEmpty && boardCards.isEmpty }
+    public var isEmpty: Bool { tasks.isEmpty && ideas.isEmpty && boardCards.isEmpty && routines.isEmpty }
 }
 
 // Decoding tolerates fields missing from older saves and backups, so adding a field never locks people out of their data.
@@ -150,8 +154,8 @@ extension Step {
 
 extension TaskItem {
     enum CodingKeys: String, CodingKey {
-        case id, title, plannedAt, scheduledTime, deadline, isMust, effort, kind, project, memo, handoff
-        case resumeNote, steps, createdAt, lastStartedAt, completedAt, suggestionDeferredUntil
+        case id, title, plannedAt, scheduledTime, deadline, isMust, effort, project, memo, handoff
+        case resumeNote, steps, createdAt, lastStartedAt, completedAt, suggestionDeferredUntil, notify
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -162,13 +166,14 @@ extension TaskItem {
                   deadline: try c.decodeIfPresent(Date.self, forKey: .deadline),
                   isMust: try c.decodeIfPresent(Bool.self, forKey: .isMust) ?? false,
                   effort: try c.decodeIfPresent(Effort.self, forKey: .effort) ?? .medium,
-                  kind: try text(.kind), project: try text(.project), memo: try text(.memo),
+                  project: try text(.project), memo: try text(.memo),
                   handoff: try text(.handoff), resumeNote: try text(.resumeNote),
                   steps: try c.decodeIfPresent([Step].self, forKey: .steps) ?? [],
                   createdAt: try c.decode(Date.self, forKey: .createdAt),
                   lastStartedAt: try c.decodeIfPresent(Date.self, forKey: .lastStartedAt),
                   completedAt: try c.decodeIfPresent(Date.self, forKey: .completedAt),
-                  suggestionDeferredUntil: try c.decodeIfPresent(Date.self, forKey: .suggestionDeferredUntil))
+                  suggestionDeferredUntil: try c.decodeIfPresent(Date.self, forKey: .suggestionDeferredUntil),
+                  notify: try c.decodeIfPresent(Bool.self, forKey: .notify) ?? true)
     }
 }
 
@@ -184,12 +189,13 @@ extension BoardCard {
 }
 
 extension Notebook {
-    enum CodingKeys: String, CodingKey { case version, tasks, ideas, boardCards, activeSession }
+    enum CodingKeys: String, CodingKey { case version, tasks, ideas, boardCards, routines, activeSession }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(tasks: try c.decodeIfPresent([TaskItem].self, forKey: .tasks) ?? [],
                   ideas: try c.decodeIfPresent([Idea].self, forKey: .ideas) ?? [],
                   boardCards: try c.decodeIfPresent([BoardCard].self, forKey: .boardCards) ?? [],
+                  routines: try c.decodeIfPresent([Routine].self, forKey: .routines) ?? [],
                   activeSession: try c.decodeIfPresent(Session.self, forKey: .activeSession))
         version = try c.decode(Int.self, forKey: .version)
     }
@@ -222,7 +228,10 @@ public enum NotebookCodec {
               notebook.tasks.allSatisfy({ !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && Set($0.steps.map(\.id)).count == $0.steps.count }),
               notebook.ideas.allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
               Set(notebook.boardCards.map(\.id)).count == notebook.boardCards.count,
-              notebook.boardCards.allSatisfy({ !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+              notebook.boardCards.allSatisfy({ !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              Set(notebook.routines.map(\.id)).count == notebook.routines.count,
+              notebook.routines.allSatisfy({ !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                  && !$0.weekdays.isEmpty && $0.weekdays.allSatisfy((1...7).contains) })
         else { throw NotebookError.invalidData }
         if let session = notebook.activeSession {
             guard notebook.tasks.contains(where: { $0.id == session.taskID && !$0.isComplete }) else {
