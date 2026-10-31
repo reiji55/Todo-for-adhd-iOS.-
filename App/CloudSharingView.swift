@@ -1,5 +1,6 @@
 import SwiftUI
 import CloudKit
+import UIKit
 
 struct PendingCloudJoin: Identifiable {
     let id = UUID()
@@ -29,28 +30,53 @@ struct CloudSharingSheet: Identifiable {
     var container: CKContainer
 }
 
+/// Shows Apple's sharing screen. It is presented directly from UIKit: wrapped in a SwiftUI sheet,
+/// UICloudSharingController comes up blank or closes at once, so the invite link never appears.
 @MainActor
-struct CloudSharingView: UIViewControllerRepresentable {
-    @EnvironmentObject private var store: TaskStore
-    let item: CloudSharingSheet
-    func makeUIViewController(context: Context) -> UICloudSharingController {
+enum CloudSharingPresenter {
+    /// UICloudSharingController holds its delegate weakly; keep it alive while the screen is up.
+    private static var delegate: Coordinator?
+
+    static func present(_ item: CloudSharingSheet, store: TaskStore) {
+        guard let top = topViewController() else {
+            store.syncError = "共有の画面を開けませんでした。設定を閉じて、もう一度お試しください。"
+            return
+        }
         let controller = UICloudSharingController(share: item.share, container: item.container)
         controller.availablePermissions = [.allowReadWrite, .allowPrivate]
-        controller.delegate = context.coordinator
-        return controller
+        let coordinator = Coordinator(store: store)
+        delegate = coordinator
+        controller.delegate = coordinator
+        // iPad shows it as a popover, which needs an anchor or it fails to present.
+        if let popover = controller.popoverPresentationController {
+            popover.sourceView = top.view
+            popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.midY, width: 1, height: 1)
+            popover.permittedArrowDirections = []
+        }
+        top.present(controller, animated: true)
     }
-    func updateUIViewController(_ controller: UICloudSharingController, context: Context) {}
-    func makeCoordinator() -> Coordinator { Coordinator(store: store) }
+
+    private static func topViewController() -> UIViewController? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let window = scenes.flatMap(\.windows).first { $0.isKeyWindow } ?? scenes.first?.windows.first
+        var top = window?.rootViewController
+        while let presented = top?.presentedViewController, !presented.isBeingDismissed { top = presented }
+        return top
+    }
 
     final class Coordinator: NSObject, UICloudSharingControllerDelegate {
         let store: TaskStore
         init(store: TaskStore) { self.store = store }
         func itemTitle(for csc: UICloudSharingController) -> String? { "Hormeの共有データ" }
         func cloudSharingController(_ csc: UICloudSharingController, failedToSaveShareWithError error: Error) {
-            store.syncError = TaskStore.describe(error)
+            Task { @MainActor in store.syncError = TaskStore.describe(error) }
         }
-        func cloudSharingControllerDidSaveShare(_ csc: UICloudSharingController) { store.requestSync() }
-        func cloudSharingControllerDidStopSharing(_ csc: UICloudSharingController) { store.sharingStopped() }
+        func cloudSharingControllerDidSaveShare(_ csc: UICloudSharingController) {
+            Task { @MainActor in store.requestSync() }
+        }
+        func cloudSharingControllerDidStopSharing(_ csc: UICloudSharingController) {
+            Task { @MainActor in store.sharingStopped() }
+        }
     }
 }
 

@@ -79,7 +79,11 @@ struct SettingsView: View {
             }
             .navigationTitle("設定とデータ").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } } }
-            .sheet(item: $store.sharingSheet) { item in CloudSharingView(item: item) }
+            .onChange(of: store.sharingSheet?.id) { _, id in
+                guard id != nil, let item = store.sharingSheet else { return }
+                store.sharingSheet = nil
+                CloudSharingPresenter.present(item, store: store)
+            }
             .modifier(ShareJoinAlert())
             .confirmationDialog("空の状態から始めますか？", isPresented: $showStartOver, titleVisibility: .visible) {
                 Button("空から始める", role: .destructive) { store.startOver() }
