@@ -6,9 +6,9 @@ SwiftUIで作成したiOS 17以降向けのタスク管理アプリ、Hormeで�
 
 別々のApple AccountのiPhone/iPadで、タスク・アイデア・ボード・ルーティン・メモ・完了状態を共有する機能を追加しました。初回は「設定とデータ」から共有を開始し、もう片方の端末でiCloudの招待を承認します。入力は端末に保存し、未送信の変更を保持して再接続時に同期します。既存データは移行し、共有開始時に件数を確認して統合します。
 
-**Apple側のiCloud権限・Productionスキーマ設定と、異なるApple Accountの実機2台での確認が必要です。** [設定・使い方・競合の扱い](docs/ICLOUD-SHARING.md)。下記の0.2.1の配布実績は、0.3.0の実機同期が検証済みであることを意味しません。
+**Horme 0.3.0（ビルド1.6.1）の署名・Appleの検証・アップロードが成功しました。** [配信結果](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/41189182977)。Apple側の処理が完了するとTestFlightで更新できます。実機への更新と、異なるApple Accountの2台での同期確認はまだ行っていません。[設定・使い方・競合の扱い](docs/ICLOUD-SHARING.md)
 
-0.3.0の[ビルド確認](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/41073478624)は成功しました。コア62件＋配布設定9件、シミュレータ／署名なし実機向けビルド、iPhone・iPadの起動と既存データの移行を確認しています。共有設定の画面も目視済みです。0.3.0のTestFlight送信と実機2台での同期確認はまだ行っていません。[検証の詳細](docs/BUILD-VALIDATION.md)
+0.3.0の[ビルド確認](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/41177422947)は成功しました。コア62件＋配布設定15件、シミュレータ／署名なし実機向けビルド、iPhone・iPadの起動と既存データの移行を確認しています。共有設定の画面は先行する同じアプリコードのビルドで目視済みです。[検証の詳細](docs/BUILD-VALIDATION.md)
 
 **Horme 0.2.1（ビルド1.4.1）の署名・ビルド・Appleへのアップロードが完了しました。採用アイコンとHormeの表示名を反映しています。iPhone・iPadシミュレータの起動・画面と、ビルド済みアプリのアイコンを確認済みです。** [検証結果](docs/BUILD-VALIDATION.md)
 

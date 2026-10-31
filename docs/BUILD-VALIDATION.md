@@ -1,9 +1,16 @@
+# 2026年10月31日：0.3.0のTestFlightアップロード成功
+
+- **Horme 0.3.0（ビルド1.6.1）のAppleへのアップロードが成功しました。** [配信実行](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/41189182977)は `completed / success`。対象ソースは [`3eed539`](https://github.com/reiji55/Todo-for-adhd-iOS.-/commit/3eed539929715c5b10cfd6e67de97f09520fbf9d) です。
+- コア62件＋配布設定15件のテスト、iCloudを含む署名権限の確認、署名付きアーカイブ、IPA書き出し、Appleの検証・アップロードが成功しています。アップロードログは `UPLOAD SUCCEEDED with no errors`。別途、同じソースの[ビルド確認](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/41177422947)も成功し、iPhone・iPad両シミュレータの起動・データ移行を通過しています。
+- 前回失敗時と同じ配布プロファイルを使用し、App ID・iCloudコンテナ・CloudKit・Production環境・Push権限がすべてOKでした。CloudKitの許可方式は `all services (*)` と確認でき、独自チェックの誤判定を修正したことで配信を完了できました。
+- Apple側のスキーマ設定は利用者から完了報告を受けています。Appleでのアップロード後の処理、TestFlightでの表示・実機への更新、異なるApple Accountの2台での招待・同期はまだ確認していません。Apple側の処理完了後、両端末を更新し、[共有の使い方](ICLOUD-SHARING.md#使い方)に沿って確認します。
+
 # 2026年10月31日：配布プロファイルの判定修正
 
 - [0.3.0の最初の配信実行](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/41166633467)では、コア62件とApple APIの認証が成功し、新しい配布プロファイルも作成されました。その後、独自のiCloud権限チェックで停止しています。アーカイブ・Appleへのアップロードには進んでいません。
-- 確認処理が、Appleの[TN2415](https://developer.apple.com/library/archive/technotes/tn2415/_index.html)に記載された `com.apple.developer.icloud-services = "*"`（全サービスの許可）を不許可と判定する不具合を修正しました。実際の失敗ログには権限の内訳がなかったため、この不具合だけが停止原因だったかは次の実行で確認します。
+- 確認処理が、Appleの[TN2415](https://developer.apple.com/library/archive/technotes/tn2415/_index.html)に記載された `com.apple.developer.icloud-services = "*"`（全サービスの許可）を不許可と判定する不具合を修正しました。上記の再配信で同じプロファイルの許可方式を確認し、配信成功まで検証しました。
 - 修正後も、対象App ID・iCloudコンテナの一致・Production環境・配布用Push権限をすべて検証します。ログには各項目のOK/MISSINGと許可方式だけを出し、秘密鍵・プロファイル本文・アカウント情報は出しません。
-- 配布スクリプトのテスト15件がローカルで成功しました。TestFlight用ワークフローにも同じテストを追加しています。最新mainから新規実行が必要です。実機2台の同期確認は引き続き未実施です。
+- 配布スクリプトのテスト15件がローカルとTestFlight用ワークフローの両方で成功しました。実機2台の同期確認は引き続き未実施です。
 
 # 2026年10月30日：0.3.0のiCloud共有
 
@@ -11,7 +18,7 @@
 - 以前の保存ファイルからタスク・ボード・ルーティンを引き継ぎ、共有の接続先が未設定のままであることを両シミュレータで確認しました。オフライン変更、競合の統合、削除記録、再起動、保存失敗、同じアイデアの同時タスク化、ボードの並び順、ルーティンの日別チェック、共有参加時の重複防止などはコアテストの対象です。
 - [画面と起動記録](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/41073478624/artifacts/12986902438)のiPhone・iPadの共有設定画面を目視確認しました。共有対象にタスク・アイデア・ボード・ルーティンが表示され、端末ごとの画面に収まっています。招待の確認画面や共有開始後の操作は、実際のApple Accountが必要なため未検証です。
 - [シミュレータ用アプリ](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/41073478624/artifacts/12986677581)のInfo.plistから、表示名Horme、バージョン0.3.0、既存Bundle ID、端末種別1,2、CloudKit招待対応、remote-notificationを確認しました。シミュレータ用アプリは実機へインストールする配布物ではありません。Artifactsの保存期限は2026年11月6日です。
-- **0.3.0のAppleへの署名付きアップロードと、別々のApple Accountを使う実機2台での同期確認は未実施です。** [Apple側の一度だけの設定](ICLOUD-SHARING.md#apple側で一度だけ行う設定)が完了してから、最新mainでTestFlight用ワークフローを実行します。ビルド成功だけでは、Productionスキーマ・共有権限・実際の通知配信は確認できません。
+- 10月30日時点では0.3.0の署名付きアップロードは未実施でした。10月31日に上記の配信が成功しています。別々のApple Accountを使う実機2台の同期・共有権限・実際の通知配信は、引き続き確認が必要です。
 
 # 2026年10月30日：Hormeの名前と正式アイコン
 
