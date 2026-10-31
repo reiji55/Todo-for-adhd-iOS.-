@@ -12,34 +12,60 @@ CONTAINER = "iCloud.io.github.reiji55.threedays"
 BUNDLE_ID = "io.github.reiji55.threedays"
 
 
+def string_values(value):
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return value
+    return []
+
+
+def profile_checks(profile):
+    entitlements = profile.get("Entitlements", {}) if isinstance(profile, dict) else {}
+    if not isinstance(entitlements, dict):
+        entitlements = {}
+    identifier = entitlements.get("application-identifier", "")
+    services = string_values(entitlements.get("com.apple.developer.icloud-services"))
+    # Apple's TN2415 shows a profile granting all iCloud services as <string>*</string>.
+    # This is permission to sign the app with CloudKit, not a missing capability.
+    # https://developer.apple.com/library/archive/technotes/tn2415/_index.html
+    return {
+        "App ID": isinstance(identifier, str) and identifier.endswith("." + BUNDLE_ID),
+        "iCloud container": CONTAINER in string_values(entitlements.get("com.apple.developer.icloud-container-identifiers")),
+        "CloudKit service": "CloudKit" in services or "*" in services,
+        "iCloud Production": "Production" in string_values(entitlements.get("com.apple.developer.icloud-container-environment")),
+        "Push production": entitlements.get("aps-environment") == "production",
+    }
+
+
 def supports_cloudkit(profile):
-    entitlements = profile.get("Entitlements", {})
-    environment = entitlements.get("com.apple.developer.icloud-container-environment", [])
-    if isinstance(environment, str):
-        environment = [environment]
-    return (
-        entitlements.get("application-identifier", "").endswith("." + BUNDLE_ID)
-        and CONTAINER in entitlements.get("com.apple.developer.icloud-container-identifiers", [])
-        and "CloudKit" in entitlements.get("com.apple.developer.icloud-services", [])
-        and "Production" in environment
-        and entitlements.get("aps-environment") == "production"
-    )
+    return all(profile_checks(profile).values())
 
 
 def main(directory):
     paths = sorted(directory.glob("*.mobileprovision"))
+    if not paths:
+        raise SystemExit("::error::配布プロファイルがダウンロードされていません。直前の署名ファイル取得の結果を確認してください。")
     valid, unused = [], []
-    for path in paths:
+    for index, path in enumerate(paths, start=1):
         result = subprocess.run(
             ["openssl", "smime", "-inform", "der", "-verify", "-noverify", "-in", str(path)],
             capture_output=True, check=True,
         )
         profile = plistlib.loads(result.stdout)
-        (valid if supports_cloudkit(profile) else unused).append(path)
+        checks = profile_checks(profile)
+        # Only fixed labels and booleans: never log profile contents, identities or key material.
+        print(f"Profile {index}: " + "; ".join(f"{label}={'OK' if passed else 'MISSING'}" for label, passed in checks.items()))
+        if checks["CloudKit service"]:
+            services = string_values(profile["Entitlements"].get("com.apple.developer.icloud-services"))
+            print("CloudKit service grant: " + ("all services (*)" if "*" in services else "CloudKit"))
+        (valid if all(checks.values()) else unused).append(path)
     if not valid:
         raise SystemExit(
             "::error::HormeのiCloud・CloudKit・Push Notificationsに対応した配布プロファイルがありません。"
-            "Apple Developerでio.github.reiji55.threedaysにiCloud.io.github.reiji55.threedaysを関連付けて保存してください。"
+            "上のProfile行でMISSINGになった項目を確認してください。"
+            "iCloud containerならApp IDにiCloud.io.github.reiji55.threedaysを関連付け、CloudKit serviceならInclude CloudKit supportを有効にしてください。"
+            "Push productionならPush Notificationsを有効にして保存してください。"
             "設定済みなら配布プロファイルを再生成してください。手順: docs/ICLOUD-SHARING.md"
         )
     if unused:

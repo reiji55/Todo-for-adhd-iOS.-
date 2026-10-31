@@ -1,3 +1,10 @@
+# 2026年10月31日：配布プロファイルの判定修正
+
+- [0.3.0の最初の配信実行](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/41166633467)では、コア62件とApple APIの認証が成功し、新しい配布プロファイルも作成されました。その後、独自のiCloud権限チェックで停止しています。アーカイブ・Appleへのアップロードには進んでいません。
+- 確認処理が、Appleの[TN2415](https://developer.apple.com/library/archive/technotes/tn2415/_index.html)に記載された `com.apple.developer.icloud-services = "*"`（全サービスの許可）を不許可と判定する不具合を修正しました。実際の失敗ログには権限の内訳がなかったため、この不具合だけが停止原因だったかは次の実行で確認します。
+- 修正後も、対象App ID・iCloudコンテナの一致・Production環境・配布用Push権限をすべて検証します。ログには各項目のOK/MISSINGと許可方式だけを出し、秘密鍵・プロファイル本文・アカウント情報は出しません。
+- 配布スクリプトのテスト15件がローカルで成功しました。TestFlight用ワークフローにも同じテストを追加しています。最新mainから新規実行が必要です。実機2台の同期確認は引き続き未実施です。
+
 # 2026年10月30日：0.3.0のiCloud共有
 
 - ソース [`d6e2d92`](https://github.com/reiji55/Todo-for-adhd-iOS.-/commit/d6e2d92d95df83f0b9ee2a1585eb8e1306edce8f) の[検証実行](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/41073478624)は **success**。Xcode 26.3 / Swift 6.2.4で、コア62件＋配布設定9件のテスト、シミュレータDebug／署名なし実機Releaseのビルド、iPhone・iPadの起動確認がすべて成功しました。Linuxでもコア62件が成功しています。

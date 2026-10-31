@@ -27,6 +27,8 @@ Bundle IDは既存の `io.github.reiji55.threedays` を引き続き使用する�
 
 TestFlight用のワークフローは、ダウンロードした配布プロファイルに上記コンテナ・CloudKit・Productionの通知権限が含まれることを検証する。設定変更で古いプロファイルが無効になっていれば通常は自動で作り直される。設定済みでも検証が止まる場合はApple DeveloperのProfilesでこのアプリのApp Store配布プロファイルを編集・再生成し、最新のmainからワークフローを実行する。証明書や秘密鍵を作り直す必要はない。
 
+権限チェックで止まった場合、最新のスクリプトはログの `Profile` 行に `App ID`、`iCloud container`、`CloudKit service`、`iCloud Production`、`Push production` のOK/MISSINGを表示する。MISSINGの項目を確認してから設定を変更する。AppleのプロファイルでCloudKitが `*`（全サービスを許可）として表される場合も対応している。
+
 記載の画面名はApple側の言語設定によって異なる。[Apple：capability設定](https://developer.apple.com/help/account/identifiers/enable-app-capabilities/)、[Apple：CloudKit共有](https://developer.apple.com/videos/play/tech-talks/10874/)。
 
 設定完了後は[TestFlightへの送信画面](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/workflows/testflight.yml)で **Run workflow → main → Run workflow** を選ぶ。以前の実行の「Re-run jobs」は以前のソースを使うため、最新版を送るときは新しく実行する。Appleへのアップロード成功後、処理が終わるとTestFlightで両端末を更新できる。
