@@ -89,13 +89,6 @@ struct ProjectTag: View {
     }
 }
 
-extension AgendaItem {
-    init(task: TaskItem) {
-        self.init(source: .task(task.id), title: task.title, project: task.project, slot: task.slot,
-                  isDone: task.isComplete, isMust: task.isMust, isBlock: false)
-    }
-}
-
 extension Font {
     /// Times use the rounded face, a step bolder, so they stand out from titles as in task-3days.
     static let clock = Font.system(.caption, design: .rounded).weight(.semibold).monospacedDigit()

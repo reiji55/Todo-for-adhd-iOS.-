@@ -10,6 +10,24 @@
 	<string>56</string>
 	<key>objects</key>
 	<dict>
+		<key>1F76AAD67AEED76FB70BE012</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>AppIntents.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>DD6E37A94DFBB76AB0BF9B0B</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>1F76AAD67AEED76FB70BE012</string>
+		</dict>
 		<key>AF79E0942E7E865DB5FB83D7</key>
 		<dict>
 			<key>isa</key>
@@ -290,6 +308,7 @@
 			<string>&lt;group&gt;</string>
 			<key>children</key>
 			<array>
+				<string>1F76AAD67AEED76FB70BE012</string>
 				<string>AF79E0942E7E865DB5FB83D7</string>
 				<string>3597650054D25428D141097E</string>
 				<string>60A30F2E0B01BB8C82049CA8</string>
@@ -382,6 +401,24 @@
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>238634D5F55937D3185810E3</string>
+		</dict>
+		<key>CE53011E3628BE49B6BE91AA</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>PlainText.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>5583D9A8A93CDCD09FB61BD9</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>CE53011E3628BE49B6BE91AA</string>
 		</dict>
 		<key>8B546212DD18980036D2ABE0</key>
 		<dict>
@@ -505,6 +542,7 @@
 				<string>B9068717B4F16362ED563C6E</string>
 				<string>83E2D9306B6BAB588AB1709B</string>
 				<string>238634D5F55937D3185810E3</string>
+				<string>CE53011E3628BE49B6BE91AA</string>
 				<string>8B546212DD18980036D2ABE0</string>
 				<string>8F35CCA8DBD79EAE9BCF564F</string>
 				<string>F6075BD3C7566872227FFA18</string>
@@ -618,6 +656,7 @@
 			<string>2147483647</string>
 			<key>files</key>
 			<array>
+				<string>DD6E37A94DFBB76AB0BF9B0B</string>
 				<string>3AC6AB1AB7619E4E2562FD65</string>
 				<string>19C55000B6DBCE4320426FC1</string>
 				<string>B174B77323CE6FB77B3EB753</string>
@@ -637,6 +676,7 @@
 				<string>56A4C7509848820EFA563687</string>
 				<string>7A5DD4477130562F21A5D3E0</string>
 				<string>E7D922F0B6375D75F2C15998</string>
+				<string>5583D9A8A93CDCD09FB61BD9</string>
 				<string>1A6CD602EAAA103CA5F6084F</string>
 				<string>D90D4F8CDB34D8C2582FEE49</string>
 				<string>2A7C578160C5AD3CF431857E</string>

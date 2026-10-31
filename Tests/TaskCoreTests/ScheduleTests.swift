@@ -152,4 +152,14 @@ final class ScheduleTests: XCTestCase {
                                         options: ReminderOptions(tasks: false, routines: false, deadlines: false), days: 4, calendar: calendar)
         XCTAssertTrue(off.isEmpty)
     }
+
+    func testPlainTextReadsWithoutTheApp() {
+        let study = Routine(title: "金フレ", project: "TOEIC", weekdays: [6], time: "19:00-20:30", createdAt: day(-30))
+        let call = TaskItem(title: "電話", plannedAt: friday, isMust: true, handoff: "番号を調べて", createdAt: day(-1))
+        let left = TaskItem(title: "返却", plannedAt: day(-2), createdAt: day(-3))
+        let text = PlainText.today(friday, book: Notebook(tasks: [call, left], routines: [study]), calendar: calendar)
+        XCTAssertTrue(text.hasPrefix("10月30日(金)\n[ ] 19:00-20:30 金フレ〔ルーティン・TOEIC〕\n[ ] 時間未定 電話〔必須〕"), text)
+        XCTAssertTrue(text.contains("AIへの引き継ぎ：番号を調べて"))
+        XCTAssertTrue(text.contains("前の日から残っているもの\n[ ] 10月28日(水) 返却"))
+    }
 }
