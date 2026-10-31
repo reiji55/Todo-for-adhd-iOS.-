@@ -30,6 +30,7 @@ struct SettingsView: View {
             Form {
                 SharingSection()
                 NotificationSettingsSection()
+                ClaudeBridgeSection()
                 Section {
                     NavigationLink { RoutineSettingsView() } label: {
                         LabeledContent("ルーティン", value: "\(store.notebook.routines.filter { !$0.isPaused }.count)件")

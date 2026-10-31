@@ -260,4 +260,51 @@ final class SyncTests: XCTestCase {
         let missing = SyncRecord(id: "task_\(UUID().uuidString)")
         XCTAssertThrowsError(try SyncRecord.decode(missing.encoded(), expectedID: missing.id))
     }
+
+    /// Records written by the Claude bridge (supabase/functions/horme) must read as the app's own.
+    func testRecordsWrittenByTheClaudeBridgeDecode() throws {
+        let written = [
+        #"""{"version":1,"id":"task_44444444-4444-4444-4444-444444444444","fields":{"alive":{"value":"dHJ1ZQ==","stamp":{"tick":1793000000000,"device":"claude"}},"id":{"value":"IjQ0NDQ0NDQ0LTQ0NDQtNDQ0NC00NDQ0LTQ0NDQ0NDQ0NDQ0NCI=","stamp":{"tick":1793000000000,"device":"claude"}},"title":{"value":"Iuizh+aWmeOCkuiqreOCgCI=","stamp":{"tick":1793000000000,"device":"claude"}},"scheduledTime":{"value":"Ijk6MDAtMTA6MDAi","stamp":{"tick":1793000000000,"device":"claude"}},"isMust":{"value":"ZmFsc2U=","stamp":{"tick":1793000000000,"device":"claude"}},"effort":{"value":"Im1lZGl1bSI=","stamp":{"tick":1793000000000,"device":"claude"}},"project":{"value":"IlRPRUlDIg==","stamp":{"tick":1793000000000,"device":"claude"}},"memo":{"value":"IiI=","stamp":{"tick":1793000000000,"device":"claude"}},"handoff":{"value":"Iuimgee0hOOBl+OBpiI=","stamp":{"tick":1793000000000,"device":"claude"}},"resumeNote":{"value":"IiI=","stamp":{"tick":1793000000000,"device":"claude"}},"createdAt":{"value":"IjIwMjYtMTAtMzFUMDE6MDA6MDBaIg==","stamp":{"tick":1793000000000,"device":"claude"}},"notify":{"value":"dHJ1ZQ==","stamp":{"tick":1793000000000,"device":"claude"}},"plannedAt":{"value":"IjIwMjYtMTEtMDJUMDM6MDA6MDBaIg==","stamp":{"tick":1793000000000,"device":"claude"}}}}"""#,
+        #"""{"version":1,"id":"routine_55555555-5555-5555-5555-555555555555","fields":{"alive":{"value":"dHJ1ZQ==","stamp":{"tick":1793000000000,"device":"claude"}},"id":{"value":"IjU1NTU1NTU1LTU1NTUtNTU1NS01NTU1LTU1NTU1NTU1NTU1NSI=","stamp":{"tick":1793000000000,"device":"claude"}},"title":{"value":"IumHkeODleODrCI=","stamp":{"tick":1793000000000,"device":"claude"}},"project":{"value":"IlRPRUlDIg==","stamp":{"tick":1793000000000,"device":"claude"}},"memo":{"value":"IiI=","stamp":{"tick":1793000000000,"device":"claude"}},"weekdays":{"value":"WzIsMyw0LDUsNl0=","stamp":{"tick":1793000000000,"device":"claude"}},"time":{"value":"IjE5OjAwLTIwOjMwIg==","stamp":{"tick":1793000000000,"device":"claude"}},"notify":{"value":"dHJ1ZQ==","stamp":{"tick":1793000000000,"device":"claude"}},"isBlock":{"value":"ZmFsc2U=","stamp":{"tick":1793000000000,"device":"claude"}},"isPaused":{"value":"ZmFsc2U=","stamp":{"tick":1793000000000,"device":"claude"}},"createdAt":{"value":"IjIwMjYtMTAtMDFUMDA6MDA6MDBaIg==","stamp":{"tick":1793000000000,"device":"claude"}},"done.2026-10-30":{"value":"dHJ1ZQ==","stamp":{"tick":1793000000000,"device":"claude"}},"move.2026-10-29":{"value":"eyJ0b0RheSI6IjIwMjYtMTAtMzEiLCJ0aW1lIjoiMjE6MDAtMjI6MzAifQ==","stamp":{"tick":1793000000000,"device":"claude"}}}}"""#
+        ]
+        var replica = SyncReplica()
+        try replica.merge(written.map { json in
+            let id = try JSONSerialization.jsonObject(with: Data(json.utf8)) as! [String: Any]
+            return try SyncRecord.decode(Data(json.utf8), expectedID: id["id"] as! String)
+        })
+        let book = try replica.materialize()
+        XCTAssertEqual(book.tasks.first?.title, "資料を読む")
+        XCTAssertEqual(book.tasks.first?.slot, TimeSlot(start: 540, duration: 60))
+        XCTAssertEqual(book.tasks.first?.handoff, "要約して")
+        XCTAssertEqual(book.tasks.first?.plannedAt, ISO8601DateFormatter().date(from: "2026-11-02T03:00:00Z"))
+        XCTAssertEqual(book.routines.first?.doneDays, ["2026-10-30"])
+        XCTAssertEqual(book.routines.first?.moves["2026-10-29"], RoutineMove(toDay: "2026-10-31", time: "21:00-22:30"))
+    }
+
+    func testBridgeAloneKeepsAReplicaAndSurvivesReload() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repo = SharedStoreRepository(directory: directory)
+        var state = SharedStoreState(notebook: Notebook(tasks: [TaskItem(title: "既存", createdAt: epoch)]))
+        state.bridge = true
+        try state.startReplicaIfNeeded()
+        XCTAssertEqual(try state.replica?.materialize().tasks.map(\.title), ["既存"])
+        try state.edit(Notebook(tasks: state.notebook.tasks + [TaskItem(title: "追加", createdAt: epoch)]))
+        try repo.save(state)
+        let loaded = try repo.load()
+        XCTAssertEqual(loaded.replica?.records.count, 2)
+        var claude = SyncRecord(id: "idea_\(UUID().uuidString)")
+        let stamp = SyncStamp(tick: Int64.max / 2, device: "claude")
+        let ideaID = String(claude.id.dropFirst(5))
+        claude.fields = ["alive": SyncField(value: Data("true".utf8), stamp: stamp),
+                         "id": SyncField(value: Data("\"\(ideaID)\"".utf8), stamp: stamp),
+                         "text": SyncField(value: Data("\"思いつき\"".utf8), stamp: stamp),
+                         "createdAt": SyncField(value: Data("\"2026-10-31T00:00:00Z\"".utf8), stamp: stamp)]
+        var received = loaded
+        try received.receive([claude])
+        XCTAssertEqual(received.notebook.ideas.first?.text, "思いつき")
+        // A replica without iCloud or the bridge is invalid, as before.
+        var orphan = loaded; orphan.bridge = nil
+        XCTAssertThrowsError(try SharedStoreState.decode(orphan.encoded()))
+    }
 }

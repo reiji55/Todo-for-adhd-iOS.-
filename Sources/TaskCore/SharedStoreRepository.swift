@@ -19,7 +19,21 @@ public struct SharedStoreState: Codable, Equatable {
     public var connection: SyncConnection?
     public var lastSyncedAt: Date?
     public var hasPendingChanges = false
+    /// Also synced with the Claude bridge (supabase/functions/horme). The link itself is kept in the Keychain.
+    /// Optional so state files written before the bridge existed still decode.
+    public var bridge: Bool?
     public init(notebook: Notebook = Notebook()) { self.notebook = notebook }
+
+    /// The replica exists while something syncs with it: iCloud, the Claude bridge, or both.
+    public var replicaInUse: Bool { connection != nil || bridge == true }
+
+    /// Starts tracking edits for syncing, recording the current data as this device's changes.
+    public mutating func startReplicaIfNeeded() throws {
+        guard replica == nil else { return }
+        var fresh = SyncReplica()
+        try fresh.apply(before: Notebook(), after: notebook, device: deviceID)
+        replica = fresh
+    }
 
     public mutating func edit(_ next: Notebook) throws {
         _ = try NotebookCodec.decode(NotebookCodec.encode(next))
@@ -31,7 +45,7 @@ public struct SharedStoreState: Codable, Equatable {
     }
 
     public mutating func receive(_ records: [SyncRecord]) throws {
-        guard replica != nil, connection != nil else { throw NotebookError.invalidData }
+        guard replica != nil, replicaInUse else { throw NotebookError.invalidData }
         try replica?.merge(records)
         notebook = try replica!.materialize()
     }
@@ -39,7 +53,7 @@ public struct SharedStoreState: Codable, Equatable {
     public static func decode(_ data: Data) throws -> Self {
         let value = try JSONDecoder().decode(Self.self, from: data)
         guard value.version == 1 else { throw NotebookError.unsupportedVersion }
-        guard !value.deviceID.isEmpty, (value.connection == nil) == (value.replica == nil) else { throw NotebookError.invalidData }
+        guard !value.deviceID.isEmpty, value.replicaInUse == (value.replica != nil) else { throw NotebookError.invalidData }
         _ = try NotebookCodec.decode(NotebookCodec.encode(value.notebook))
         if let replica = value.replica {
             var validated = SyncReplica()
@@ -117,7 +131,7 @@ public struct SharedStoreRepository {
         var state = try SharedStoreState.decode(data)
         // A recovered older replica must not silently overwrite the server.
         // Keep the data locally and require an explicit merge to reconnect.
-        state.connection = nil; state.replica = nil; state.lastSyncedAt = nil
+        state.connection = nil; state.replica = nil; state.lastSyncedAt = nil; state.bridge = nil
         let damaged = url.appendingPathExtension("unreadable-\(UUID().uuidString)")
         try FileManager.default.copyItem(at: url, to: damaged)
         try state.encoded().write(to: url, options: .atomic)

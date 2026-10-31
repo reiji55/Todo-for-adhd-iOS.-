@@ -17,6 +17,10 @@ final class TaskStore: ObservableObject {
     private let repository: SharedStoreRepository
     private var state = SharedStoreState()
     private let cloud = CloudSyncTransport()
+    private let bridge = BridgeTransport()
+    @Published private(set) var isBridgeSyncing = false
+    @Published private(set) var bridgeSyncedAt: Date?
+    @Published var bridgeError: String?
     @Published private(set) var isSyncing = false
     @Published private(set) var isPreparingShare = false
     @Published var syncError: String?
@@ -292,7 +296,7 @@ final class TaskStore: ObservableObject {
     }
 
     func requestSync() {
-        guard connection != nil, !loadFailed else { return }
+        guard connection != nil || bridgeOn, !loadFailed else { return }
         scheduledSync?.cancel()
         scheduledSync = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(1)) } catch { return }
@@ -301,6 +305,69 @@ final class TaskStore: ObservableObject {
             // must not cancel a sync that already has writes in flight.
             self?.scheduledSync = nil
             await self?.synchronize()
+            await self?.synchronizeBridge()
+        }
+    }
+
+    // MARK: Claude bridge
+
+    var bridgeOn: Bool { state.bridge == true }
+    var bridgeMCPURL: String? { BridgeLink.load().map { $0 + "/mcp" } }
+
+    /// Connects to the bridge and merges both ways. Existing data on either side is kept.
+    func connectBridge(_ text: String) async -> Bool {
+        guard !loadFailed else { return false }
+        guard let link = BridgeLink.normalized(text) else { bridgeError = BridgeError.invalidLink.localizedDescription; return false }
+        do {
+            // Check the link before changing anything locally.
+            _ = try await bridge.synchronize(link: link, records: [])
+            guard BridgeLink.save(link) else { bridgeError = "鍵をこの端末に保存できませんでした。"; return false }
+            var next = state
+            next.bridge = true
+            try next.startReplicaIfNeeded()
+            try repository.save(next)
+            state = next; bridgeError = nil
+            await synchronizeBridge()
+            return bridgeError == nil
+        } catch { bridgeError = error.localizedDescription; return false }
+    }
+
+    func disconnectBridge() {
+        do {
+            var next = state
+            next.bridge = nil
+            if next.connection == nil { next.replica = nil; next.hasPendingChanges = false }
+            try repository.save(next)
+            BridgeLink.delete()
+            state = next; bridgeSyncedAt = nil; bridgeError = nil
+        } catch { self.error = error.localizedDescription }
+    }
+
+    func synchronizeBridge() async {
+        guard bridgeOn, !isBridgeSyncing, !loadFailed, let link = BridgeLink.load(), let replica = state.replica else { return }
+        isBridgeSyncing = true
+        defer { isBridgeSyncing = false }
+        do {
+            let merged = try await bridge.synchronize(link: link, records: Array(replica.records.values))
+            guard bridgeOn, let current = state.replica else { return }
+            var next = state
+            try next.receive(merged)
+            let changed = next.replica?.records != current.records
+            if changed {
+                if !Self.sameContents(notebook, next.notebook) {
+                    try repository.backup(notebook, beforeSharing: false)
+                    // Do not apply a stale whole-book undo over Claude's change.
+                    history = []; canUndo = false
+                }
+                // Changes from Claude still need to reach the other device through iCloud.
+                if next.connection != nil { next.hasPendingChanges = true }
+                try repository.save(next)
+                state = next; notebook = next.notebook
+            }
+            bridgeSyncedAt = Date(); bridgeError = nil
+            if changed && connection != nil { await synchronize() }
+        } catch {
+            bridgeError = "Claudeとの同期に失敗しました。\(error.localizedDescription) 端末のデータは保存されています。"
         }
     }
 
@@ -403,7 +470,9 @@ final class TaskStore: ObservableObject {
         guard !loadFailed else { return }
         do {
             var next = state
-            next.connection = nil; next.replica = nil; next.lastSyncedAt = nil; next.hasPendingChanges = false
+            next.connection = nil; next.lastSyncedAt = nil; next.hasPendingChanges = false
+            // The Claude bridge keeps using the replica after iCloud is turned off.
+            if next.bridge != true { next.replica = nil }
             try repository.save(next)
             syncGeneration = UUID(); scheduledSync?.cancel(); scheduledSync = nil
             state = next; notebook = next.notebook; isSyncing = false

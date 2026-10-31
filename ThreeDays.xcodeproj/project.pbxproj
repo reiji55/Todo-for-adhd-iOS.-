@@ -46,6 +46,24 @@
 			<key>fileRef</key>
 			<string>AF79E0942E7E865DB5FB83D7</string>
 		</dict>
+		<key>8501242578F6AA158DAC50B9</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>ClaudeBridge.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>BE5403E66CB94056B2EBE336</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>8501242578F6AA158DAC50B9</string>
+		</dict>
 		<key>3597650054D25428D141097E</key>
 		<dict>
 			<key>isa</key>
@@ -310,6 +328,7 @@
 			<array>
 				<string>1F76AAD67AEED76FB70BE012</string>
 				<string>AF79E0942E7E865DB5FB83D7</string>
+				<string>8501242578F6AA158DAC50B9</string>
 				<string>3597650054D25428D141097E</string>
 				<string>60A30F2E0B01BB8C82049CA8</string>
 				<string>4FD55C6CF8F61990123A29D9</string>
@@ -658,6 +677,7 @@
 			<array>
 				<string>DD6E37A94DFBB76AB0BF9B0B</string>
 				<string>3AC6AB1AB7619E4E2562FD65</string>
+				<string>BE5403E66CB94056B2EBE336</string>
 				<string>19C55000B6DBCE4320426FC1</string>
 				<string>B174B77323CE6FB77B3EB753</string>
 				<string>A126386360F61480A7AF45EB</string>
