@@ -12,7 +12,12 @@ final class TaskStore: ObservableObject {
     /// can be seen and undone; leaving the screen clears them. Never saved or synced.
     @Published private(set) var recentlyDone: Set<String> = []
     @Published private(set) var loadFailed = false
-    @Published private(set) var canUndo = false
+    /// Sample data shown in memory only. Saving, syncing, notifications and the Claude bridge leave the real
+    /// data alone while it is on; ending demo mode or quitting the app brings the real data back.
+    @Published private(set) var isDemo = false
+    /// A short "取り消す" offer after an action that is hard to redo by hand (deleting, moving, bulk changes).
+    @Published private(set) var undoOffer: UndoOffer?
+    /// Recent states in memory, only to serve the undo offer. Never written to disk or synced.
     private var history: [Notebook] = []
     private let repository: SharedStoreRepository
     private var state = SharedStoreState()
@@ -55,33 +60,75 @@ final class TaskStore: ObservableObject {
         }
     }
 
+    /// The saved data, even while demo mode shows samples. Notifications are planned from this.
+    var realNotebook: Notebook { state.notebook }
+
     @discardableResult
     func commit(_ update: (inout Notebook) -> Void) -> Bool {
-        guard !loadFailed else { error = "読み込みに失敗したデータを保護しています。設定から直前の保存を復旧してください。"; return false }
+        guard isDemo || !loadFailed else { error = "読み込みに失敗したデータを保護しています。設定から直前の保存を復旧してください。"; return false }
         var next = notebook
         update(&next)
         guard next != notebook else { return true }
+        // Any new change replaces the previous undo offer, so 取り消す always reverts what it names.
+        undoOffer = nil
+        if isDemo { remember(notebook); notebook = next; return true }
         do {
             var changed = state
             try changed.edit(next)
             try repository.save(changed)
-            history.append(notebook)
-            if history.count > 20 { history.removeFirst() }
-            state = changed; notebook = next; canUndo = !history.isEmpty
+            remember(notebook)
+            state = changed; notebook = next
             requestSync()
             return true
         } catch { self.error = "保存できませんでした。変更は反映していません。\(error.localizedDescription)"; return false }
     }
 
+    private func remember(_ book: Notebook) {
+        history.append(book)
+        if history.count > 5 { history.removeFirst() }
+    }
+
+    /// Shows "取り消す" for a few seconds after the change just made.
+    func offerUndo(_ message: String) {
+        let offer = UndoOffer(message: message)
+        undoOffer = offer
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(6))
+            if self?.undoOffer?.id == offer.id { self?.undoOffer = nil }
+        }
+    }
+
+    func dismissUndo() { undoOffer = nil }
+
     func undo() {
-        guard let previous = history.last else { return }
+        guard undoOffer != nil, let previous = history.last else { return }
+        undoOffer = nil
+        if isDemo { notebook = previous; history.removeLast(); return }
         do {
             var changed = state
             try changed.edit(previous)
             try repository.save(changed)
-            state = changed; notebook = previous; history.removeLast(); canUndo = !history.isEmpty
+            state = changed; notebook = previous; history.removeLast()
             requestSync()
         } catch { self.error = error.localizedDescription }
+    }
+
+    // MARK: Demo mode
+
+    func startDemo() {
+        guard !isDemo, !loadFailed else { return }
+        scheduledSync?.cancel(); scheduledSync = nil
+        history = []; recentlyDone = []; undoOffer = nil
+        notebook = .demo(now: Date())
+        isDemo = true
+    }
+
+    func endDemo() {
+        guard isDemo else { return }
+        isDemo = false
+        history = []; recentlyDone = []; undoOffer = nil
+        notebook = state.notebook
+        requestSync()
     }
 
     func task(_ id: UUID) -> TaskItem? { notebook.tasks.first { $0.id == id } }
@@ -132,41 +179,45 @@ final class TaskStore: ObservableObject {
 
     /// Moves a row to another day and time. A routine moves for that one day only.
     func move(_ item: AgendaItem, to day: Date, slot: TimeSlot?) {
-        commit { book in
+        let moved = commit { book in
             switch item.source {
             case .task(let id): book.moveTask(id, to: day, slot: slot)
             case .routine(let id, let original):
                 book.moveRoutine(id, originalDay: original, toDay: DayKey.of(day), time: slot?.label ?? "")
             }
         }
+        if moved { offerUndo("「\(item.title)」を\(PlainText.dayTitle(day))\(slot.map { " " + $0.startLabel } ?? "")に動かしました") }
     }
 
     // MARK: Leftovers from earlier days
 
     func plan(_ ids: Set<UUID>, on day: Date?) {
-        commit { book in
+        let saved = commit { book in
             for i in book.tasks.indices where ids.contains(book.tasks[i].id) {
                 book.tasks[i].plannedAt = day
                 // A time from an earlier day rarely still fits; keep the day, let the person pick a time again.
                 if day == nil { book.tasks[i].slot = nil }
             }
         }
+        if saved { offerUndo("\(ids.count)件を\(day.map { PlainText.dayTitle($0) } ?? "いつでも")へ移しました") }
     }
 
     func completeAll(_ ids: Set<UUID>) {
-        commit { book in
+        let saved = commit { book in
             for i in book.tasks.indices where ids.contains(book.tasks[i].id) && !book.tasks[i].isComplete {
                 book.tasks[i].completedAt = Date()
             }
             if let active = book.activeSession, ids.contains(active.taskID) { book.activeSession = nil }
         }
+        if saved { offerUndo("\(ids.count)件を完了にしました") }
     }
 
     func deleteAll(_ ids: Set<UUID>) {
-        commit { book in
+        let saved = commit { book in
             book.tasks.removeAll { ids.contains($0.id) }
             if let active = book.activeSession, ids.contains(active.taskID) { book.activeSession = nil }
         }
+        if saved { offerUndo("\(ids.count)件を削除しました") }
     }
 
     // MARK: Routines
@@ -187,14 +238,21 @@ final class TaskStore: ObservableObject {
     }
 
     func deleteRoutine(_ id: UUID) {
-        commit { $0.routines.removeAll { $0.id == id } }
+        let title = routine(id)?.title ?? ""
+        if commit({ $0.routines.removeAll { $0.id == id } }) { offerUndo("ルーティン「\(title)」を削除しました") }
     }
 
     func delete(_ id: UUID) {
-        commit { book in
+        let title = task(id)?.title ?? ""
+        let saved = commit { book in
             book.tasks.removeAll { $0.id == id }
             if book.activeSession?.taskID == id { book.activeSession = nil }
         }
+        if saved { offerUndo("「\(title)」を削除しました") }
+    }
+
+    func deleteIdea(_ id: UUID) {
+        if commit({ $0.ideas.removeAll { $0.id == id } }) { offerUndo("アイデアを削除しました") }
     }
 
     func start(_ task: TaskItem) {
@@ -259,7 +317,8 @@ final class TaskStore: ObservableObject {
     }
 
     func deleteCard(_ id: UUID) {
-        commit { $0.boardCards.removeAll { $0.id == id } }
+        let title = card(id)?.title ?? ""
+        if commit({ $0.boardCards.removeAll { $0.id == id } }) { offerUndo("カード「\(title)」を削除しました") }
     }
 
     func moveCards(from source: IndexSet, to destination: Int) {
@@ -272,14 +331,14 @@ final class TaskStore: ObservableObject {
     func startOver() {
         do {
             state = try repository.startFresh(); notebook = state.notebook; loadFailed = false
-            history = []; canUndo = false
+            history = []; undoOffer = nil
         } catch { self.error = "読めないデータを退避できませんでした。\(error.localizedDescription)" }
     }
 
     func recover() {
         do {
             state = try repository.recoverPrevious(); notebook = state.notebook; loadFailed = false
-            history = []; canUndo = false
+            history = []; undoOffer = nil
         } catch { self.error = "直前の保存から復旧できませんでした。\(error.localizedDescription)" }
     }
 
@@ -296,7 +355,7 @@ final class TaskStore: ObservableObject {
     }
 
     func requestSync() {
-        guard connection != nil || bridgeOn, !loadFailed else { return }
+        guard connection != nil || bridgeOn, !loadFailed, !isDemo else { return }
         scheduledSync?.cancel()
         scheduledSync = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(1)) } catch { return }
@@ -316,6 +375,7 @@ final class TaskStore: ObservableObject {
 
     /// Connects to the bridge and merges both ways. Existing data on either side is kept.
     func connectBridge(_ text: String) async -> Bool {
+        guard !isDemo else { bridgeError = "デモモード中は共有や連携の設定を変えられません。設定からデモモードを終えてください。"; return false }
         guard !loadFailed else { return false }
         guard let link = BridgeLink.normalized(text) else { bridgeError = BridgeError.invalidLink.localizedDescription; return false }
         do {
@@ -333,6 +393,7 @@ final class TaskStore: ObservableObject {
     }
 
     func disconnectBridge() {
+        guard !isDemo else { bridgeError = "デモモード中は共有や連携の設定を変えられません。設定からデモモードを終えてください。"; return }
         do {
             var next = state
             next.bridge = nil
@@ -344,7 +405,7 @@ final class TaskStore: ObservableObject {
     }
 
     func synchronizeBridge() async {
-        guard bridgeOn, !isBridgeSyncing, !loadFailed, let link = BridgeLink.load(), let replica = state.replica else { return }
+        guard bridgeOn, !isBridgeSyncing, !loadFailed, !isDemo, let link = BridgeLink.load(), let replica = state.replica else { return }
         isBridgeSyncing = true
         defer { isBridgeSyncing = false }
         do {
@@ -357,7 +418,7 @@ final class TaskStore: ObservableObject {
                 if !Self.sameContents(notebook, next.notebook) {
                     try repository.backup(notebook, beforeSharing: false)
                     // Do not apply a stale whole-book undo over Claude's change.
-                    history = []; canUndo = false
+                    history = []; undoOffer = nil
                 }
                 // Changes from Claude still need to reach the other device through iCloud.
                 if next.connection != nil { next.hasPendingChanges = true }
@@ -372,7 +433,7 @@ final class TaskStore: ObservableObject {
     }
 
     func synchronize() async {
-        guard !isSyncing, !loadFailed, Date() >= retryAfter,
+        guard !isSyncing, !loadFailed, !isDemo, Date() >= retryAfter,
               let connection, let replica = state.replica else { return }
         let generation = syncGeneration
         isSyncing = true
@@ -389,7 +450,7 @@ final class TaskStore: ObservableObject {
             if !Self.sameContents(notebook, next.notebook) {
                 try repository.backup(notebook, beforeSharing: false)
                 // Do not apply a stale whole-book undo over a remote change.
-                history = []; canUndo = false
+                history = []; undoOffer = nil
             }
             try repository.save(next)
             state = next; notebook = next.notebook; syncError = nil; retryAfter = .distantPast
@@ -405,6 +466,7 @@ final class TaskStore: ObservableObject {
     }
 
     func prepareSharing() async {
+        guard !isDemo else { syncError = "デモモード中は共有や連携の設定を変えられません。設定からデモモードを終えてください。"; return }
         guard !loadFailed, !isPreparingShare else { return }
         isPreparingShare = true
         defer { isPreparingShare = false }
@@ -424,6 +486,8 @@ final class TaskStore: ObservableObject {
     }
 
     func acceptInvitation(_ metadata: CKShare.Metadata) async {
+        // Opening an invitation is a deliberate step toward the real data.
+        endDemo()
         guard !loadFailed, !isPreparingShare else { return }
         guard metadata.containerIdentifier == CloudSyncTransport.containerID else { syncError = CloudSyncError.wrongContainer.localizedDescription; return }
         if let connection {
@@ -443,6 +507,7 @@ final class TaskStore: ObservableObject {
     }
 
     func confirmJoin(_ pending: PendingCloudJoin) async {
+        guard !isDemo else { syncError = "デモモード中は共有や連携の設定を変えられません。設定からデモモードを終えてください。"; return }
         guard connection == nil, !loadFailed else { return }
         pendingJoin = nil
         do {
@@ -459,7 +524,7 @@ final class TaskStore: ObservableObject {
             try repository.backup(notebook, beforeSharing: true)
             try repository.save(next)
             syncGeneration = UUID(); state = next; notebook = next.notebook
-            history = []; canUndo = false; syncError = nil; retryAfter = .distantPast
+            history = []; undoOffer = nil; syncError = nil; retryAfter = .distantPast
             UIApplication.shared.registerForRemoteNotifications()
             await synchronize()
             if pending.openShareAfterJoin, syncError == nil { await prepareSharing() }
@@ -467,6 +532,7 @@ final class TaskStore: ObservableObject {
     }
 
     func disconnectSync() {
+        guard !isDemo else { syncError = "デモモード中は共有や連携の設定を変えられません。設定からデモモードを終えてください。"; return }
         guard !loadFailed else { return }
         do {
             var next = state
@@ -514,5 +580,42 @@ final class TaskStore: ObservableObject {
             return "この版のiCloud設定を確認する必要があります。アプリの開発者にお知らせください。端末のデータは保存されています。"
         default: return "同期できませんでした。少し待ってから「今すぐ同期」を試してください。端末のデータは保存されています。"
         }
+    }
+}
+
+struct UndoOffer: Identifiable, Equatable {
+    let id = UUID()
+    let message: String
+}
+
+extension Notebook {
+    /// Sample data for demo mode, dated around today so every screen has something to show.
+    static func demo(now: Date) -> Notebook {
+        let calendar = Calendar.current
+        func day(_ offset: Int) -> Date { calendar.date(byAdding: .day, value: offset, to: now) ?? now }
+        let earlier = day(-30)
+        return Notebook(tasks: [
+            TaskItem(title: "提出書類を送る", plannedAt: now, deadline: now, isMust: true, effort: .light,
+                     memo: "これはサンプルです。", steps: [Step(title: "宛先を確認する"), Step(title: "メールに添付して送る")]),
+            TaskItem(title: "予約の電話をする", plannedAt: now, scheduledTime: "14:00-14:15", effort: .light,
+                     handoff: "受付時間を調べておいて"),
+            TaskItem(title: "読みかけの本を読む", effort: .light, resumeNote: "42ページの途中まで"),
+            TaskItem(title: "提案の下書きをつくる", plannedAt: day(1), scheduledTime: "10:00-11:30", deadline: day(2),
+                     effort: .heavy, project: "仕事", steps: [Step(title: "見出しを3つ書く")]),
+            TaskItem(title: "週末の買い物を考える", plannedAt: day(2)),
+            TaskItem(title: "図書館に本を返す", plannedAt: day(-1)),
+            TaskItem(title: "気になる資料を読む", effort: .medium)
+        ], ideas: [
+            Idea(text: "散歩中に聞ける勉強メモを作れそう\nやると決めるまではアイデアに置く。")
+        ], boardCards: [
+            BoardCard(title: "部屋のリセット", purpose: "散らかった机が目に入ると、始める前に気力が削られるため。",
+                      goal: "机の上に、いま使う物しかない状態。",
+                      detail: "これはサンプルです。\n\n1. タイマーを15分にする\n2. 床の物を1か所に集める\n3. 机の上を「戻す・捨てる・保留」に分ける\n4. 保留は箱に入れて、今日は考えない\n\n▸ 15分で止める。全部やろうとしない",
+                      createdAt: earlier)
+        ], routines: [
+            Routine(title: "部屋をリセットする", project: "部屋のリセット", time: "21:00-21:15", createdAt: earlier),
+            Routine(title: "仕事", weekdays: [2, 3, 4, 5, 6], time: "9:00-18:00", notify: false, isBlock: true, createdAt: earlier),
+            Routine(title: "睡眠", time: "0:00-7:00", notify: false, isBlock: true, createdAt: earlier)
+        ])
     }
 }

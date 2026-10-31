@@ -127,7 +127,7 @@ struct IdeasView: View {
                             } label: { Label("タスクにする", systemImage: "arrow.up.right").font(.subheadline) }
                             Spacer()
                             Button(role: .destructive) {
-                                store.commit { $0.ideas.removeAll { $0.id == idea.id } }
+                                store.deleteIdea(idea.id)
                             } label: { Image(systemName: "trash").frame(width: 44, height: 44) }
                                 .accessibilityLabel("アイデアを削除")
                         }

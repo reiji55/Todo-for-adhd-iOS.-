@@ -101,7 +101,7 @@ struct NotificationSettingsSection: View {
                     Button("通知を許可する") {
                         Task {
                             _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
-                            await reminders.refreshStatus(); reminders.reschedule(store.notebook)
+                            await reminders.refreshStatus(); reminders.reschedule(store.realNotebook)
                         }
                     }
                 }
@@ -122,8 +122,8 @@ struct NotificationSettingsSection: View {
         footer: {
             Text("時刻を決めたタスクとルーティンをバナーで知らせます。個別に止めるときは、それぞれの編集画面で「通知」を切ります。睡眠などの「押さえるだけ」の時間は知らせません。")
         }
-        .onChange(of: [enabled, tasks, routines, deadlines]) { _, _ in reminders.reschedule(store.notebook) }
-        .onChange(of: [lead, deadlineHour]) { _, _ in reminders.reschedule(store.notebook) }
+        .onChange(of: [enabled, tasks, routines, deadlines]) { _, _ in reminders.reschedule(store.realNotebook) }
+        .onChange(of: [lead, deadlineHour]) { _, _ in reminders.reschedule(store.realNotebook) }
         .task { await reminders.refreshStatus() }
     }
 }

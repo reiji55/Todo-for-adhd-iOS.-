@@ -44,11 +44,11 @@ struct SettingsView: View {
                 }.font(.subheadline)
                 Section {
                     Button("バックアップを書き出す", systemImage: "square.and.arrow.up") {
-                        do { document = BackupDocument(data: try NotebookCodec.encode(store.notebook)); exporter = true }
+                        do { document = BackupDocument(data: try NotebookCodec.encode(store.realNotebook)); exporter = true }
                         catch { localError = error.localizedDescription }
                     }.disabled(store.loadFailed)
                     Button("ファイルを読み込む", systemImage: "square.and.arrow.down") { importer = true }
-                        .disabled(store.loadFailed)
+                        .disabled(store.loadFailed || store.isDemo)
                     if store.hasSharingBackup {
                         Button("共有開始前のバックアップを書き出す") { exportSafetyBackup(beforeSharing: true) }
                     }
@@ -68,9 +68,16 @@ struct SettingsView: View {
                 } header: { Text("データ") }
                 footer: { Text("端末に自動保存します。共有を設定すると他の端末と同期します。同期中にバックアップで置き換えると、共有先にも変更が反映されます。アプリを削除する前にはバックアップを書き出してください。") }
                 Section {
-                    Button("サンプルで試す") { showDemoConfirm = true }
-                        .disabled(store.loadFailed || !store.notebook.isEmpty)
-                } footer: { Text("初期状態が空のときだけ使えます。サンプルは自由に編集・削除できます。") }
+                    if store.isDemo {
+                        Button("デモモードを終える", systemImage: "stop.circle") { store.endDemo() }
+                    } else {
+                        Button("デモモードを始める", systemImage: "play.circle") { showDemoConfirm = true }
+                            .disabled(store.loadFailed)
+                    }
+                } header: { Text("デモモード") }
+                footer: {
+                    Text("サンプルのタスク・ルーティン・ボードで操作を練習できます。本物のデータには触れず、同期・通知・Claude連携も止まります。ここで終えるか、アプリを終了すると元に戻ります。何度でも始め直せます。")
+                }
                 Section("この版について") {
                     Text("Horme · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
                     Text("タスクとルーティン、週の時間割、通知、やり方を書き溜めるボードを備えた版です。Claudeとの自動連携はまだ含めていません。")
@@ -127,7 +134,7 @@ struct SettingsView: View {
             .alert("取り込み内容の確認", isPresented: $confirmImport) {
                 Button("キャンセル", role: .cancel) { importedBook = nil; importedTasks = nil; importedCards = nil }
                 Button(importedBook == nil ? "追加する" : "置き換える", role: importedBook == nil ? nil : .destructive) {
-                    if let book = importedBook { store.commit { $0 = book } }
+                    if let book = importedBook, store.commit({ $0 = book }) { store.offerUndo("バックアップの内容に置き換えました") }
                     else if let cards = importedCards {
                         store.commit { $0.boardCards = BoardImporter.merge(cards, into: $0.boardCards) }
                     }
@@ -137,10 +144,10 @@ struct SettingsView: View {
                     importedBook = nil; importedTasks = nil; importedCards = nil
                 }
             } message: { Text(importSummary) }
-            .alert("サンプルを追加します", isPresented: $showDemoConfirm) {
+            .alert("デモモードを始めますか？", isPresented: $showDemoConfirm) {
                 Button("キャンセル", role: .cancel) {}
-                Button("追加") { addDemo() }
-            } message: { Text("必須、締切、続きのメモ、アイデア、ボードのカードを試せるサンプルです。") }
+                Button("始める") { store.startDemo(); dismiss() }
+            } message: { Text("サンプルのデータに切り替わります。本物のデータはそのまま残り、デモを終えるかアプリを終了すると戻ります。") }
             .alert("読み込み・書き出しのお知らせ", isPresented: Binding(get: { localError != nil }, set: { if !$0 { localError = nil } })) {
                 Button("閉じる", role: .cancel) { localError = nil }
             } message: { Text(localError ?? "") }
@@ -149,32 +156,5 @@ struct SettingsView: View {
     private func exportSafetyBackup(beforeSharing: Bool) {
         do { document = BackupDocument(data: try store.backupData(beforeSharing: beforeSharing)); exporter = true }
         catch { localError = error.localizedDescription }
-    }
-    private func addDemo() {
-        let now = Date()
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now)
-        store.commit { book in
-            guard book.isEmpty else { return }
-            book.tasks = [
-                TaskItem(title: "提出書類を送る", plannedAt: now, deadline: now, isMust: true,
-                         effort: .light, memo: "これはサンプルです。", steps: [Step(title: "宛先を確認する"), Step(title: "メールに添付して送る")]),
-                TaskItem(title: "読みかけの本を読む", effort: .light, resumeNote: "42ページの途中まで"),
-                TaskItem(title: "提案の下書きをつくる", deadline: tomorrow, effort: .heavy, steps: [Step(title: "見出しを3つ書く")]),
-                TaskItem(title: "週末の買い物を考える", plannedAt: tomorrow),
-                TaskItem(title: "気になる資料を読む", effort: .medium),
-                TaskItem(title: "予約の電話をする（14時から受付）", plannedAt: now, scheduledTime: "14:00-14:15", effort: .light)
-            ]
-            book.routines = [
-                Routine(title: "部屋をリセットする", project: "部屋のリセット", time: "21:00-21:15", createdAt: now),
-                Routine(title: "睡眠", time: "0:00-7:00", notify: false, isBlock: true, createdAt: now)
-            ]
-            book.boardCards = [
-                BoardCard(title: "部屋のリセット",
-                          purpose: "散らかった机が目に入ると、始める前に気力が削られるため。",
-                          goal: "机の上に、いま使う物しかない状態。",
-                          detail: "これはサンプルです。\n\n1. タイマーを15分にする\n2. 床の物を1か所に集める\n3. 机の上を「戻す・捨てる・保留」に分ける\n4. 保留は箱に入れて、今日は考えない\n\n▸ 15分で止める。全部やろうとしない")
-            ]
-            book.ideas = [Idea(text: "散歩中に聞ける勉強メモを作れそう\nやると決めるまではアイデアに置く。")]
-        }
     }
 }

@@ -60,6 +60,9 @@ struct RootView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { activeTaskBar }
+        .safeAreaInset(edge: .top, spacing: 0) { demoBar }
+        .overlay(alignment: .bottom) { undoToast }
+        .animation(.snappy, value: store.undoOffer)
         .sheet(item: $editor) { route in TaskEditor(task: route.task, original: route.original) }
         .sheet(item: $routineEditor) { routine in RoutineEditor(routine: routine) }
         .sheet(item: $quickAdd) { route in QuickAddSheet(day: route.day) }
@@ -79,20 +82,21 @@ struct RootView: View {
         }
         .onChange(of: phase) { _, newPhase in
             store.setForeground(newPhase == .active)
-            if newPhase == .active { refreshDate = Date(); Reminders.shared.reschedule(store.notebook) }
+            if newPhase == .active { refreshDate = Date(); Reminders.shared.reschedule(store.realNotebook) }
             else { store.clearRecentlyDone() }
         }
         // Rows checked off stay visible on the screen they were checked on, and go once the person moves on.
         .onChange(of: selectedTab) { _, _ in store.clearRecentlyDone() }
-        .onChange(of: store.notebook) { _, book in Reminders.shared.reschedule(book) }
+        // Planned from the saved data, so demo mode never replaces real reminders.
+        .onChange(of: store.notebook) { _, _ in Reminders.shared.reschedule(store.realNotebook) }
         .task {
             #if DEBUG
             // Screenshot runs must not be covered by the permission dialog.
             let arguments = ProcessInfo.processInfo.arguments
             if ["-uiTab", "-uiNoPrompt", "-horme-settings-preview"].contains(where: arguments.contains) { return }
             #endif
-            await Reminders.shared.requestIfNeeded(for: store.notebook)
-            Reminders.shared.reschedule(store.notebook)
+            await Reminders.shared.requestIfNeeded(for: store.realNotebook)
+            Reminders.shared.reschedule(store.realNotebook)
         }
         .environment(\.refreshClock, refreshDate)
         .environment(\.openGuide, OpenGuideAction { guide = GuideRoute(id: $0) })
@@ -184,11 +188,42 @@ struct RootView: View {
         }
     }
 
-    @ToolbarContentBuilder private var commonToolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button { store.undo() } label: { Image(systemName: "arrow.uturn.backward") }
-                .disabled(!store.canUndo).accessibilityLabel("直前の操作を取り消す")
+    /// Always visible in demo mode, so samples are never mistaken for real data.
+    @ViewBuilder private var demoBar: some View {
+        if store.isDemo {
+            HStack(spacing: 8) {
+                Image(systemName: "theatermasks")
+                Text("デモモード中・本物のデータは変わりません").lineLimit(1).minimumScaleFactor(0.8)
+                Spacer(minLength: 4)
+                Button("終える") { store.endDemo() }.fontWeight(.semibold)
+            }
+            .font(.footnote).foregroundStyle(.white)
+            .padding(.horizontal, 16).padding(.vertical, 7)
+            .background(Color.orange)
         }
+    }
+
+    /// Offered for a few seconds after deleting, moving or bulk changes; no permanent undo button.
+    @ViewBuilder private var undoToast: some View {
+        if let offer = store.undoOffer {
+            HStack(spacing: 12) {
+                Text(offer.message).font(.subheadline).lineLimit(2)
+                Spacer(minLength: 4)
+                Button("取り消す") { store.undo() }.font(.subheadline.weight(.bold))
+                Button { store.dismissUndo() } label: { Image(systemName: "xmark").font(.caption.weight(.bold)) }
+                    .accessibilityLabel("閉じる")
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 14))
+            .padding(.horizontal, 16)
+            // Above the tab bar on iPhone; iPad has a sidebar instead.
+            .padding(.bottom, UIDevice.current.userInterfaceIdiom == .pad ? 20 : 64)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    @ToolbarContentBuilder private var commonToolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
             if store.connection != nil && (store.hasPendingChanges || store.syncError != nil) {
                 Button { settingsOpen = true } label: { Image(systemName: store.syncError == nil ? "icloud.and.arrow.up" : "icloud.slash") }
