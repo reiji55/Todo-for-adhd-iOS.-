@@ -12,10 +12,15 @@ const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPAB
 });
 
 const store: RecordStore = {
+  // Read in pages: the API returns at most 1000 rows per request, and deleted items stay as markers.
   async load() {
-    const { data, error } = await supabase.from("horme_records").select("payload");
-    if (error) throw new Error(error.message);
-    return (data ?? []).map((row: { payload: SyncRecord }) => row.payload);
+    const records: SyncRecord[] = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await supabase.from("horme_records").select("payload").order("id").range(from, from + 999);
+      if (error) throw new Error(error.message);
+      records.push(...(data ?? []).map((row: { payload: SyncRecord }) => row.payload));
+      if (!data || data.length < 1000) return records;
+    }
   },
   async merge(changes) {
     const { error } = await supabase.rpc("horme_merge", { incoming: changes });

@@ -14,7 +14,7 @@ create table if not exists public.horme_records (
 alter table public.horme_records enable row level security;
 
 create or replace function public.horme_stamp_greater(a jsonb, b jsonb) returns boolean
-language sql immutable as $$
+language sql immutable set search_path = '' as $$
   select (a->>'tick')::bigint > (b->>'tick')::bigint
       or ((a->>'tick')::bigint = (b->>'tick')::bigint and (a->>'device') collate "C" > (b->>'device') collate "C")
 $$;
