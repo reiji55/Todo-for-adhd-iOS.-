@@ -10,7 +10,8 @@ struct WeekView: View {
     @Environment(\.refreshClock) private var refreshClock
     @State private var weekStart = WeekView.monday(of: Date())
     @State private var selectedDay = Calendar.current.startOfDay(for: Date())
-    @State private var dayListOpen = false
+    /// The block last tapped in the grid; its row in the list below is emphasized.
+    @State private var focusedItem: String?
     let onOpen: (AgendaItem) -> Void
     let onStart: (TaskItem) -> Void
     let onAdd: (Date) -> Void
@@ -29,37 +30,38 @@ struct WeekView: View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             let now = max(context.date, refreshClock)
             GeometryReader { geometry in
-                // On a wide iPad the chosen day's list sits beside the grid; on iPhone it opens as a sheet.
-                let wide = geometry.size.width >= 900
-                HStack(spacing: 0) {
-                    VStack(spacing: 0) {
-                        header(now: now)
-                        WeekRows(days: days, now: now, selectedDay: selectedDay, onOpen: onOpen,
-                                 onSelectDay: { day in
-                                     selectedDay = day
-                                     if !wide { dayListOpen = true }
-                                 },
-                                 onTurn: shift)
-                    }
-                    if wide {
-                        Divider()
-                        ScrollView { DayList(day: selectedDay, onOpen: onOpen, onStart: onStart, onAdd: onAdd).padding(16) }
-                            .frame(width: 340)
+                // As in task-3days: the week on top, the chosen day's list below it.
+                // Tapping a block picks it out in the list; tapping it there opens it.
+                let gridHeight = min(7 * 80 + 24, max(7 * 40 + 24, (geometry.size.height - 40) * 0.62))
+                VStack(spacing: 0) {
+                    header(now: now)
+                    WeekRows(days: days, now: now, selectedDay: selectedDay, highlighted: focusedItem,
+                             onSelectItem: { item, day in
+                                 selectedDay = Calendar.current.startOfDay(for: day)
+                                 focusedItem = item.id
+                             },
+                             onSelectDay: { day in
+                                 selectedDay = Calendar.current.startOfDay(for: day)
+                                 focusedItem = nil
+                             },
+                             onTurn: shift)
+                        .frame(height: gridHeight)
+                    Divider()
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            DayList(day: selectedDay, highlighted: focusedItem, onOpen: onOpen, onStart: onStart, onAdd: onAdd)
+                                .padding(.horizontal, 16).padding(.vertical, 12)
+                                .frame(maxWidth: 760).frame(maxWidth: .infinity)
+                        }
+                        .onChange(of: focusedItem) { _, id in
+                            guard let id else { return }
+                            withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
+                        }
                     }
                 }
             }
         }
         .background(Palette.paper)
-        .sheet(isPresented: $dayListOpen) {
-            NavigationStack {
-                ScrollView { DayList(day: selectedDay, onOpen: onOpen, onStart: onStart, onAdd: onAdd).padding(16) }
-                    .background(Palette.paper)
-                    .navigationTitle(selectedDay.formatted(.dateTime.month().day().weekday(.wide)))
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dayListOpen = false } } }
-            }
-            .presentationDetents([.medium, .large])
-        }
     }
 
     private func header(now: Date) -> some View {
@@ -74,16 +76,23 @@ struct WeekView: View {
                 .accessibilityLabel("次の週")
             Spacer()
             if !isThisWeek {
-                Button("今週") { withAnimation(.snappy) { weekStart = WeekView.monday(of: now) } }.font(.subheadline)
+                Button("今週") {
+                    withAnimation(.snappy) { weekStart = WeekView.monday(of: now) }
+                    selectedDay = Calendar.current.startOfDay(for: now); focusedItem = nil
+                }.font(.subheadline)
             }
         }
         .padding(.horizontal, 8)
     }
 
+    /// Turning the week keeps the same weekday chosen, so the list below follows the grid.
     private func shift(_ weeks: Int) {
+        let calendar = Calendar.current
         withAnimation(.snappy) {
-            weekStart = Calendar.current.date(byAdding: .day, value: 7 * weeks, to: weekStart) ?? weekStart
+            weekStart = calendar.date(byAdding: .day, value: 7 * weeks, to: weekStart) ?? weekStart
         }
+        selectedDay = calendar.date(byAdding: .day, value: 7 * weeks, to: selectedDay) ?? selectedDay
+        focusedItem = nil
     }
 }
 
@@ -114,7 +123,8 @@ struct WeekRows: View {
     let days: [Date]
     let now: Date
     let selectedDay: Date
-    let onOpen: (AgendaItem) -> Void
+    let highlighted: String?
+    let onSelectItem: (AgendaItem, Date) -> Void
     let onSelectDay: (Date) -> Void
     let onTurn: (Int) -> Void
 
@@ -139,6 +149,24 @@ struct WeekRows: View {
         var id: String { item.id }
     }
 
+    /// A block too narrow for its title gets it written small under the day's line, as in task-3days.
+    struct NarrowLabel: Identifiable {
+        var id: String
+        var title: String
+        var x: CGFloat
+        var y: CGFloat
+        var width: CGFloat
+    }
+
+    struct Placement {
+        var blocks: [Placed] = []
+        var labels: [NarrowLabel] = []
+    }
+
+    /// Below this width a block's title cannot be read inside it.
+    static let narrowWidth: CGFloat = 52
+    static let labelStrip: CGFloat = 13
+
     struct Target: Equatable {
         var row: Int
         /// nil drops it into the day's untimed lane.
@@ -162,13 +190,14 @@ struct WeekRows: View {
         // Sleep and work blocks are clipped rather than stretching the hours for everything else.
         let hours = Agenda.hourRange(for: perDay.flatMap { $0 }.filter { !$0.isBlock })
         GeometryReader { geometry in
-            let rowHeight = max(64, (geometry.size.height - 24) / 7)
+            let rowHeight = max(40, (geometry.size.height - 24) / 7)
             let viewportWidth = geometry.size.width - dateColumn
             // Two-hour columns, sized so a phone shows a whole morning (6:00 to past noon) at once
             // and a wide screen shows the daytime.
             let visibleHours: CGFloat = viewportWidth < 560 ? 6.5 : 12.5
             let layout = WeekRowsLayout(hours: hours, hourWidth: max(40, (viewportWidth / visibleHours).rounded()), rowHeight: rowHeight)
-            let placed = place(perDay, layout: layout)
+            let placement = place(perDay, layout: layout)
+            let placed = placement.blocks
             HStack(alignment: .top, spacing: 0) {
                 dateCells(layout: layout, perDay: perDay)
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -192,16 +221,26 @@ struct WeekRows: View {
                                 }
                                 if let drag, let target = drag.target { targetPreview(target, drag: drag, layout: layout) }
                                 ForEach(placed) { block in
-                                    WeekBlock(item: block.item, timed: block.timed, size: block.rect.size, lifted: false)
+                                    WeekBlock(item: block.item, timed: block.timed, size: block.rect.size, lifted: false,
+                                              compact: block.timed && !block.item.isBlock && block.rect.width < Self.narrowWidth,
+                                              selected: block.id == highlighted)
                                         .frame(width: block.rect.width, height: block.rect.height)
                                         .offset(x: block.rect.minX, y: block.rect.minY)
                                         .opacity(drag?.item.id == block.id ? 0 : 1)
                                         .zIndex(block.item.isBlock ? 0 : 1)
-                                        .onTapGesture { onOpen(block.item) }
+                                        .onTapGesture { onSelectItem(block.item, days[block.row]) }
                                         .gesture(moveGesture(block, layout: layout, viewportWidth: viewportWidth))
                                         .accessibilityElement(children: .ignore)
                                         .accessibilityLabel("\(block.item.slot?.label ?? "時間なし") \(block.item.title)\(block.item.isDone ? "、完了" : "")")
-                                        .accessibilityHint("ダブルタップで開きます。長押しして動かすと日時を変えられます。")
+                                        .accessibilityHint("ダブルタップで下の一覧に出します。長押しして動かすと日時を変えられます。")
+                                }
+                                ForEach(placement.labels) { label in
+                                    Text(label.title).font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)
+                                        .lineLimit(1).truncationMode(.tail)
+                                        .frame(width: label.width, height: Self.labelStrip, alignment: .leading)
+                                        .offset(x: label.x, y: label.y)
+                                        .allowsHitTesting(false)
+                                        .accessibilityHidden(true)
                                 }
                             }
                             .frame(width: layout.contentWidth, height: layout.height, alignment: .topLeading)
@@ -298,8 +337,9 @@ struct WeekRows: View {
 
     // MARK: Layout
 
-    private func place(_ perDay: [[AgendaItem]], layout: WeekRowsLayout) -> [Placed] {
+    private func place(_ perDay: [[AgendaItem]], layout: WeekRowsLayout) -> Placement {
         var result: [Placed] = []
+        var labels: [NarrowLabel] = []
         let lower = layout.hours.lowerBound * 60, upper = layout.hours.upperBound * 60
         for (row, items) in perDay.enumerated() {
             let top = layout.y(row: row) + 3
@@ -324,19 +364,34 @@ struct WeekRows: View {
                                      timed: true))
             }
             let timed = items.filter { !$0.isBlock && $0.slot != nil }
+            func width(_ item: AgendaItem) -> CGFloat {
+                let slot = item.slot!
+                let start = max(slot.start, lower), end = min(slot.end, upper)
+                return end > start ? max(24, layout.x(minute: end) - layout.x(minute: start) - 2) : 0
+            }
+            // Rows with a narrow block keep a strip at the bottom for the small titles.
+            let narrow = timed.filter { (1..<Self.narrowWidth).contains(width($0)) }
+            let blockHeight = height - (narrow.isEmpty ? 0 : Self.labelStrip)
             for (item, lane, lanes) in Self.lanes(timed) {
                 let slot = item.slot!
                 let start = max(slot.start, lower), end = min(slot.end, upper)
                 guard end > start else { continue }
-                let laneHeight = height / CGFloat(lanes)
+                let laneHeight = blockHeight / CGFloat(lanes)
                 result.append(Placed(item: item, row: row,
                                      rect: CGRect(x: layout.x(minute: start) + 1, y: top + CGFloat(lane) * laneHeight,
-                                                  width: max(24, layout.x(minute: end) - layout.x(minute: start) - 2),
-                                                  height: laneHeight - (lanes > 1 ? 2 : 0)),
+                                                  width: width(item), height: laneHeight - (lanes > 1 ? 2 : 0)),
                                      timed: true))
             }
+            let starts = narrow.map { layout.x(minute: max($0.slot!.start, lower)) + 1 }.sorted()
+            for item in narrow.sorted(by: { $0.slot!.start < $1.slot!.start }) {
+                let x = layout.x(minute: max(item.slot!.start, lower)) + 1
+                // Each title runs until the next narrow block's title, so they never overlap.
+                let next = starts.first { $0 > x + 1 } ?? .infinity
+                labels.append(NarrowLabel(id: item.id, title: item.title, x: x, y: top + blockHeight,
+                                          width: max(18, min(150, next - x - 3))))
+            }
         }
-        return result
+        return Placement(blocks: result, labels: labels)
     }
 
     /// Overlapping items share the row in stacked lanes, as in a calendar.
@@ -566,6 +621,10 @@ private struct WeekBlock: View {
     let timed: Bool
     let size: CGSize
     let lifted: Bool
+    /// Too narrow to read: the title is written under the row instead.
+    var compact = false
+    /// Tapped, and shown in the list below.
+    var selected = false
 
     var body: some View {
         let colorName = store.colorName(forProject: item.project)
@@ -587,7 +646,7 @@ private struct WeekBlock: View {
                 if item.isDone { Hatch(spacing: 6, reversed: true).stroke(accent.opacity(0.45), lineWidth: 1.2).clipShape(shape) }
                 Rectangle().fill(accent).frame(width: 3).clipShape(shape)
             }
-            VStack(alignment: .leading, spacing: 1) {
+            if !compact { VStack(alignment: .leading, spacing: 1) {
                 if showsTime, let slot = item.slot {
                     // A narrow block keeps the start time only, so the title still has room.
                     Text(size.width >= 80 ? slot.label : slot.startLabel)
@@ -607,10 +666,10 @@ private struct WeekBlock: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(.leading, item.isBlock ? 5 : 7).padding(.trailing, 3).padding(.top, 3)
+            .padding(.leading, item.isBlock ? 5 : 7).padding(.trailing, 3).padding(.top, 3) }
         }
         .clipShape(shape)
-        .overlay { if lifted { shape.strokeBorder(accent, lineWidth: 1.5) } }
+        .overlay { if lifted || selected { shape.strokeBorder(selected ? Palette.accent : accent, lineWidth: selected ? 2.5 : 1.5) } }
         .scaleEffect(lifted ? 1.05 : 1)
         .shadow(color: .black.opacity(lifted ? 0.28 : 0), radius: lifted ? 10 : 0, y: lifted ? 5 : 0)
         .contentShape(shape)
@@ -622,6 +681,7 @@ private struct WeekBlock: View {
 struct DayList: View {
     @EnvironmentObject private var store: TaskStore
     let day: Date
+    var highlighted: String? = nil
     let onOpen: (AgendaItem) -> Void
     let onStart: (TaskItem) -> Void
     let onAdd: (Date) -> Void
@@ -637,8 +697,16 @@ struct DayList: View {
             if items.isEmpty {
                 Text("この日の予定はありません。").font(.subheadline).foregroundStyle(.secondary)
             }
-            ForEach(items) { item in AgendaRow(item: item, onOpen: onOpen, onStart: onStart) }
-            Text("週の表で長押しして動かすと、日付と時間を変えられます。ルーティンはその日だけ動きます。左右の端まで送ってさらに引くと、前後の週に移ります。")
+            ForEach(items) { item in
+                let picked = item.id == highlighted
+                AgendaRow(item: item, onOpen: onOpen, onStart: onStart)
+                    .overlay { if picked { RoundedRectangle(cornerRadius: 14).strokeBorder(Palette.accent, lineWidth: 2.5) } }
+                    .shadow(color: picked ? Palette.accent.opacity(0.3) : .clear, radius: 8, y: 3)
+                    .scaleEffect(picked ? 1.02 : 1)
+                    .animation(.snappy, value: picked)
+                    .id(item.id)
+            }
+            Text("表の帯をタップすると、ここで目立たせます。ここをタップすると編集できます。表で長押しして動かすと日付と時間を変えられます（ルーティンはその日だけ）。左右の端からさらに引くと前後の週に移ります。")
                 .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
         }
     }
