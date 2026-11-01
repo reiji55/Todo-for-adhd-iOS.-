@@ -23,6 +23,25 @@ print(devices[0]['udid'])
 PY
 )
 
+# A launch that hangs must give up within a minute and a half and leave a stack sample of the app, instead of
+# silently using up the whole job. It is tried once more, so a simulator hiccup alone does not fail the run.
+launch() {
+  local attempt pid
+  for attempt in 1 2; do
+    if perl -e 'alarm shift; exec @ARGV' 90 xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" \
+        io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP "$@"; then return 0; fi
+    echo "::warning::Launch with $* did not finish (attempt $attempt)" >&2
+    pid=$(pgrep -f 'ThreeDays.app/ThreeDays' | head -1 || true)
+    if [ -n "$pid" ]; then
+      ps -o pid,%cpu,stat,etime -p "$pid" >&2 || true
+      sample "$pid" 3 2>/dev/null | head -120 >&2 || true
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+  done
+  echo "::error::Launch with $* failed twice" >&2
+  return 1
+}
+
 cleanup() { xcrun simctl shutdown "$SIMULATOR_ID" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 xcrun simctl boot "$SIMULATOR_ID" || true
@@ -95,7 +114,7 @@ routines = [
 ]
 path.write_text(json.dumps(dict(version=1, tasks=tasks, ideas=[], boardCards=cards, routines=routines), ensure_ascii=False))
 PY
-xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -uiNoPrompt | tee "$RESULT_DIR/launch.txt"
+launch -uiNoPrompt | tee "$RESULT_DIR/launch.txt"
 sleep 5
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/today.png"
 python3 - "$SIMULATOR_DATA" <<'PY'
@@ -112,20 +131,20 @@ assert len(state['notebook']['routines']) == len(legacy['routines']), 'Routines 
 assert state.get('connection') is None, 'Sharing must require user setup'
 print('Verified atomic migration of existing tasks; cloud sync stays off until configured')
 PY
-xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -horme-settings-preview
+launch -horme-settings-preview
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/sharing-settings.png"
 # -uiTab and -uiOpenFirstCard exist only in Debug builds, for these captures.
-xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -uiTab 1 >/dev/null
+launch -uiTab 1 >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/week.png"
-xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -uiTab 3 >/dev/null
+launch -uiTab 3 >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/ideas.png"
-xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -uiTab 4 >/dev/null
+launch -uiTab 4 >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board.png"
-xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -uiTab 4 -uiOpenFirstCard >/dev/null
+launch -uiTab 4 -uiOpenFirstCard >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board-card.png"
 # Screenshots and launch logs verify startup and layout, not every interaction.
