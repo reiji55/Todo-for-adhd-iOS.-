@@ -1,8 +1,9 @@
 import SwiftUI
 import UIKit
 
-/// The week as one screen, Monday to Sunday, like the task-3days timetable. Long-press a block and
-/// drag it to another day or time; everything else reads the same data, so the move shows up everywhere.
+/// The week as seven rows, Monday to Sunday, with time running left to right as in task-3days.
+/// All seven days fit on screen; hours scroll sideways so blocks are wide enough to read.
+/// Pull past either end to turn the week. Long-press a block and drag it to another day or time.
 @MainActor
 struct WeekView: View {
     @EnvironmentObject private var store: TaskStore
@@ -33,11 +34,12 @@ struct WeekView: View {
                 HStack(spacing: 0) {
                     VStack(spacing: 0) {
                         header(now: now)
-                        WeekGrid(days: days, now: now, selectedDay: selectedDay, onOpen: onOpen) { day in
-                            selectedDay = day
-                            if !wide { dayListOpen = true }
-                        }
-                        .padding(.horizontal, 4)
+                        WeekRows(days: days, now: now, selectedDay: selectedDay, onOpen: onOpen,
+                                 onSelectDay: { day in
+                                     selectedDay = day
+                                     if !wide { dayListOpen = true }
+                                 },
+                                 onTurn: shift)
                     }
                     if wide {
                         Divider()
@@ -76,10 +78,6 @@ struct WeekView: View {
             }
         }
         .padding(.horizontal, 8)
-        .contentShape(Rectangle())
-        .gesture(DragGesture(minimumDistance: 30).onEnded { value in
-            if abs(value.translation.width) > abs(value.translation.height) { shift(value.translation.width < 0 ? 1 : -1) }
-        })
     }
 
     private func shift(_ weeks: Int) {
@@ -89,136 +87,254 @@ struct WeekView: View {
     }
 }
 
-/// Geometry shared by drawing, hit testing and dropping.
-struct WeekLayout {
-    let size: CGSize
+/// Geometry shared by drawing, hit testing and dropping, in the scroll content's coordinates.
+struct WeekRowsLayout {
     let hours: ClosedRange<Int>
-    let stripRows: Int
-    let gutter: CGFloat = 26
-    let header: CGFloat = 40
-    var strip: CGFloat { CGFloat(max(1, stripRows)) * 18 + 6 }
-    var columnWidth: CGFloat { (size.width - gutter) / 7 }
-    var timelineTop: CGFloat { header + strip }
-    var hourHeight: CGFloat { max(12, (size.height - timelineTop - 6) / CGFloat(max(1, hours.count - 1))) }
-    func x(day: Int) -> CGFloat { gutter + CGFloat(day) * columnWidth }
-    func y(minute: Int) -> CGFloat { timelineTop + CGFloat(minute - hours.lowerBound * 60) / 60 * hourHeight }
-    func minute(y: CGFloat) -> Int { hours.lowerBound * 60 + Int(((y - timelineTop) / hourHeight * 60).rounded()) }
-    func day(x: CGFloat) -> Int { min(6, max(0, Int(floor((x - gutter) / columnWidth)))) }
+    let hourWidth: CGFloat
+    let rowHeight: CGFloat
+    let ruler: CGFloat = 24
+    /// A lane before the first hour for items without a time; drag them right to give them one.
+    let untimedWidth: CGFloat = 112
+    var contentWidth: CGFloat { untimedWidth + CGFloat(max(1, hours.count - 1)) * hourWidth + 8 }
+    var height: CGFloat { ruler + rowHeight * 7 }
+    func x(minute: Int) -> CGFloat { untimedWidth + CGFloat(minute - hours.lowerBound * 60) / 60 * hourWidth }
+    func minute(x: CGFloat) -> Int { hours.lowerBound * 60 + Int(((x - untimedWidth) / hourWidth * 60).rounded()) }
+    func y(row: Int) -> CGFloat { ruler + CGFloat(row) * rowHeight }
+    func row(y: CGFloat) -> Int { min(6, max(0, Int(floor((y - ruler) / rowHeight)))) }
+}
+
+private struct ScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 @MainActor
-struct WeekGrid: View {
+struct WeekRows: View {
     @EnvironmentObject private var store: TaskStore
+    @Environment(\.horizontalSizeClass) private var sizeClass
     let days: [Date]
     let now: Date
     let selectedDay: Date
     let onOpen: (AgendaItem) -> Void
     let onSelectDay: (Date) -> Void
+    let onTurn: (Int) -> Void
+
     @State private var drag: DragState?
+    @State private var anchor: Int?
+    @State private var offset: CGFloat = 0
+    @State private var turnArmed = true
+    @State private var landing: Landing?
+    @State private var edgeScroll: Task<Void, Never>?
+
+    private let dateColumn: CGFloat = 54
+    /// Hour anchors for scrolling; the untimed lane is -1.
+    private static let untimedAnchor = -1
+
+    enum Landing { case start, end }
 
     struct Placed: Identifiable {
         var item: AgendaItem
-        var day: Int
+        var row: Int
         var rect: CGRect
         var timed: Bool
         var id: String { item.id }
     }
 
     struct Target: Equatable {
-        var day: Int
-        /// nil drops it into the day's "時間なし" strip.
+        var row: Int
+        /// nil drops it into the day's untimed lane.
         var start: Int?
     }
 
     struct DragState {
         var item: AgendaItem
-        var fromDay: Int
+        var fromRow: Int
         var grab: CGSize
         var size: CGSize
+        /// Finger position in the viewport (the visible part of the scroll view).
         var location: CGPoint
         var target: Target?
-        /// The hold is recognized before the finger position arrives; the grab point is fixed on the first update.
         var grabPending = false
+        var landingRect: CGRect?
     }
 
     var body: some View {
         let perDay = days.map { Agenda.items(on: $0, tasks: store.notebook.tasks, routines: store.notebook.routines) }
-        // Sleep and work blocks are clipped rather than allowed to stretch the hours for everything else.
+        // Sleep and work blocks are clipped rather than stretching the hours for everything else.
         let hours = Agenda.hourRange(for: perDay.flatMap { $0 }.filter { !$0.isBlock })
-        let stripRows = min(3, perDay.map { $0.filter { $0.slot == nil }.count }.max() ?? 0)
         GeometryReader { geometry in
-            let layout = WeekLayout(size: geometry.size, hours: hours, stripRows: stripRows)
+            let rowHeight = max(64, (geometry.size.height - 24) / 7)
+            let layout = WeekRowsLayout(hours: hours, hourWidth: sizeClass == .regular ? 120 : 96, rowHeight: rowHeight)
             let placed = place(perDay, layout: layout)
-            ZStack(alignment: .topLeading) {
-                WeekBackground(days: days, now: now, selectedDay: selectedDay, layout: layout, onSelectDay: onSelectDay)
-                if let drag {
-                    // Where it came from stays outlined until it lands.
-                    if let origin = placed.first(where: { $0.id == drag.item.id }) {
-                        RoundedRectangle(cornerRadius: 6).strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                            .foregroundStyle(.secondary).frame(width: origin.rect.width, height: origin.rect.height)
-                            .offset(x: origin.rect.minX, y: origin.rect.minY)
+            let viewportWidth = geometry.size.width - dateColumn
+            HStack(alignment: .top, spacing: 0) {
+                dateCells(layout: layout, perDay: perDay)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 0) {
+                            Color.clear.frame(width: layout.untimedWidth, height: layout.height).id(Self.untimedAnchor)
+                            ForEach(Array(hours.lowerBound..<hours.upperBound), id: \.self) { hour in
+                                Color.clear.frame(width: layout.hourWidth, height: layout.height).id(hour)
+                            }
+                            Color.clear.frame(width: 8, height: layout.height)
+                        }
+                        .scrollTargetLayout()
+                        .overlay(alignment: .topLeading) {
+                            ZStack(alignment: .topLeading) {
+                                WeekRowsBackground(days: days, now: now, layout: layout)
+                                if let drag, let origin = placed.first(where: { $0.id == drag.item.id }) {
+                                    // Where it came from stays outlined until it lands.
+                                    RoundedRectangle(cornerRadius: 7).strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: origin.rect.width, height: origin.rect.height)
+                                        .offset(x: origin.rect.minX, y: origin.rect.minY)
+                                }
+                                if let drag, let target = drag.target { targetPreview(target, drag: drag, layout: layout) }
+                                ForEach(placed) { block in
+                                    WeekBlock(item: block.item, timed: block.timed, size: block.rect.size, lifted: false)
+                                        .frame(width: block.rect.width, height: block.rect.height)
+                                        .offset(x: block.rect.minX, y: block.rect.minY)
+                                        .opacity(drag?.item.id == block.id ? 0 : 1)
+                                        .zIndex(block.item.isBlock ? 0 : 1)
+                                        .onTapGesture { onOpen(block.item) }
+                                        .gesture(moveGesture(block, layout: layout, viewportWidth: viewportWidth))
+                                        .accessibilityElement(children: .ignore)
+                                        .accessibilityLabel("\(block.item.slot?.label ?? "時間なし") \(block.item.title)\(block.item.isDone ? "、完了" : "")")
+                                        .accessibilityHint("ダブルタップで開きます。長押しして動かすと日時を変えられます。")
+                                }
+                            }
+                            .frame(width: layout.contentWidth, height: layout.height, alignment: .topLeading)
+                        }
+                        .background(GeometryReader { content in
+                            Color.clear.preference(key: ScrollOffsetKey.self, value: -content.frame(in: .named("weekViewport")).minX)
+                        })
                     }
-                    if let target = drag.target { targetPreview(target, drag: drag, layout: layout) }
-                }
-                ForEach(placed) { block in
-                    let lifted = drag?.item.id == block.id
-                    let origin = lifted ? CGPoint(x: drag!.location.x - drag!.grab.width, y: drag!.location.y - drag!.grab.height)
-                                        : block.rect.origin
-                    WeekBlock(item: block.item, timed: block.timed, height: block.rect.height, lifted: lifted)
-                        .frame(width: lifted ? drag!.size.width : block.rect.width, height: lifted ? drag!.size.height : block.rect.height)
-                        .offset(x: origin.x, y: origin.y)
-                        .zIndex(lifted ? 10 : block.item.isBlock ? 0 : 1)
-                        .onTapGesture { onOpen(block.item) }
-                        .gesture(moveGesture(block, layout: layout))
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("\(block.item.slot?.label ?? "時間なし") \(block.item.title)\(block.item.isDone ? "、完了" : "")")
-                        .accessibilityHint("ダブルタップで開きます。長押しして動かすと日時を変えられます。")
-                }
+                    .scrollPosition(id: $anchor, anchor: .leading)
+                    // While a block is held, the finger moves the block, not the hours.
+                    .scrollDisabled(drag != nil)
+                    .coordinateSpace(name: "weekViewport")
+                    .overlay(alignment: .topLeading) { liftedBlock }
+                    .onPreferenceChange(ScrollOffsetKey.self) { value in
+                        offset = value
+                        turnPage(maxOffset: max(0, layout.contentWidth - viewportWidth))
+                        if var state = drag {
+                            state.target = target(for: state, layout: layout)
+                            if state.target != drag?.target { drag?.target = state.target }
+                        }
+                    }
             }
-            .coordinateSpace(name: "week")
+            .onAppear { anchor = initialAnchor(hours: hours) }
+            .onChange(of: days.first) { _, _ in
+                switch landing {
+                case .start: anchor = Self.untimedAnchor
+                case .end: anchor = hours.upperBound - 1
+                case nil: anchor = initialAnchor(hours: hours)
+                }
+                landing = nil
+            }
         }
+    }
+
+    /// This week opens an hour before now; other weeks open at the start of the day.
+    private func initialAnchor(hours: ClosedRange<Int>) -> Int {
+        guard days.contains(where: { Calendar.current.isDate($0, inSameDayAs: now) }) else { return hours.lowerBound }
+        let hour = Calendar.current.component(.hour, from: now) - 1
+        return min(max(hours.lowerBound, hour), hours.upperBound - 1)
+    }
+
+    /// Pulling past either end turns the week, once per pull.
+    private func turnPage(maxOffset: CGFloat) {
+        let threshold: CGFloat = 70
+        if offset > -5 && offset < maxOffset + 5 { turnArmed = true; return }
+        guard turnArmed, drag == nil else { return }
+        if offset > maxOffset + threshold {
+            turnArmed = false; landing = .start
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onTurn(1)
+        } else if offset < -threshold {
+            turnArmed = false; landing = .end
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onTurn(-1)
+        }
+    }
+
+    private func dateCells(layout: WeekRowsLayout, perDay: [[AgendaItem]]) -> some View {
+        let calendar = Calendar.current
+        return VStack(spacing: 0) {
+            Color.clear.frame(height: layout.ruler)
+            ForEach(Array(days.enumerated()), id: \.offset) { index, day in
+                let isToday = calendar.isDate(day, inSameDayAs: now)
+                let untimed = perDay[index].filter { $0.slot == nil && !$0.isDone }.count
+                Button { onSelectDay(day) } label: {
+                    VStack(spacing: 2) {
+                        Text(day.formatted(.dateTime.weekday(.short))).font(.caption2.weight(.semibold))
+                            .foregroundStyle(calendar.isDateInWeekend(day) ? Palette.must : .secondary)
+                        Text("\(calendar.component(.day, from: day))")
+                            .font(.system(.title3, design: .rounded).weight(.semibold)).monospacedDigit()
+                            .foregroundStyle(isToday ? Color.white : .primary)
+                            .frame(width: 34, height: 28)
+                            .background { if isToday { Capsule().fill(Color.red) } }
+                        if untimed > 0 {
+                            Text("未定\(untimed)").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(width: dateColumn, height: layout.rowHeight)
+                    .background {
+                        if calendar.isDate(day, inSameDayAs: selectedDay) {
+                            RoundedRectangle(cornerRadius: 8).fill(Palette.accent.opacity(0.12)).padding(2)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(day.formatted(.dateTime.month().day().weekday(.wide)))の予定を見る")
+            }
+        }
+        .frame(width: dateColumn)
     }
 
     // MARK: Layout
 
-    private func place(_ perDay: [[AgendaItem]], layout: WeekLayout) -> [Placed] {
+    private func place(_ perDay: [[AgendaItem]], layout: WeekRowsLayout) -> [Placed] {
         var result: [Placed] = []
         let lower = layout.hours.lowerBound * 60, upper = layout.hours.upperBound * 60
-        for (day, items) in perDay.enumerated() {
-            let x = layout.x(day: day)
-            let width = layout.columnWidth
-            // Untimed items stack in the strip under the date; more than three collapse into the last row.
-            for (row, item) in items.filter({ $0.slot == nil }).prefix(3).enumerated() {
-                result.append(Placed(item: item, day: day,
-                                     rect: CGRect(x: x + 1.5, y: layout.header + 3 + CGFloat(row) * 18, width: width - 3, height: 16),
+        for (row, items) in perDay.enumerated() {
+            let top = layout.y(row: row) + 3
+            let height = layout.rowHeight - 6
+            // Untimed items stack in the lane before the first hour; the fourth and later are in the day list.
+            let untimed = Array(items.filter { $0.slot == nil }.prefix(3))
+            let chip = (height - CGFloat(max(0, untimed.count - 1)) * 3) / CGFloat(max(1, untimed.count))
+            for (index, item) in untimed.enumerated() {
+                result.append(Placed(item: item, row: row,
+                                     rect: CGRect(x: 4, y: top + CGFloat(index) * (chip + 3),
+                                                  width: layout.untimedWidth - 10, height: min(chip, 30)),
                                      timed: false))
             }
-            // Held time (sleep, work) spans the column behind everything; the rest share it in lanes.
+            // Held time (sleep, work) spans the row behind everything; the rest share it in lanes.
             for item in items where item.isBlock {
                 guard let slot = item.slot else { continue }
-                let top = max(slot.start, lower), bottom = min(slot.end, upper)
-                guard bottom > top else { continue }
-                result.append(Placed(item: item, day: day,
-                                     rect: CGRect(x: x + 1, y: layout.y(minute: top), width: width - 2,
-                                                  height: max(10, layout.y(minute: bottom) - layout.y(minute: top))),
+                let start = max(slot.start, lower), end = min(slot.end, upper)
+                guard end > start else { continue }
+                result.append(Placed(item: item, row: row,
+                                     rect: CGRect(x: layout.x(minute: start), y: top,
+                                                  width: max(12, layout.x(minute: end) - layout.x(minute: start)), height: height),
                                      timed: true))
             }
             let timed = items.filter { !$0.isBlock && $0.slot != nil }
             for (item, lane, lanes) in Self.lanes(timed) {
                 let slot = item.slot!
-                let top = max(slot.start, lower), bottom = min(slot.end, upper)
-                guard bottom > top else { continue }
-                let laneWidth = (width - 2) / CGFloat(lanes)
-                result.append(Placed(item: item, day: day,
-                                     rect: CGRect(x: x + 1 + CGFloat(lane) * laneWidth, y: layout.y(minute: top) + 0.5,
-                                                  width: laneWidth - 1, height: max(14, layout.y(minute: bottom) - layout.y(minute: top) - 1)),
+                let start = max(slot.start, lower), end = min(slot.end, upper)
+                guard end > start else { continue }
+                let laneHeight = height / CGFloat(lanes)
+                result.append(Placed(item: item, row: row,
+                                     rect: CGRect(x: layout.x(minute: start) + 1, y: top + CGFloat(lane) * laneHeight,
+                                                  width: max(24, layout.x(minute: end) - layout.x(minute: start) - 2),
+                                                  height: laneHeight - (lanes > 1 ? 2 : 0)),
                                      timed: true))
             }
         }
         return result
     }
 
-    /// Overlapping items share the column side by side, as in a calendar.
+    /// Overlapping items share the row in stacked lanes, as in a calendar.
     static func lanes(_ items: [AgendaItem]) -> [(AgendaItem, Int, Int)] {
         let sorted = items.sorted { ($0.slot!.start, $0.id) < ($1.slot!.start, $1.id) }
         var result: [(AgendaItem, Int, Int)] = []
@@ -245,175 +361,196 @@ struct WeekGrid: View {
 
     // MARK: Moving
 
-    private func moveGesture(_ block: Placed, layout: WeekLayout) -> some Gesture {
+    /// The held block, drawn over the scroll view so it stays under the finger while the hours scroll.
+    @ViewBuilder private var liftedBlock: some View {
+        if let drag {
+            let rect = drag.landingRect
+                ?? CGRect(origin: CGPoint(x: drag.location.x - drag.grab.width, y: drag.location.y - drag.grab.height), size: drag.size)
+            WeekBlock(item: drag.item, timed: drag.item.slot != nil, size: rect.size, lifted: drag.landingRect == nil)
+                .frame(width: rect.width, height: rect.height)
+                .offset(x: rect.minX, y: rect.minY)
+                .allowsHitTesting(false)
+        }
+    }
+
+    private func moveGesture(_ block: Placed, layout: WeekRowsLayout, viewportWidth: CGFloat) -> some Gesture {
         LongPressGesture(minimumDuration: 0.3)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("week")))
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("weekViewport")))
             .onChanged { value in
                 guard case .second(true, let finger) = value else { return }
-                let location = finger?.location ?? CGPoint(x: block.rect.midX, y: block.rect.midY)
+                // Content coordinates to the visible viewport.
+                let visible = block.rect.offsetBy(dx: -offset, dy: 0)
+                let location = finger?.location ?? CGPoint(x: visible.midX, y: visible.midY)
                 if drag == nil {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    let grab = CGSize(width: location.x - block.rect.minX, height: location.y - block.rect.minY)
-                    var state = DragState(item: block.item, fromDay: block.day, grab: grab, size: block.rect.size,
-                                          location: location, target: nil, grabPending: finger == nil)
+                    var state = DragState(item: block.item, fromRow: block.row,
+                                          grab: CGSize(width: location.x - visible.minX, height: location.y - visible.minY),
+                                          size: block.rect.size, location: location, target: nil, grabPending: finger == nil)
                     state.target = target(for: state, layout: layout)
                     withAnimation(.spring(response: 0.22, dampingFraction: 0.7)) { drag = state }
                     return
                 }
-                guard var state = drag else { return }
+                guard var state = drag, state.landingRect == nil else { return }
                 if state.grabPending, let finger {
-                    state.grab = CGSize(width: finger.startLocation.x - block.rect.minX, height: finger.startLocation.y - block.rect.minY)
+                    state.grab = CGSize(width: finger.startLocation.x - visible.minX, height: finger.startLocation.y - visible.minY)
                     state.grabPending = false
-                    drag?.grab = state.grab; drag?.grabPending = false
                 }
                 state.location = location
                 let next = target(for: state, layout: layout)
                 // The block follows the finger exactly; only the landing outline animates between slots.
                 var follow = Transaction()
                 follow.disablesAnimations = true
-                withTransaction(follow) { drag?.location = location }
+                withTransaction(follow) { drag?.location = location; drag?.grab = state.grab; drag?.grabPending = state.grabPending }
                 if next != state.target {
                     UISelectionFeedbackGenerator().selectionChanged()
                     withAnimation(.snappy(duration: 0.14)) { drag?.target = next }
                 }
+                scrollNearEdges(x: location.x, viewportWidth: viewportWidth, layout: layout)
             }
-            .onEnded { _ in drop() }
+            .onEnded { _ in drop(layout: layout) }
     }
 
-    private func target(for state: DragState, layout: WeekLayout) -> Target? {
+    /// Holding the block near the left or right edge scrolls an hour at a time to reach hours off screen.
+    private func scrollNearEdges(x: CGFloat, viewportWidth: CGFloat, layout: WeekRowsLayout) {
+        let direction = x < 36 ? -1 : (x > viewportWidth - 36 ? 1 : 0)
+        guard direction != 0 else { edgeScroll?.cancel(); edgeScroll = nil; return }
+        guard edgeScroll == nil else { return }
+        edgeScroll = Task { @MainActor in
+            while !Task.isCancelled, drag != nil {
+                let current = anchor ?? layout.hours.lowerBound
+                let next = min(layout.hours.upperBound - 1, max(Self.untimedAnchor, current + direction))
+                if next == current { break }
+                withAnimation(.easeInOut(duration: 0.25)) { anchor = next }
+                try? await Task.sleep(for: .milliseconds(380))
+            }
+            edgeScroll = nil
+        }
+    }
+
+    private func target(for state: DragState, layout: WeekRowsLayout) -> Target? {
         let point = state.location
-        guard point.y >= layout.header - 4, point.x >= layout.gutter - 8, point.x <= layout.size.width + 8 else { return nil }
-        let day = layout.day(x: point.x)
-        if point.y < layout.timelineTop { return Target(day: day, start: nil) }
+        guard point.y >= layout.ruler - 6, point.y <= layout.height + 10 else { return nil }
+        let row = layout.row(y: point.y)
         let duration = state.item.slot?.duration ?? 60
         // Timed blocks keep where they were held; an untimed chip starts where the finger is.
-        let top = state.item.slot == nil ? point.y - 6 : point.y - state.grab.height
-        let raw = layout.minute(y: top)
-        let snapped = Int((Double(raw) / 15).rounded()) * 15
+        let left = (state.item.slot == nil ? point.x - 8 : point.x - state.grab.width) + offset
+        if point.x + offset < layout.untimedWidth - 8 { return Target(row: row, start: nil) }
+        let snapped = Int((Double(layout.minute(x: left)) / 15).rounded()) * 15
         let latest = min(24 * 60 - 15, layout.hours.upperBound * 60 - min(duration, 60))
-        return Target(day: day, start: min(latest, max(layout.hours.lowerBound * 60, snapped)))
+        return Target(row: row, start: min(latest, max(layout.hours.lowerBound * 60, snapped)))
     }
 
-    private func drop() {
+    private func targetRect(_ target: Target, duration: Int, layout: WeekRowsLayout) -> CGRect {
+        let top = layout.y(row: target.row) + 3, height = layout.rowHeight - 6
+        guard let start = target.start else { return CGRect(x: 4, y: top, width: layout.untimedWidth - 10, height: min(height, 30)) }
+        let end = min(start + duration, layout.hours.upperBound * 60)
+        return CGRect(x: layout.x(minute: start) + 1, y: top, width: max(24, layout.x(minute: end) - layout.x(minute: start) - 2), height: height)
+    }
+
+    private func drop(layout: WeekRowsLayout) {
+        edgeScroll?.cancel(); edgeScroll = nil
         guard let state = drag else { return }
         guard let target = state.target else {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { drag = nil }
             return
         }
-        let slot = target.start.map { TimeSlot(start: $0, duration: state.item.slot?.duration ?? 60) }
-        let changed = target.day != state.fromDay || slot != state.item.slot
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
-            if changed { store.move(state.item, to: days[target.day], slot: slot) }
-            drag = nil
-        }
+        let duration = state.item.slot?.duration ?? 60
+        let slot = target.start.map { TimeSlot(start: $0, duration: duration) }
+        let changed = target.row != state.fromRow || slot != state.item.slot
+        // First the held block flies into its slot, then the data changes underneath, so nothing jumps back.
+        let landing = targetRect(target, duration: duration, layout: layout).offsetBy(dx: -offset, dy: 0)
+        withAnimation(.spring(response: 0.26, dampingFraction: 0.82)) { drag?.landingRect = landing }
         if changed { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(240))
+            var quiet = Transaction()
+            quiet.disablesAnimations = true
+            withTransaction(quiet) {
+                if changed { store.move(state.item, to: days[target.row], slot: slot) }
+                drag = nil
+            }
+        }
     }
 
-    @ViewBuilder private func targetPreview(_ target: Target, drag: DragState, layout: WeekLayout) -> some View {
-        let x = layout.x(day: target.day) + 1
-        if let start = target.start {
-            let duration = drag.item.slot?.duration ?? 60
-            let y = layout.y(minute: start)
-            let height = max(14, layout.y(minute: min(start + duration, layout.hours.upperBound * 60)) - y)
-            ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 6).fill(Palette.accent.opacity(0.14))
-                RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.accent, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
-            }
-            .frame(width: layout.columnWidth - 2, height: height)
-            .overlay(alignment: .topLeading) {
-                Text(TimeSlot(start: start, duration: duration).label).font(.system(size: 10, weight: .bold, design: .rounded))
-                    .monospacedDigit().foregroundStyle(.white).padding(.horizontal, 4).padding(.vertical, 1)
-                    .background(Palette.accent, in: Capsule()).fixedSize().offset(y: -16)
-            }
-            .offset(x: x, y: y)
-        } else {
-            RoundedRectangle(cornerRadius: 5).strokeBorder(Palette.accent, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
-                .frame(width: layout.columnWidth - 2, height: layout.strip - 4)
-                .offset(x: x, y: layout.header + 2)
+    @ViewBuilder private func targetPreview(_ target: Target, drag: DragState, layout: WeekRowsLayout) -> some View {
+        let duration = drag.item.slot?.duration ?? 60
+        let rect = targetRect(target, duration: duration, layout: layout)
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 7).fill(Palette.accent.opacity(0.14))
+            RoundedRectangle(cornerRadius: 7).strokeBorder(Palette.accent, style: StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
         }
+        .frame(width: rect.width, height: rect.height)
+        .overlay(alignment: .topLeading) {
+            if let start = target.start {
+                Text(TimeSlot(start: start, duration: duration).label)
+                    .font(.system(size: 11, weight: .bold, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(.white).padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(Palette.accent, in: Capsule()).fixedSize().offset(y: -15)
+            }
+        }
+        .offset(x: rect.minX, y: rect.minY)
     }
 }
 
-/// Day headers, hour lines, the "時間なし" strip and the current time.
+/// Hour ruler, day rows, the untimed lane and the current time.
 @MainActor
-private struct WeekBackground: View {
+private struct WeekRowsBackground: View {
     let days: [Date]
     let now: Date
-    let selectedDay: Date
-    let layout: WeekLayout
-    let onSelectDay: (Date) -> Void
+    let layout: WeekRowsLayout
 
     var body: some View {
         let calendar = Calendar.current
         ZStack(alignment: .topLeading) {
-            // Hour lines and labels. Labels every two hours when rows are short.
-            let step = layout.hourHeight < 22 ? 2 : 1
+            ForEach(0..<7, id: \.self) { row in
+                let isToday = calendar.isDate(days[row], inSameDayAs: now)
+                Rectangle().fill(isToday ? Palette.accent.opacity(0.06) : (row % 2 == 0 ? Color.secondary.opacity(0.035) : .clear))
+                    .frame(width: layout.contentWidth, height: layout.rowHeight)
+                    .offset(y: layout.y(row: row))
+                Rectangle().fill(Color.secondary.opacity(0.15)).frame(width: layout.contentWidth, height: 0.5)
+                    .offset(y: layout.y(row: row))
+            }
+            Rectangle().fill(Color.secondary.opacity(0.06)).frame(width: layout.untimedWidth, height: layout.rowHeight * 7)
+                .offset(y: layout.ruler)
+            Text("時間なし").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                .frame(width: layout.untimedWidth, alignment: .center).offset(y: 5)
             ForEach(Array(layout.hours), id: \.self) { hour in
-                let y = layout.y(minute: hour * 60)
-                Rectangle().fill(Color.secondary.opacity(hour % step == 0 ? 0.22 : 0.1))
-                    .frame(width: layout.size.width - layout.gutter, height: 0.5)
-                    .offset(x: layout.gutter, y: y)
-                if hour % step == 0 && hour < layout.hours.upperBound {
-                    Text("\(hour)").font(.system(size: 10, weight: .semibold, design: .rounded)).monospacedDigit()
-                        .foregroundStyle(.secondary).frame(width: layout.gutter - 4, alignment: .trailing)
-                        .offset(x: 0, y: y - 6)
+                let x = layout.x(minute: hour * 60)
+                Rectangle().fill(Color.secondary.opacity(0.18)).frame(width: 0.5, height: layout.rowHeight * 7)
+                    .offset(x: x, y: layout.ruler)
+                // Half-hour guides make 15-minute snapping easier to aim.
+                if hour < layout.hours.upperBound {
+                    Rectangle().fill(Color.secondary.opacity(0.07)).frame(width: 0.5, height: layout.rowHeight * 7)
+                        .offset(x: x + layout.hourWidth / 2, y: layout.ruler)
+                    Text("\(hour % 24):00").font(.system(size: 11, weight: .semibold, design: .rounded)).monospacedDigit()
+                        .foregroundStyle(currentHour == hour ? Color.white : .secondary)
+                        .padding(.horizontal, 4).padding(.vertical, 1)
+                        .background { if currentHour == hour { Capsule().fill(Color.red) } }
+                        .offset(x: x + 3, y: 4)
                 }
             }
-            Text("時間なし").font(.system(size: 8)).foregroundStyle(.secondary)
-                .frame(width: layout.gutter, alignment: .center).offset(y: layout.header + 4)
-            ForEach(Array(days.enumerated()), id: \.offset) { index, day in
-                let x = layout.x(day: index)
-                let isToday = calendar.isDate(day, inSameDayAs: now)
-                // How far today has come, shaded from the top to now, as in task-3days.
-                if isToday {
-                    let minute = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
-                    let y = min(max(layout.y(minute: minute), layout.timelineTop), layout.size.height)
-                    Rectangle().fill(Color.secondary.opacity(0.08))
-                        .frame(width: layout.columnWidth, height: max(0, y - layout.timelineTop))
-                        .offset(x: x, y: layout.timelineTop)
-                }
-                Rectangle().fill(Color.secondary.opacity(0.15)).frame(width: 0.5, height: layout.size.height - layout.header)
-                    .offset(x: x, y: layout.header)
-                Rectangle().fill(Color.secondary.opacity(0.05)).frame(width: layout.columnWidth, height: layout.strip)
-                    .offset(x: x, y: layout.header)
-                Button { onSelectDay(day) } label: {
-                    VStack(spacing: 1) {
-                        Text(day.formatted(.dateTime.weekday(.narrow))).font(.caption2)
-                            .foregroundStyle(calendar.isDateInWeekend(day) ? Palette.must : .secondary)
-                        // The bare number: the localized "26日" does not fit a narrow column.
-                        Text("\(calendar.component(.day, from: day))").font(.system(.subheadline, design: .rounded).weight(.semibold))
-                            .monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
-                            .foregroundStyle(isToday ? Color.white : .primary)
-                            .frame(width: 26, height: 22)
-                            .background { if isToday { Capsule().fill(Color.red) } }
-                    }
-                    .frame(width: layout.columnWidth, height: layout.header)
-                    .background {
-                        if calendar.isDate(day, inSameDayAs: selectedDay) {
-                            RoundedRectangle(cornerRadius: 8).fill(Palette.accent.opacity(0.12)).padding(2)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                .offset(x: x)
-                .accessibilityLabel("\(day.formatted(.dateTime.month().day().weekday(.wide)))の予定を見る")
-            }
-            if let todayIndex = days.firstIndex(where: { calendar.isDate($0, inSameDayAs: now) }) {
-                let minute = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
-                if layout.hours.contains(minute / 60) {
-                    let y = layout.y(minute: minute)
-                    // Dotted across the week to compare the same time on other days.
-                    Path { path in
-                        path.move(to: CGPoint(x: layout.gutter, y: y)); path.addLine(to: CGPoint(x: layout.size.width, y: y))
-                    }.stroke(Color.red.opacity(0.45), style: StrokeStyle(lineWidth: 0.8, dash: [2, 3]))
-                    Rectangle().fill(Color.red).frame(width: layout.columnWidth, height: 1.5)
-                        .offset(x: layout.x(day: todayIndex), y: y - 0.75)
-                    Circle().fill(Color.red).frame(width: 7, height: 7)
-                        .offset(x: layout.x(day: todayIndex) - 3.5, y: y - 3.5)
-                }
+            if let todayRow = days.firstIndex(where: { calendar.isDate($0, inSameDayAs: now) }), layout.hours.contains(currentHour ?? -1) {
+                let x = layout.x(minute: minuteNow)
+                // Today shaded up to now, a red line at now, and a dotted line to compare other days.
+                Rectangle().fill(Color.secondary.opacity(0.08))
+                    .frame(width: max(0, x - layout.untimedWidth), height: layout.rowHeight)
+                    .offset(x: layout.untimedWidth, y: layout.y(row: todayRow))
+                Path { path in
+                    path.move(to: CGPoint(x: x, y: layout.ruler)); path.addLine(to: CGPoint(x: x, y: layout.height))
+                }.stroke(Color.red.opacity(0.45), style: StrokeStyle(lineWidth: 0.8, dash: [2, 3]))
+                Rectangle().fill(Color.red).frame(width: 2, height: layout.rowHeight)
+                    .offset(x: x - 1, y: layout.y(row: todayRow))
+                Circle().fill(Color.red).frame(width: 8, height: 8).offset(x: x - 4, y: layout.y(row: todayRow) - 4)
             }
         }
-        .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
+        .frame(width: layout.contentWidth, height: layout.height, alignment: .topLeading)
+    }
+
+    private var minuteNow: Int {
+        Calendar.current.component(.hour, from: now) * 60 + Calendar.current.component(.minute, from: now)
+    }
+    private var currentHour: Int? {
+        days.contains { Calendar.current.isDate($0, inSameDayAs: now) } ? minuteNow / 60 : nil
     }
 }
 
@@ -422,43 +559,47 @@ private struct WeekBlock: View {
     @EnvironmentObject private var store: TaskStore
     let item: AgendaItem
     let timed: Bool
-    let height: CGFloat
+    let size: CGSize
     let lifted: Bool
 
     var body: some View {
         let colorName = store.colorName(forProject: item.project)
         let accent = ProjectColor.color(for: colorName) ?? Palette.accent
-        let shape = RoundedRectangle(cornerRadius: timed ? 6 : 4)
+        let shape = RoundedRectangle(cornerRadius: 7)
+        // Room for a time line, then as many 12pt title lines as fit.
+        let showsTime = timed && size.height >= 40 && size.width >= 44 && !item.isBlock
+        let titleLines = max(1, Int((size.height - (showsTime ? 16 : 6)) / 15))
         ZStack(alignment: .topLeading) {
             if item.isBlock {
                 shape.fill(Color.secondary.opacity(0.08))
-                Hatch(spacing: 5).stroke(Color.secondary.opacity(0.28), lineWidth: 1).clipShape(shape)
+                Hatch(spacing: 6).stroke(Color.secondary.opacity(0.25), lineWidth: 1).clipShape(shape)
             } else {
-                shape.fill(ProjectColor.tint(for: colorName, amount: item.isDone ? 0.18 : 0.3))
-                if item.isDone { Hatch(spacing: 5, reversed: true).stroke(accent.opacity(0.45), lineWidth: 1.2).clipShape(shape) }
-                Rectangle().fill(accent).frame(width: 2.5).clipShape(shape)
+                shape.fill(ProjectColor.tint(for: colorName, amount: item.isDone ? 0.18 : 0.32))
+                if item.isDone { Hatch(spacing: 6, reversed: true).stroke(accent.opacity(0.45), lineWidth: 1.2).clipShape(shape) }
+                Rectangle().fill(accent).frame(width: 3).clipShape(shape)
             }
-            VStack(alignment: .leading, spacing: 0) {
-                if timed && height >= 30, let slot = item.slot {
-                    Text(slot.startLabel).font(.system(size: 9, weight: .bold, design: .rounded)).monospacedDigit()
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                if showsTime, let slot = item.slot {
+                    Text(slot.label).font(.system(size: 10, weight: .bold, design: .rounded)).monospacedDigit()
+                        .foregroundStyle(.secondary).lineLimit(1)
                 }
-                HStack(spacing: 1) {
-                    if item.isMust { Image(systemName: "star.fill").font(.system(size: 7)).foregroundStyle(Palette.must) }
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    if item.isMust { Image(systemName: "star.fill").font(.system(size: 9)).foregroundStyle(Palette.must) }
                     if item.isRoutine && !item.isBlock {
-                        Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 7)).foregroundStyle(.secondary)
+                        Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 9)).foregroundStyle(.secondary)
                     }
-                    Text(item.title).font(.system(size: 10, weight: .medium))
+                    Text(item.title).font(.system(size: 12, weight: .medium))
                         .foregroundStyle(item.isBlock || item.isDone ? .secondary : .primary)
                         .strikethrough(item.isDone)
-                        .lineLimit(timed ? max(1, Int((height - (height >= 30 ? 12 : 0)) / 12)) : 1)
+                        .lineLimit(titleLines)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(.leading, item.isBlock ? 3 : 5).padding(.trailing, 2).padding(.top, 2)
+            .padding(.leading, item.isBlock ? 5 : 7).padding(.trailing, 3).padding(.top, 3)
         }
         .clipShape(shape)
         .overlay { if lifted { shape.strokeBorder(accent, lineWidth: 1.5) } }
-        .scaleEffect(lifted ? 1.06 : 1)
+        .scaleEffect(lifted ? 1.05 : 1)
         .shadow(color: .black.opacity(lifted ? 0.28 : 0), radius: lifted ? 10 : 0, y: lifted ? 5 : 0)
         .contentShape(shape)
     }
@@ -485,7 +626,7 @@ struct DayList: View {
                 Text("この日の予定はありません。").font(.subheadline).foregroundStyle(.secondary)
             }
             ForEach(items) { item in AgendaRow(item: item, onOpen: onOpen, onStart: onStart) }
-            Text("週の表で長押しして動かすと、日付と時間を変えられます。ルーティンはその日だけ動きます。")
+            Text("週の表で長押しして動かすと、日付と時間を変えられます。ルーティンはその日だけ動きます。左右の端まで送ってさらに引くと、前後の週に移ります。")
                 .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
         }
     }

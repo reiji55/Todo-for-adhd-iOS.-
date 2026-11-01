@@ -178,15 +178,15 @@ final class TaskStore: ObservableObject {
     func clearRecentlyDone() { if !recentlyDone.isEmpty { recentlyDone = [] } }
 
     /// Moves a row to another day and time. A routine moves for that one day only.
+    /// No undo offer: a drag on the week grid is easy to drag back, and a banner there gets in the way.
     func move(_ item: AgendaItem, to day: Date, slot: TimeSlot?) {
-        let moved = commit { book in
+        commit { book in
             switch item.source {
             case .task(let id): book.moveTask(id, to: day, slot: slot)
             case .routine(let id, let original):
                 book.moveRoutine(id, originalDay: original, toDay: DayKey.of(day), time: slot?.label ?? "")
             }
         }
-        if moved { offerUndo("「\(item.title)」を\(PlainText.dayTitle(day))\(slot.map { " " + $0.startLabel } ?? "")に動かしました") }
     }
 
     // MARK: Leftovers from earlier days
