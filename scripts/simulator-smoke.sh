@@ -91,7 +91,8 @@ def task(title, **changes):
 tasks = [
     task('提出書類を送る', isMust=True, deadline=date(now),
          steps=[dict(id=str(uuid.uuid4()), title='宛先を確認する', isDone=False)]),
-    task('予約の電話をする', isMust=True),
+    task('予約の電話をする', isMust=True, scheduledTime='14:00-14:15'),
+    task('部屋をリセットする', scheduledTime='21:00-21:15', project='部屋'),
     task('提案の下書きをつくる', deadline=date(now + timedelta(days=1)), effort='heavy'),
     task('読みかけの本を読む', resumeNote='42ページの途中まで'),
     task('気になる資料を読む', effort='medium'),

@@ -97,11 +97,15 @@ extension Font {
 /// One compact row for a task or a day of a routine. Same shape for both, as asked.
 @MainActor
 struct AgendaRow: View {
+    /// card: a filled card. timeline: no surface of its own, for the raised timeline panel.
+    /// loose: a dotted outline, for things without a time that are not placed yet.
+    enum Style { case card, timeline, loose }
     @EnvironmentObject private var store: TaskStore
     @Environment(\.openGuide) private var openGuide
     let item: AgendaItem
     var reason: String? = nil
     var showsTime = true
+    var style: Style = .card
     let onOpen: (AgendaItem) -> Void
     var onStart: ((TaskItem) -> Void)? = nil
 
@@ -155,16 +159,27 @@ struct AgendaRow: View {
                     .buttonStyle(.bordered).buttonBorderShape(.circle).accessibilityLabel("\(task.title)を今やる")
             }
         }
-        .padding(.vertical, 9).padding(.leading, 6).padding(.trailing, 10)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+        .padding(.vertical, 9).padding(.leading, style == .timeline ? 0 : 6).padding(.trailing, style == .timeline ? 4 : 10)
+        .background { surface }
         .overlay(alignment: .leading) {
-            if let color = ProjectColor.color(for: store.colorName(forProject: item.project)) {
+            if style != .timeline, let color = ProjectColor.color(for: store.colorName(forProject: item.project)) {
                 RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 3).padding(.vertical, 10)
             }
         }
+        .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14))
         .opacity(done ? 0.5 : 1)
         .animation(.easeOut(duration: 0.2), value: done)
         .contextMenu { menu(task) }
+    }
+
+    @ViewBuilder private var surface: some View {
+        switch style {
+        case .card: RoundedRectangle(cornerRadius: 14).fill(Color(uiColor: .secondarySystemGroupedBackground))
+        case .timeline: Color.clear
+        case .loose:
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(Palette.accent.opacity(0.4), style: StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
+        }
     }
 
     @ViewBuilder private var check: some View {

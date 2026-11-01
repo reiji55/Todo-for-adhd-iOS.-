@@ -96,17 +96,16 @@ struct TodayView: View {
                 Text(agenda.isEmpty ? "今日の予定はまだありません。右下の＋から足せます。" : "今日の予定はすべて終わりました。")
                     .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 6)
             }
-            let minute = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
-            let nowIndex = visible.firstIndex { ($0.slot?.start ?? Int.max) > minute } ?? visible.count
-            ForEach(Array(visible.enumerated()), id: \.element.id) { index, item in
-                if index == nowIndex && visible.contains(where: { $0.slot != nil }) { NowLine(now: now) }
-                if index > 0, item.slot == nil, visible[index - 1].slot != nil {
-                    Text("時間を決めていない").font(.caption).foregroundStyle(.secondary).padding(.top, 6)
-                }
-                AgendaRow(item: item, onOpen: onOpen, onStart: onStart)
+            // Timed things sit on a raised timeline; the rest are outlined, not placed yet.
+            let timed = visible.filter { $0.slot != nil }
+            let untimed = visible.filter { $0.slot == nil }
+            if !timed.isEmpty {
+                TimelinePanel(items: timed, now: now, onOpen: onOpen, onStart: onStart).padding(.bottom, 6)
             }
-            if nowIndex == visible.count && visible.contains(where: { $0.slot != nil }) && !visible.isEmpty
-                && visible.last?.slot != nil { NowLine(now: now) }
+            if !untimed.isEmpty {
+                Text("時間を決めていない").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, timed.isEmpty ? 0 : 8)
+                ForEach(untimed) { item in AgendaRow(item: item, style: .loose, onOpen: onOpen, onStart: onStart) }
+            }
             if !doneEarlier.isEmpty {
                 Button { withAnimation { showDone.toggle() } } label: {
                     Label("今日やったこと \(doneEarlier.count)件", systemImage: showDone ? "chevron.down" : "chevron.right")
@@ -122,17 +121,101 @@ struct TodayView: View {
     }
 }
 
-/// The red line for the current time, as in the task-3days timetable.
-struct NowLine: View {
+/// Today's timed items as a timeline: start and end times on the left, a rail with a mark per item,
+/// and the current time crossing it, on a soft raised panel.
+@MainActor
+struct TimelinePanel: View {
+    @EnvironmentObject private var store: TaskStore
+    @Environment(\.colorScheme) private var scheme
+    let items: [AgendaItem]
     let now: Date
+    let onOpen: (AgendaItem) -> Void
+    let onStart: (TaskItem) -> Void
+
+    private let timeWidth: CGFloat = 46
+    private let railWidth: CGFloat = 20
+
     var body: some View {
-        HStack(spacing: 6) {
-            Circle().fill(Color.red).frame(width: 8, height: 8)
+        let calendar = Calendar.current
+        let minute = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
+        let nowIndex = items.firstIndex { ($0.slot?.start ?? Int.max) > minute } ?? items.count
+        VStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                if index == nowIndex {
+                    nowRow
+                } else if index > 0 {
+                    Divider().padding(.leading, 8 + timeWidth + railWidth + 44)
+                }
+                row(item)
+            }
+            if nowIndex == items.count { nowRow }
+        }
+        .padding(.vertical, 6)
+        .background(alignment: .leading) {
+            Rectangle().fill(Palette.accent.opacity(0.22)).frame(width: 2).frame(maxHeight: .infinity)
+                .padding(.vertical, 26).padding(.leading, 8 + timeWidth + railWidth / 2 - 1)
+        }
+        .background { RaisedPanel() }
+    }
+
+    private func row(_ item: AgendaItem) -> some View {
+        let color = ProjectColor.color(for: store.colorName(forProject: item.project)) ?? Palette.accent
+        return HStack(alignment: .center, spacing: 0) {
+            VStack(alignment: .trailing, spacing: 1) {
+                if let slot = item.slot {
+                    Text(slot.startLabel).font(.system(.subheadline, design: .rounded).weight(.bold)).monospacedDigit()
+                    Text(TimeSlot.clock(slot.end)).font(.system(.caption2, design: .rounded)).monospacedDigit().foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: timeWidth, alignment: .trailing)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(item.slot?.label ?? "")
+            // An event's mark is square like its check box; a filled mark means it is done.
+            Group {
+                if item.isEvent {
+                    RoundedRectangle(cornerRadius: 3).fill(item.isDone ? color : RaisedPanel.fill(scheme))
+                        .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(color, lineWidth: 2))
+                } else {
+                    Circle().fill(item.isDone ? color : RaisedPanel.fill(scheme)).overlay(Circle().strokeBorder(color, lineWidth: 2))
+                }
+            }
+            .frame(width: 11, height: 11).frame(width: railWidth)
+            .accessibilityHidden(true)
+            AgendaRow(item: item, showsTime: false, style: .timeline, onOpen: onOpen, onStart: onStart)
+        }
+        .padding(.leading, 8)
+    }
+
+    private var nowRow: some View {
+        HStack(spacing: 0) {
             Text(now.formatted(date: .omitted, time: .shortened)).font(.clock).foregroundStyle(.red)
+                .frame(width: timeWidth, alignment: .trailing)
+            Circle().fill(Color.red).frame(width: 9, height: 9).frame(width: railWidth)
             Rectangle().fill(Color.red).frame(height: 1.5)
         }
-        .padding(.vertical, 2)
+        .padding(.leading, 8).padding(.trailing, 12).padding(.vertical, 3)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("現在 \(now.formatted(date: .omitted, time: .shortened))")
+    }
+}
+
+/// A soft surface the same color as the page, lit from the top left so it seems to rise out of it.
+struct RaisedPanel: View {
+    @Environment(\.colorScheme) private var scheme
+    var cornerRadius: CGFloat = 22
+
+    static func fill(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(uiColor: .secondarySystemGroupedBackground) : Palette.paper
+    }
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let dark = scheme == .dark
+        shape.fill(Self.fill(scheme))
+            .shadow(color: dark ? .black.opacity(0.7) : Color(red: 0.6, green: 0.64, blue: 0.72).opacity(0.45), radius: 10, x: 6, y: 6)
+            .shadow(color: dark ? Color.white.opacity(0.05) : .white, radius: 9, x: -5, y: -5)
+            .overlay(shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(dark ? 0.1 : 0.85), Color.white.opacity(0)],
+                                                       startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
     }
 }
 
