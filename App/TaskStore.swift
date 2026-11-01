@@ -603,7 +603,8 @@ extension Notebook {
             TaskItem(title: "読みかけの本を読む", effort: .light, resumeNote: "42ページの途中まで"),
             TaskItem(title: "提案の下書きをつくる", plannedAt: day(1), scheduledTime: "10:00-11:30", deadline: day(2),
                      effort: .heavy, project: "仕事", steps: [Step(title: "見出しを3つ書く")]),
-            TaskItem(title: "週末の買い物を考える", plannedAt: day(2)),
+            TaskItem(title: "友達とランチ", plannedAt: now, scheduledTime: "12:00-13:30", memo: "駅前のお店", isEvent: true),
+            TaskItem(title: "買い物に行く", plannedAt: day(2), isEvent: true),
             TaskItem(title: "図書館に本を返す", plannedAt: day(-1)),
             TaskItem(title: "気になる資料を読む", effort: .medium)
         ], ideas: [

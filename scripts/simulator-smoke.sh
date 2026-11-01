@@ -69,7 +69,8 @@ tasks = [
     task('提案の下書きをつくる', deadline=date(now + timedelta(days=1)), effort='heavy'),
     task('読みかけの本を読む', resumeNote='42ページの途中まで'),
     task('気になる資料を読む', effort='medium'),
-    task('週末の買い物を考える', plannedAt=date(now + timedelta(days=1))),
+    task('友達とランチ', scheduledTime='12:00-13:30', isEvent=True),
+    task('買い物に行く', plannedAt=date(now + timedelta(days=1)), isEvent=True),
     task('提案の下書き 見出し3つ', project='仕事', scheduledTime='10:00-11:30', plannedAt=date(now + timedelta(days=1))),
     task('歯医者の予約', scheduledTime='13:00-13:30', plannedAt=date(now + timedelta(days=2))),
 ]
@@ -118,6 +119,9 @@ xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/sharing-settings.png"
 xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -uiTab 1 >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/week.png"
+xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -uiTab 3 >/dev/null
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/ideas.png"
 xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP -uiTab 4 >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board.png"
