@@ -52,6 +52,7 @@ struct RootView: View {
     @State private var settingsOpen = false
     @State private var guide: GuideRoute?
     @State private var refreshDate = Date()
+    @State private var keyboardShown = false
 
     var body: some View {
         Group {
@@ -65,6 +66,14 @@ struct RootView: View {
         .safeAreaInset(edge: .top, spacing: 0) { demoBar }
         .overlay(alignment: .bottom) { undoToast }
         .animation(.snappy, value: store.undoOffer)
+        // iPhone: Horme's own tab bar, with 今日 raised in the middle. It steps aside for the keyboard.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if UIDevice.current.userInterfaceIdiom != .pad && !keyboardShown {
+                HormeTabBar(selection: $selectedTab)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardShown = true }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardShown = false }
         .sheet(item: $editor) { route in TaskEditor(task: route.task, original: route.original) }
         .sheet(item: $routineEditor) { routine in RoutineEditor(routine: routine) }
         .sheet(item: $quickAdd) { route in
@@ -193,8 +202,10 @@ struct RootView: View {
                         .navigationTitle(tab == .today ? "Horme" : tab.title)
                         .navigationBarTitleDisplayMode(tab == .week ? .inline : .automatic)
                         .toolbar { commonToolbar }
+                        .toolbar(.hidden, for: .tabBar)
                 }
-                .tabItem { Label(tab.title, systemImage: tab.icon) }.tag(tab.rawValue)
+                .toolbar(.hidden, for: .tabBar)
+                .tag(tab.rawValue)
             }
         }
     }
@@ -334,5 +345,72 @@ struct GuideSheet: View {
             GuidePager(startID: cardID, cardIDs: [cardID])
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
         }
+    }
+}
+
+/// The iPhone tab bar: four plain tabs around a raised, round 今日 in the middle. The round button has
+/// the soft, lit-from-the-top-left look of the timeline panel; it fills with green while 今日 is open.
+@MainActor
+struct HormeTabBar: View {
+    @Binding var selection: Int
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(RootView.Tab.allCases, id: \.rawValue) { tab in
+                if tab == .today { todayButton } else { item(tab) }
+            }
+        }
+        .padding(.horizontal, 6).padding(.top, 6).padding(.bottom, 2)
+        .background(alignment: .top) {
+            Rectangle().fill(RaisedPanel.fill(scheme))
+                .shadow(color: .black.opacity(scheme == .dark ? 0.5 : 0.08), radius: 8, y: -3)
+                .ignoresSafeArea(edges: .bottom)
+        }
+        .sensoryFeedback(.selection, trigger: selection)
+    }
+
+    private func item(_ tab: RootView.Tab) -> some View {
+        let selected = selection == tab.rawValue
+        return Button { selection = tab.rawValue } label: {
+            VStack(spacing: 3) {
+                Image(systemName: tab.icon).font(.system(size: 21, weight: selected ? .semibold : .regular)).frame(height: 26)
+                Text(tab.title).font(.system(size: 10, weight: selected ? .bold : .medium))
+            }
+            .foregroundStyle(selected ? Palette.accent : Color.secondary)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(tab.title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private var todayButton: some View {
+        let selected = selection == RootView.Tab.today.rawValue
+        let dark = scheme == .dark
+        return Button { selection = RootView.Tab.today.rawValue } label: {
+            VStack(spacing: 3) {
+                ZStack {
+                    Circle().fill(selected ? Palette.accent : RaisedPanel.fill(scheme))
+                        .shadow(color: dark ? .black.opacity(0.7) : Color(red: 0.36, green: 0.42, blue: 0.48).opacity(selected ? 0.45 : 0.4),
+                                radius: 8, x: 4, y: 5)
+                        .shadow(color: dark ? Color.white.opacity(0.08) : .white, radius: 7, x: -4, y: -4)
+                        .overlay(Circle().strokeBorder(LinearGradient(colors: [Color.white.opacity(dark ? 0.15 : 0.7), Color.white.opacity(0)],
+                                                                      startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
+                    Image(systemName: selected ? "sun.max.fill" : "sun.max").font(.system(size: 25, weight: .semibold))
+                        .foregroundStyle(selected ? Color.white : Palette.accent)
+                }
+                .frame(width: 60, height: 60)
+                Text("今日").font(.system(size: 10, weight: .bold)).foregroundStyle(selected ? Palette.accent : Color.secondary)
+            }
+            .offset(y: -20)
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .top)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("今日")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .animation(.snappy(duration: 0.2), value: selected)
     }
 }

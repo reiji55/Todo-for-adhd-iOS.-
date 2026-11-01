@@ -99,7 +99,8 @@ extension Font {
 struct AgendaRow: View {
     /// card: a filled card. timeline: no surface of its own, for the raised timeline panel.
     /// loose: a dotted outline, for things without a time that are not placed yet.
-    enum Style { case card, timeline, loose }
+    /// raised: a card lifted off the page, for today's things in longer lists.
+    enum Style { case card, timeline, loose, raised }
     @EnvironmentObject private var store: TaskStore
     @Environment(\.openGuide) private var openGuide
     let item: AgendaItem
@@ -175,6 +176,7 @@ struct AgendaRow: View {
     @ViewBuilder private var surface: some View {
         switch style {
         case .card: RoundedRectangle(cornerRadius: 14).fill(Color(uiColor: .secondarySystemGroupedBackground))
+        case .raised: RaisedCardBackground()
         case .timeline: Color.clear
         case .loose:
             RoundedRectangle(cornerRadius: 14)
@@ -225,6 +227,20 @@ struct AgendaRow: View {
             }
             Button("削除", systemImage: "trash", role: .destructive) { store.delete(task.id) }
         }
+    }
+}
+
+/// A card lifted off the page, lit from the top left (the soft, raised look of the timeline panel).
+struct RaisedCardBackground: View {
+    @Environment(\.colorScheme) private var scheme
+    var cornerRadius: CGFloat = 14
+
+    var body: some View {
+        let dark = scheme == .dark
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(Color(uiColor: .secondarySystemGroupedBackground))
+            .shadow(color: dark ? .black.opacity(0.65) : Color(red: 0.36, green: 0.42, blue: 0.48).opacity(0.34), radius: 8, x: 4, y: 5)
+            .shadow(color: dark ? Color.white.opacity(0.07) : .white, radius: 6, x: -3, y: -3)
     }
 }
 

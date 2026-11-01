@@ -214,6 +214,8 @@ struct GuidePager: View {
         .background(ProjectColor.tint(for: store.card(current)?.title ?? "").ignoresSafeArea())
         .navigationTitle("").navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
+        // iPhone uses Horme's own tab bar; the system one must stay hidden on pushed pages too.
+        .toolbar(.hidden, for: .tabBar)
         .toolbar {
             if let card = store.card(current) {
                 ToolbarItemGroup(placement: .topBarTrailing) {

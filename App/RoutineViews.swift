@@ -61,6 +61,8 @@ struct TimeSlotFields: View {
 struct RoutineList: View {
     @EnvironmentObject private var store: TaskStore
     var search = ""
+    /// Routines that come round today are lifted off the page.
+    var todayIDs: Set<UUID> = []
     let onEdit: (Routine) -> Void
 
     var body: some View {
@@ -79,7 +81,7 @@ struct RoutineList: View {
                                    systemImage: "arrow.triangle.2.circlepath",
                                    description: Text("例：平日19:00の勉強、毎朝の薬、睡眠や仕事の時間（押さえるだけ）"))
         }
-        ForEach(active) { routine in RoutineRow(routine: routine, onEdit: onEdit) }
+        ForEach(active) { routine in RoutineRow(routine: routine, raised: todayIDs.contains(routine.id), onEdit: onEdit) }
         if !paused.isEmpty {
             SectionHeading(title: "一時停止中")
             ForEach(paused) { routine in RoutineRow(routine: routine, onEdit: onEdit) }
@@ -96,6 +98,7 @@ struct RoutineList: View {
 struct RoutineRow: View {
     @EnvironmentObject private var store: TaskStore
     let routine: Routine
+    var raised = false
     let onEdit: (Routine) -> Void
     var body: some View {
         Button { onEdit(routine) } label: {
@@ -119,7 +122,10 @@ struct RoutineRow: View {
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
             }
             .padding(12)
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+            .background {
+                if raised { RaisedCardBackground() }
+                else { RoundedRectangle(cornerRadius: 14).fill(Color(uiColor: .secondarySystemGroupedBackground)) }
+            }
             .opacity(routine.isPaused ? 0.55 : 1)
         }.buttonStyle(.plain)
     }
