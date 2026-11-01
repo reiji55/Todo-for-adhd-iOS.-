@@ -164,8 +164,8 @@ final class ScheduleTests: XCTestCase {
     }
 
     func testEventsAreOnTheScheduleButNeverToDos() {
-        let meet = TaskItem(title: "友達に会う", plannedAt: day(-1), scheduledTime: "18:00-21:00", isMust: true,
-                            deadline: day(-1), createdAt: day(-2), isEvent: true)
+        let meet = TaskItem(title: "友達に会う", plannedAt: day(-1), scheduledTime: "18:00-21:00", deadline: day(-1),
+                            isMust: true, createdAt: day(-2), isEvent: true)
         let shop = TaskItem(title: "買い物に行く", plannedAt: friday, scheduledTime: "11:00-12:00", createdAt: day(-2), isEvent: true)
         let board = TaskBoard(calendar: calendar)
         XCTAssertTrue(board.obligations([meet, shop], now: friday).isEmpty)

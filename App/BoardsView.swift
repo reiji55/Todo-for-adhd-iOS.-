@@ -148,6 +148,8 @@ struct IdeasView: View {
                     }.buttonStyle(.borderedProminent)
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }.padding().background(.background, in: RoundedRectangle(cornerRadius: 16))
+                    // Taps inside the box keep writing; only taps elsewhere put the keyboard away.
+                    .contentShape(Rectangle()).onTapGesture { writing = true }
                 if store.notebook.ideas.isEmpty {
                     ContentUnavailableView("まだ書き留めたものはありません", systemImage: "lightbulb", description: Text("アイデアは、タスク候補や必須の一覧には混ざりません。"))
                 }
