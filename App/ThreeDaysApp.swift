@@ -34,10 +34,11 @@ struct QuickAddRoute: Identifiable {
 
 @MainActor
 struct RootView: View {
+    /// 今日 sits in the middle, where the thumb rests; the app always opens on it.
     enum Tab: Int, CaseIterable {
-        case today, week, all, ideas, board
-        var title: String { ["今日", "週", "すべて", "アイデア", "ボード"][rawValue] }
-        var icon: String { ["sun.max", "calendar", "list.bullet.rectangle", "tray", "book.closed"][rawValue] }
+        case all, week, today, ideas, board
+        var title: String { ["すべて", "週", "今日", "アイデア", "ボード"][rawValue] }
+        var icon: String { ["list.bullet.rectangle", "calendar", "sun.max", "tray", "book.closed"][rawValue] }
     }
     @EnvironmentObject private var store: TaskStore
     @Environment(\.scenePhase) private var phase
