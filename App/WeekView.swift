@@ -28,40 +28,51 @@ struct WeekView: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
-            let now = max(context.date, refreshClock)
-            GeometryReader { geometry in
-                // As in task-3days: the week on top, the chosen day's list below it.
-                // Tapping a block picks it out in the list; tapping it there opens it.
-                let gridHeight = min(7 * 80 + 24, max(7 * 40 + 24, (geometry.size.height - 40) * 0.62))
-                VStack(spacing: 0) {
-                    header(now: now)
-                    WeekRows(days: days, now: now, selectedDay: selectedDay, highlighted: focusedItem,
-                             onSelectItem: { item, day in
-                                 selectedDay = Calendar.current.startOfDay(for: day)
-                                 focusedItem = item.id
-                             },
-                             onSelectDay: { day in
-                                 selectedDay = Calendar.current.startOfDay(for: day)
-                                 focusedItem = nil
-                             },
-                             onTurn: shift)
-                        .frame(height: gridHeight)
-                    Divider()
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            DayList(day: selectedDay, highlighted: focusedItem, onOpen: onOpen, onStart: onStart, onAdd: onAdd)
-                                .padding(.horizontal, 16).padding(.vertical, 12)
-                                .frame(maxWidth: 760).frame(maxWidth: .infinity)
-                        }
-                        .onChange(of: focusedItem) { _, id in
-                            guard let id else { return }
-                            withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
-                        }
-                    }
-                }
-            }
+            content(now: max(context.date, refreshClock))
         }
         .background(Palette.paper)
+    }
+
+    /// As in task-3days: the week on top, the chosen day's list below it.
+    /// Tapping a block picks it out in the list; tapping it there opens it.
+    private func content(now: Date) -> some View {
+        GeometryReader { geometry in
+            let available: CGFloat = geometry.size.height - 40
+            let gridHeight: CGFloat = min(584, max(304, available * 0.62))
+            VStack(spacing: 0) {
+                header(now: now)
+                grid(now: now).frame(height: gridHeight)
+                Divider()
+                dayList
+            }
+        }
+    }
+
+    private func grid(now: Date) -> some View {
+        WeekRows(days: days, now: now, selectedDay: selectedDay, highlighted: focusedItem,
+                 onSelectItem: { item, day in
+                     selectedDay = Calendar.current.startOfDay(for: day)
+                     focusedItem = item.id
+                 },
+                 onSelectDay: { day in
+                     selectedDay = Calendar.current.startOfDay(for: day)
+                     focusedItem = nil
+                 },
+                 onTurn: shift)
+    }
+
+    private var dayList: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                DayList(day: selectedDay, highlighted: focusedItem, onOpen: onOpen, onStart: onStart, onAdd: onAdd)
+                    .padding(.horizontal, 16).padding(.vertical, 12)
+                    .frame(maxWidth: 760).frame(maxWidth: .infinity)
+            }
+            .onChange(of: focusedItem) { _, id in
+                guard let id else { return }
+                withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
+            }
+        }
     }
 
     private func header(now: Date) -> some View {
