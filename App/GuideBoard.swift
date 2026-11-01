@@ -167,6 +167,7 @@ struct GuideCardFace: View {
 @MainActor
 struct GuidePager: View {
     @EnvironmentObject private var store: TaskStore
+    @Environment(\.dismiss) private var dismiss
     @State private var current: UUID
     @State private var editing: BoardCard?
     let cardIDs: [UUID]
@@ -183,8 +184,14 @@ struct GuidePager: View {
         let ids = cardIDs.filter { store.card($0) != nil }
         Group {
             if ids.isEmpty {
-                ContentUnavailableView("このカードはありません", systemImage: "book.closed",
-                                       description: Text("削除されたか、取り消しで元に戻りました。"))
+                // Normally never seen: the pager closes itself when its cards are gone (below).
+                ContentUnavailableView {
+                    Label("このカードはありません", systemImage: "book.closed")
+                } description: {
+                    Text("削除されたか、取り消しで元に戻りました。")
+                } actions: {
+                    Button("ボードに戻る") { dismiss() }.buttonStyle(.borderedProminent)
+                }
             } else {
                 TabView(selection: $current) {
                     ForEach(ids, id: \.self) { id in
@@ -216,7 +223,16 @@ struct GuidePager: View {
                 }
             }
         }
-        .sheet(item: $editing) { card in GuideCardEditor(card: card) }
+        .sheet(item: $editing, onDismiss: {
+            // Deleted from its editor: go back once the editor has closed.
+            if !cardIDs.contains(where: { store.card($0) != nil }) { dismiss() }
+        }) { card in GuideCardEditor(card: card) }
+        // A card deleted, undone or left behind by demo mode must not strand the person on an empty page.
+        .onAppear { if ids.isEmpty { DispatchQueue.main.async { dismiss() } } }
+        .onChange(of: ids.isEmpty) { _, empty in if empty && editing == nil { dismiss() } }
+        .onChange(of: ids) { _, now in
+            if !now.isEmpty, !now.contains(current) { current = now[0] }
+        }
     }
 }
 
