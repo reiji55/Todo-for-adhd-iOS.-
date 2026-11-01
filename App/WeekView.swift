@@ -319,16 +319,25 @@ struct WeekRows: View {
             ForEach(Array(days.enumerated()), id: \.offset) { index, day in
                 let isToday = calendar.isDate(day, inSameDayAs: now)
                 let untimed = perDay[index].filter { $0.slot == nil && !$0.isDone }.count
+                // Short rows (the list sits below the grid) get a tighter cell; the 未定 count then rides on the number.
+                let compact = layout.rowHeight < 56
                 Button { onSelectDay(day) } label: {
-                    VStack(spacing: 2) {
-                        Text(day.formatted(.dateTime.weekday(.short))).font(.caption2.weight(.semibold))
+                    VStack(spacing: compact ? 0 : 2) {
+                        Text(day.formatted(.dateTime.weekday(.short))).font(.system(size: compact ? 9 : 11, weight: .semibold))
                             .foregroundStyle(calendar.isDateInWeekend(day) ? Palette.must : .secondary)
                         Text("\(calendar.component(.day, from: day))")
-                            .font(.system(.title3, design: .rounded).weight(.semibold)).monospacedDigit()
+                            .font(.system(compact ? .headline : .title3, design: .rounded).weight(.semibold)).monospacedDigit()
                             .foregroundStyle(isToday ? Color.white : .primary)
-                            .frame(width: 34, height: 28)
+                            .frame(width: compact ? 30 : 34, height: compact ? 22 : 28)
                             .background { if isToday { Capsule().fill(Color.red) } }
-                        if untimed > 0 {
+                            .overlay(alignment: .topTrailing) {
+                                if compact && untimed > 0 {
+                                    Text("\(untimed)").font(.system(size: 8, weight: .bold)).foregroundStyle(.white)
+                                        .frame(minWidth: 13, minHeight: 13).background(Circle().fill(Color.secondary))
+                                        .offset(x: 9, y: -4)
+                                }
+                            }
+                        if !compact && untimed > 0 {
                             Text("未定\(untimed)").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
                         }
                     }
@@ -340,7 +349,7 @@ struct WeekRows: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(day.formatted(.dateTime.month().day().weekday(.wide)))の予定を見る")
+                .accessibilityLabel("\(day.formatted(.dateTime.month().day().weekday(.wide)))の予定を見る" + (untimed > 0 ? "、時間未定\(untimed)件" : ""))
             }
         }
         .frame(width: dateColumn)
