@@ -64,14 +64,13 @@ struct RootView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { activeTaskBar }
         .safeAreaInset(edge: .top, spacing: 0) { demoBar }
+        // iPhone: Horme's own tab bar, with 今日 raised in the middle. Each tab keeps room for it (see
+        // phoneNavigation), since the tab view does not pass this space on. It steps aside for the keyboard.
+        .overlay(alignment: .bottom) {
+            if isPhone && !keyboardShown { HormeTabBar(selection: $selectedTab) }
+        }
         .overlay(alignment: .bottom) { undoToast }
         .animation(.snappy, value: store.undoOffer)
-        // iPhone: Horme's own tab bar, with 今日 raised in the middle. It steps aside for the keyboard.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if UIDevice.current.userInterfaceIdiom != .pad && !keyboardShown {
-                HormeTabBar(selection: $selectedTab)
-            }
-        }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardShown = true }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardShown = false }
         .sheet(item: $editor) { route in TaskEditor(task: route.task, original: route.original) }
@@ -127,6 +126,8 @@ struct RootView: View {
         .environment(\.openGuide, OpenGuideAction { guide = GuideRoute(id: $0) })
         .onAppear(perform: openTabForScreenshot)
     }
+
+    private var isPhone: Bool { UIDevice.current.userInterfaceIdiom != .pad }
 
     private var presenting: Bool {
         editor != nil || routineEditor != nil || quickAdd != nil || focusOpen || settingsOpen || guide != nil
@@ -203,6 +204,7 @@ struct RootView: View {
                         .navigationBarTitleDisplayMode(tab == .week ? .inline : .automatic)
                         .toolbar { commonToolbar }
                         .toolbar(.hidden, for: .tabBar)
+                        .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: HormeTabBar.height) }
                 }
                 .toolbar(.hidden, for: .tabBar)
                 .tag(tab.rawValue)
@@ -257,8 +259,8 @@ struct RootView: View {
             .padding(.horizontal, 16).padding(.vertical, 12)
             .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 14))
             .padding(.horizontal, 16)
-            // Above the tab bar on iPhone; iPad has a sidebar instead.
-            .padding(.bottom, UIDevice.current.userInterfaceIdiom == .pad ? 20 : 64)
+            // Above the tab bar and its raised 今日 button on iPhone; iPad has a sidebar instead.
+            .padding(.bottom, UIDevice.current.userInterfaceIdiom == .pad ? 20 : 84)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
@@ -352,6 +354,8 @@ struct GuideSheet: View {
 /// the soft, lit-from-the-top-left look of the timeline panel; it fills with green while 今日 is open.
 @MainActor
 struct HormeTabBar: View {
+    /// Height above the home indicator; screens keep this much room at the bottom.
+    static let height: CGFloat = 56
     @Binding var selection: Int
     @Environment(\.colorScheme) private var scheme
 
