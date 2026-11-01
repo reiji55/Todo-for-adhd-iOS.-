@@ -181,9 +181,8 @@ struct CompleteTaskIntent: AppIntent {
         guard !TaskStore.shared.isDemo else { throw HormeIntentError.demo }
         let store = TaskStore.shared
         guard let current = store.task(task.id) else { throw HormeIntentError.notFound }
-        guard !current.isEvent else { throw HormeIntentError.saveFailed("イベントは完了にするものではありません。") }
         if !current.isComplete { store.complete(current.id) }
-        return .result(dialog: "「\(current.title)」を完了にしました。")
+        return .result(dialog: current.isEvent ? "「\(current.title)」に済んだ印を付けました。" : "「\(current.title)」を完了にしました。")
     }
 }
 

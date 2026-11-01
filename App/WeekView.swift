@@ -111,7 +111,6 @@ private struct ScrollOffsetKey: PreferenceKey {
 @MainActor
 struct WeekRows: View {
     @EnvironmentObject private var store: TaskStore
-    @Environment(\.horizontalSizeClass) private var sizeClass
     let days: [Date]
     let now: Date
     let selectedDay: Date
@@ -164,9 +163,12 @@ struct WeekRows: View {
         let hours = Agenda.hourRange(for: perDay.flatMap { $0 }.filter { !$0.isBlock })
         GeometryReader { geometry in
             let rowHeight = max(64, (geometry.size.height - 24) / 7)
-            let layout = WeekRowsLayout(hours: hours, hourWidth: sizeClass == .regular ? 120 : 96, rowHeight: rowHeight)
-            let placed = place(perDay, layout: layout)
             let viewportWidth = geometry.size.width - dateColumn
+            // Two-hour columns, sized so a phone shows a whole morning (6:00 to past noon) at once
+            // and a wide screen shows the daytime.
+            let visibleHours: CGFloat = viewportWidth < 560 ? 6.5 : 12.5
+            let layout = WeekRowsLayout(hours: hours, hourWidth: max(40, (viewportWidth / visibleHours).rounded()), rowHeight: rowHeight)
+            let placed = place(perDay, layout: layout)
             HStack(alignment: .top, spacing: 0) {
                 dateCells(layout: layout, perDay: perDay)
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -238,11 +240,9 @@ struct WeekRows: View {
         }
     }
 
-    /// This week opens an hour before now; other weeks open at the start of the day.
+    /// Every week opens on the morning, so 6:00 to noon is in view at once.
     private func initialAnchor(hours: ClosedRange<Int>) -> Int {
-        guard days.contains(where: { Calendar.current.isDate($0, inSameDayAs: now) }) else { return hours.lowerBound }
-        let hour = Calendar.current.component(.hour, from: now) - 1
-        return min(max(hours.lowerBound, hour), hours.upperBound - 1)
+        min(max(hours.lowerBound, 6), hours.upperBound - 1)
     }
 
     /// Pulling past either end turns the week, once per pull.
@@ -424,8 +424,8 @@ struct WeekRows: View {
                 let current = anchor ?? layout.hours.lowerBound
                 let next = min(layout.hours.upperBound - 1, max(Self.untimedAnchor, current + direction))
                 if next == current { break }
-                withAnimation(.easeInOut(duration: 0.25)) { anchor = next }
-                try? await Task.sleep(for: .milliseconds(380))
+                withAnimation(.easeInOut(duration: 0.2)) { anchor = next }
+                try? await Task.sleep(for: .milliseconds(260))
             }
             edgeScroll = nil
         }
@@ -520,16 +520,16 @@ private struct WeekRowsBackground: View {
                 .frame(width: layout.untimedWidth, alignment: .center).offset(y: 5)
             ForEach(Array(layout.hours), id: \.self) { hour in
                 let x = layout.x(minute: hour * 60)
-                Rectangle().fill(Color.secondary.opacity(0.18)).frame(width: 0.5, height: layout.rowHeight * 7)
+                let major = hour % 2 == 0
+                // A line and a label every two hours; the faint line between helps aim a 15-minute drop.
+                Rectangle().fill(Color.secondary.opacity(major ? 0.18 : 0.07)).frame(width: 0.5, height: layout.rowHeight * 7)
                     .offset(x: x, y: layout.ruler)
-                // Half-hour guides make 15-minute snapping easier to aim.
-                if hour < layout.hours.upperBound {
-                    Rectangle().fill(Color.secondary.opacity(0.07)).frame(width: 0.5, height: layout.rowHeight * 7)
-                        .offset(x: x + layout.hourWidth / 2, y: layout.ruler)
+                if major && hour < layout.hours.upperBound {
+                    let isNow = currentHour.map { $0 - $0 % 2 } == hour
                     Text("\(hour % 24):00").font(.system(size: 11, weight: .semibold, design: .rounded)).monospacedDigit()
-                        .foregroundStyle(currentHour == hour ? Color.white : .secondary)
+                        .foregroundStyle(isNow ? Color.white : .secondary)
                         .padding(.horizontal, 4).padding(.vertical, 1)
-                        .background { if currentHour == hour { Capsule().fill(Color.red) } }
+                        .background { if isNow { Capsule().fill(Color.red) } }
                         .offset(x: x + 3, y: 4)
                 }
             }
@@ -588,7 +588,9 @@ private struct WeekBlock: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 if showsTime, let slot = item.slot {
-                    Text(slot.label).font(.system(size: 10, weight: .bold, design: .rounded)).monospacedDigit()
+                    // A narrow block keeps the start time only, so the title still has room.
+                    Text(size.width >= 66 ? slot.label : slot.startLabel)
+                        .font(.system(size: 10, weight: .bold, design: .rounded)).monospacedDigit()
                         .foregroundStyle(.secondary).lineLimit(1)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 2) {

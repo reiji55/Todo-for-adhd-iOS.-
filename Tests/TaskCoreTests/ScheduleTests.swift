@@ -174,7 +174,12 @@ final class ScheduleTests: XCTestCase {
         let items = Agenda.items(on: friday, tasks: [shop], routines: [], calendar: calendar)
         XCTAssertEqual(items.first?.isEvent, true)
         XCTAssertTrue(PlainText.day(friday, book: Notebook(tasks: [shop]), calendar: calendar)
-            .contains("・ 11:00-12:00 買い物に行く〔イベント〕"))
+            .contains("[ ] 11:00-12:00 買い物に行く〔イベント〕"))
+        // Checking an event only records that it happened; unchecked ones never become leftovers.
+        var went = shop; went.completedAt = friday
+        XCTAssertTrue(PlainText.day(friday, book: Notebook(tasks: [went]), calendar: calendar)
+            .contains("[x] 11:00-12:00 買い物に行く〔イベント〕"))
+        XCTAssertTrue(board.pastPlanned([shop], now: day(3)).isEmpty)
         let morning = calendar.date(from: DateComponents(year: 2026, month: 10, day: 30, hour: 9))!
         let book = Notebook(tasks: [shop])
         XCTAssertEqual(ReminderPlan.requests(for: book, now: morning, options: ReminderOptions(), calendar: calendar).first?.body,

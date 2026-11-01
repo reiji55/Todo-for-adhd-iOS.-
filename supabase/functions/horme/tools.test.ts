@@ -143,8 +143,8 @@ test("events are scheduled but never to-dos", async () => {
   const today = payload(await call(store, "get_today", {}));
   assert.equal(today.items[0].kind, "event");
   assert.equal(today.required.length, 0);
-  const done: any = await call(store, "set_done", { ids: added, done: true });
-  assert.equal(done.result.isError, true);
+  await call(store, "set_done", { ids: added, done: true });
+  assert.ok(materialize(store.records).tasks[0].completedAt, "an event can be marked as happened");
   const undated: any = await call(store, "add_tasks", { tasks: [{ title: "いつか会う", date: "anytime", kind: "event" }] });
   assert.equal(undated.result.isError, true);
   const plain = payload(await call(store, "add_tasks", { tasks: [{ title: "買い物", date: "2026-10-31", must: true }] })).added[0];

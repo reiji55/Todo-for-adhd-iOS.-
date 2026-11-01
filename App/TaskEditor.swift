@@ -161,9 +161,9 @@ struct TaskEditor: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
                         task.title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
-                        // An event is a happening on a day, not a to-do: no must, deadline or completion.
+                        // An event is a happening on a day, not a to-do: no must or deadline.
                         if task.isEvent {
-                            task.isMust = false; task.deadline = nil; task.completedAt = nil
+                            task.isMust = false; task.deadline = nil
                             if task.plannedAt == nil { task.plannedAt = Date() }
                         }
                         task.steps = task.steps.filter { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }

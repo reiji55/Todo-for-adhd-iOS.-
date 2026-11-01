@@ -156,7 +156,6 @@ final class TaskStore: ObservableObject {
     }
 
     func complete(_ id: UUID) {
-        guard task(id)?.isEvent != true else { return }
         let finishing = task(id)?.isComplete == false
         let saved = commit { book in
             guard let i = book.tasks.firstIndex(where: { $0.id == id }) else { return }

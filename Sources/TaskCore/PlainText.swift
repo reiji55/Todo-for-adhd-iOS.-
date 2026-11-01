@@ -18,7 +18,7 @@ public enum PlainText {
         if item.isMust { tags.append("必須") }
         if let due = task?.deadline { tags.append("締切\(Calendar.current.component(.month, from: due))/\(Calendar.current.component(.day, from: due))") }
         if !item.project.isEmpty { tags.append(item.project) }
-        let mark = item.isBlock || item.isEvent ? "・" : (item.isDone ? "[x]" : "[ ]")
+        let mark = item.isBlock ? "・" : (item.isDone ? "[x]" : "[ ]")
         var text = "\(mark) \(time) \(item.title)" + (tags.isEmpty ? "" : "〔\(tags.joined(separator: "・"))〕")
         if let task, !task.isComplete {
             if let next = task.nextStep { text += "\n    次の一手：\(next.title)" }

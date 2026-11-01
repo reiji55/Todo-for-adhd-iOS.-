@@ -98,7 +98,7 @@ export const tools: Tool[] = [
     title: "タスク・イベントを足す",
     description:
       "タスクかイベントを追加する。date を省くと今日、\"anytime\" で日付なし（タスクのみ）。同じものを二重に足さないよう、先に get_today / get_days で確認する。" +
-      "kind=\"event\" はその日にある予定（買い物、人に会う）で、チェックや締切はない。くり返すものはルーティンなので、本人に確認してから。",
+      "kind=\"event\" はその日にある予定（買い物、人に会う）で、必須や締切はなく、やり残しにもならない。くり返すものはルーティンなので、本人に確認してから。",
     inputSchema: {
       type: "object",
       properties: {
@@ -157,7 +157,7 @@ export const tools: Tool[] = [
         id: { type: "string" }, title: { type: "string" }, date: DATE, time: TIME, project: { type: "string" },
         must: { type: "boolean" }, deadline: { type: "string", description: 'YYYY-MM-DD、空文字で締切を外す' },
         memo: { type: "string" }, handoff: { type: "string" },
-        kind: { type: "string", enum: ["task", "event"], description: "種類を変える。event にすると必須・締切・完了は外れる" },
+        kind: { type: "string", enum: ["task", "event"], description: "種類を変える。event にすると必須と締切は外れる" },
       },
       required: ["id"],
     },
@@ -186,7 +186,7 @@ export const tools: Tool[] = [
         const planned = "plannedAt" in values ? values.plannedAt : task.plannedAt;
         if (!planned) throw new Error("イベントには日付が必要です。");
         for (const key of ["isMust", "deadline"]) delete values[key];
-        if (args.kind === "event") Object.assign(values, { isMust: false, deadline: null, completedAt: null });
+        if (args.kind === "event") Object.assign(values, { isMust: false, deadline: null });
       }
       if (!Object.keys(values).length) return { result: { changed: false } };
       writer.set(`task_${task.id}`, values);
@@ -196,15 +196,11 @@ export const tools: Tool[] = [
   {
     name: "set_done",
     title: "完了・未完了にする",
-    description: "タスクを完了（done=true）または未完了に戻す。複数まとめて渡せる。",
+    description: "タスクを完了（done=true）または未完了に戻す。イベントには「済んだ」印として付く。複数まとめて渡せる。",
     inputSchema: { type: "object", properties: { ids: IDS, done: { type: "boolean" } }, required: ["ids", "done"] },
     run: ({ ids, done }, { records, book, now }) => {
       const writer = new Writer(records, "claude", now.getTime());
-      for (const id of ids as string[]) {
-        const task = find(book, id);
-        if (task.isEvent) throw new Error(`「${task.title}」はイベントなので完了にしません。`);
-        writer.set(`task_${task.id}`, { completedAt: done ? nowISO(now) : null });
-      }
+      for (const id of ids as string[]) writer.set(`task_${find(book, id).id}`, { completedAt: done ? nowISO(now) : null });
       return { result: { updated: ids.length }, changes: writer.changes };
     },
   },
@@ -303,7 +299,7 @@ export const tools: Tool[] = [
 ];
 
 export const instructions =
-  "Horme（本人のタスク管理アプリ）の中身を読み書きする。種類はタスク（その日にやる・単発で終わる）、イベント（その日にある予定でチェックなし）、" +
+  "Horme（本人のタスク管理アプリ）の中身を読み書きする。種類はタスク（その日にやる・単発で終わる）、イベント（その日にある予定。済んだら印を付けられるが、やり残しにはならない）、" +
   "ルーティン（くり返し）、アイデア（まだ決めていない思いつき）。ほかにボード（やり方の書き置き）がある。" +
   "日付は日本時間。書き換える前に get_today / get_days で id と現状を確かめる。" +
   "handoff は本人が「Claude にやってほしい」と残した依頼で、対応したら memo に結果を書いて handoff を空にする。" +

@@ -126,8 +126,10 @@ struct AgendaRow: View {
                             Image(systemName: "arrow.triangle.2.circlepath").font(.caption2).foregroundStyle(.secondary)
                                 .accessibilityLabel("ルーティン")
                         }
-                        if item.isEvent && item.slot == nil {
-                            Text("終日").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                        if item.isEvent {
+                            Image(systemName: "calendar").font(.caption2).foregroundStyle(Palette.accent)
+                                .accessibilityLabel("イベント")
+                            if item.slot == nil { Text("終日").font(.caption2.weight(.semibold)).foregroundStyle(.secondary) }
                         }
                         if item.isMust {
                             Image(systemName: "star.fill").font(.caption2).foregroundStyle(Palette.must).accessibilityLabel("必須")
@@ -167,9 +169,11 @@ struct AgendaRow: View {
 
     @ViewBuilder private var check: some View {
         if item.isEvent {
-            // A happening has nothing to check off.
-            Image(systemName: "calendar").font(.title3).foregroundStyle(Palette.accent)
-                .frame(width: 44, height: 44).accessibilityLabel("イベント")
+            // A square box tells an event from a task; checking it only records that it happened.
+            Button { store.toggle(item) } label: {
+                Image(systemName: item.isDone ? "checkmark.square.fill" : "square").font(.title2).frame(width: 44, height: 44)
+            }.buttonStyle(.plain).foregroundStyle(Palette.accent)
+                .accessibilityLabel(item.isDone ? "\(item.title)の済んだ印を外す" : "\(item.title)に済んだ印を付ける")
         } else if item.isBlock {
             Hatch(spacing: 4).stroke(Color.secondary.opacity(0.6), lineWidth: 1)
                 .frame(width: 20, height: 20).clipShape(RoundedRectangle(cornerRadius: 5))
