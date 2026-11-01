@@ -130,3 +130,29 @@ test("protocol: initialize, list, notifications and unknown methods", async () =
   const unknown: any = await handleMcp({ jsonrpc: "2.0", id: 3, method: "nope" }, store);
   assert.equal(unknown.error.code, -32601);
 });
+
+test("events are scheduled but never to-dos", async () => {
+  const store = memoryStore();
+  const added = payload(await call(store, "add_tasks", { tasks: [
+    { title: "友達に会う", date: "2026-10-31", time: "18:00-21:00", kind: "event", must: true, deadline: "2026-10-31" },
+  ] })).added;
+  const event = materialize(store.records).tasks[0];
+  assert.equal(event.isEvent, true);
+  assert.equal(event.isMust, false);
+  assert.equal(event.deadline, undefined);
+  const today = payload(await call(store, "get_today", {}));
+  assert.equal(today.items[0].kind, "event");
+  assert.equal(today.required.length, 0);
+  const done: any = await call(store, "set_done", { ids: added, done: true });
+  assert.equal(done.result.isError, true);
+  const undated: any = await call(store, "add_tasks", { tasks: [{ title: "いつか会う", date: "anytime", kind: "event" }] });
+  assert.equal(undated.result.isError, true);
+  const plain = payload(await call(store, "add_tasks", { tasks: [{ title: "買い物", date: "2026-10-31", must: true }] })).added[0];
+  await call(store, "update_task", { id: plain, kind: "event" });
+  const changed = materialize(store.records).tasks.find((t) => t.id === plain)!;
+  assert.equal(changed.isEvent, true);
+  assert.equal(changed.isMust, false);
+  const anytime = payload(await call(store, "add_tasks", { tasks: [{ title: "本を読む", date: "anytime" }] })).added[0];
+  const refused: any = await call(store, "update_task", { id: anytime, kind: "event" });
+  assert.equal(refused.result.isError, true);
+});

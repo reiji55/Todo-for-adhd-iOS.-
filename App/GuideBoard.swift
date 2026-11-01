@@ -49,7 +49,7 @@ struct GuideBoardView: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var search = ""
-    @State private var newTitle = ""
+    @State private var newCard: BoardCard?
     @State private var opened: GuideRoute?
     let onEdit: (TaskItem) -> Void
     let onStart: (TaskItem) -> Void
@@ -61,15 +61,13 @@ struct GuideBoardView: View {
         }
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    TextField("やり方を書きたいこと（例：TOEIC対策）", text: $newTitle)
-                        .submitLabel(.done).onSubmit(add)
-                    Button(action: add) {
-                        Image(systemName: "plus.circle.fill").font(.title2).frame(width: 44, height: 44)
-                    }.buttonStyle(.borderless).disabled(trimmedTitle.isEmpty).accessibilityLabel("カードを追加")
+                Button { newCard = BoardCard(title: "") } label: {
+                    Label("新しいカードを書く", systemImage: "square.and.pencil")
+                        .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 14)
+                        .foregroundStyle(.white)
+                        .background(Palette.accent, in: RoundedRectangle(cornerRadius: 14))
                 }
-                .padding(.leading, 14).padding(.vertical, 2)
-                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+                .buttonStyle(.plain)
                 Text("タスクは「いま何をするか」、ボードは「どうやるか」。タスクやルーティンのプロジェクト名とカードの見出しが同じなら（どちらかに含まれていても可）、そこからこのカードを開けます。")
                     .font(.caption).foregroundStyle(.secondary)
                 if cards.isEmpty {
@@ -95,6 +93,7 @@ struct GuideBoardView: View {
         }
         .background(Palette.paper)
         .searchable(text: $search, prompt: "見出し・中身を検索")
+        .sheet(item: $newCard) { card in GuideCardEditor(card: card) }
         .navigationDestination(for: GuideRoute.self) { route in
             GuidePager(startID: route.id, cardIDs: shown.map(\.id), onEdit: onEdit, onStart: onStart)
         }
@@ -120,16 +119,6 @@ struct GuideBoardView: View {
             ShareLink(item: card.shareText) { Label("共有", systemImage: "square.and.arrow.up") }
             Button("削除", systemImage: "trash", role: .destructive) { store.deleteCard(card.id) }
         }
-    }
-
-    private var trimmedTitle: String { newTitle.trimmingCharacters(in: .whitespacesAndNewlines) }
-
-    private func add() {
-        let title = trimmedTitle
-        guard !title.isEmpty else { return }
-        let card = BoardCard(title: title)
-        // Open the new card right away: a card with only a title has nothing to read yet.
-        if store.upsertCard(card) { newTitle = ""; search = ""; opened = GuideRoute(id: card.id) }
     }
 
     private func openForScreenshot() {
@@ -372,6 +361,7 @@ struct GuideCardEditor: View {
     @State private var card: BoardCard
     @State private var showDelete = false
     @State private var confirmDiscard = false
+    @FocusState private var titleFocused: Bool
 
     init(card: BoardCard) {
         original = card
@@ -385,7 +375,8 @@ struct GuideCardEditor: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("見出し", text: $card.title, axis: .vertical).font(.headline).lineLimit(1...4)
+                    TextField("見出し（例：TOEIC対策）", text: $card.title, axis: .vertical).font(.headline).lineLimit(1...4)
+                        .focused($titleFocused)
                 } footer: {
                     Text("タスクのプロジェクト名と同じ見出しにすると、そのタスクからこのカードを開けます。")
                 }
@@ -425,6 +416,7 @@ struct GuideCardEditor: View {
             }
             // Long notes are costly to retype, so a stray swipe must not throw them away.
             .interactiveDismissDisabled(changed)
+            .onAppear { if card.title.isEmpty { titleFocused = true } }
         }
         .confirmationDialog("書いた内容を破棄しますか？", isPresented: $confirmDiscard, titleVisibility: .visible) {
             Button("破棄して閉じる", role: .destructive) { dismiss() }

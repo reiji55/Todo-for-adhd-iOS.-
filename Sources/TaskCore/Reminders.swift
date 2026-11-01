@@ -11,11 +11,13 @@ public struct ReminderOptions: Equatable {
     public var leadMinutes: Int
     public var tasks: Bool
     public var routines: Bool
+    public var events: Bool
     /// A morning banner on the day something is due.
     public var deadlines: Bool
     public var deadlineHour: Int
-    public init(leadMinutes: Int = 0, tasks: Bool = true, routines: Bool = true, deadlines: Bool = true, deadlineHour: Int = 8) {
-        self.leadMinutes = leadMinutes; self.tasks = tasks; self.routines = routines
+    public init(leadMinutes: Int = 0, tasks: Bool = true, routines: Bool = true, events: Bool = true,
+                deadlines: Bool = true, deadlineHour: Int = 8) {
+        self.leadMinutes = leadMinutes; self.tasks = tasks; self.routines = routines; self.events = events
         self.deadlines = deadlines; self.deadlineHour = deadlineHour
     }
 }
@@ -36,10 +38,10 @@ public enum ReminderPlan {
                       let fire = calendar.date(byAdding: .minute, value: -options.leadMinutes, to: start), fire > now else { continue }
                 let when = options.leadMinutes > 0 ? "\(options.leadMinutes)分後 \(slot.label)" : slot.label
                 result.append(ReminderRequest(id: "horme.\(item.id).\(key)", date: fire, title: item.title,
-                                              body: item.isRoutine ? "\(when)・ルーティン" : when))
+                                              body: item.isRoutine ? "\(when)・ルーティン" : item.isEvent ? "\(when)・予定" : when))
             }
             guard options.deadlines else { continue }
-            for task in book.tasks where !task.isComplete && task.notify {
+            for task in book.tasks where !task.isComplete && !task.isEvent && task.notify {
                 guard let due = task.deadline, calendar.isDate(due, inSameDayAs: day),
                       let fire = calendar.date(byAdding: .hour, value: options.deadlineHour, to: day), fire > now else { continue }
                 result.append(ReminderRequest(id: "horme.deadline.\(task.id.uuidString).\(key)", date: fire,
@@ -51,7 +53,9 @@ public enum ReminderPlan {
 
     private static func wanted(_ item: AgendaItem, in book: Notebook, options: ReminderOptions) -> Bool {
         switch item.source {
-        case .task(let id): return options.tasks && book.tasks.first { $0.id == id }?.notify == true
+        case .task(let id):
+            guard let task = book.tasks.first(where: { $0.id == id }), task.notify else { return false }
+            return task.isEvent ? options.events : options.tasks
         case .routine(let id, _): return options.routines && book.routines.first { $0.id == id }?.notify == true
         }
     }

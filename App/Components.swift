@@ -126,6 +126,9 @@ struct AgendaRow: View {
                             Image(systemName: "arrow.triangle.2.circlepath").font(.caption2).foregroundStyle(.secondary)
                                 .accessibilityLabel("ルーティン")
                         }
+                        if item.isEvent && item.slot == nil {
+                            Text("終日").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                        }
                         if item.isMust {
                             Image(systemName: "star.fill").font(.caption2).foregroundStyle(Palette.must).accessibilityLabel("必須")
                         }
@@ -145,7 +148,7 @@ struct AgendaRow: View {
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain)
-            if let task, !done, let onStart {
+            if let task, !done, !task.isEvent, let onStart {
                 Button { onStart(task) } label: { Image(systemName: "play.fill").font(.subheadline) }
                     .buttonStyle(.bordered).buttonBorderShape(.circle).accessibilityLabel("\(task.title)を今やる")
             }
@@ -163,7 +166,11 @@ struct AgendaRow: View {
     }
 
     @ViewBuilder private var check: some View {
-        if item.isBlock {
+        if item.isEvent {
+            // A happening has nothing to check off.
+            Image(systemName: "calendar").font(.title3).foregroundStyle(Palette.accent)
+                .frame(width: 44, height: 44).accessibilityLabel("イベント")
+        } else if item.isBlock {
             Hatch(spacing: 4).stroke(Color.secondary.opacity(0.6), lineWidth: 1)
                 .frame(width: 20, height: 20).clipShape(RoundedRectangle(cornerRadius: 5))
                 .frame(width: 44, height: 44).accessibilityLabel("時間を押さえているだけの予定")
@@ -176,8 +183,13 @@ struct AgendaRow: View {
     }
 
     @ViewBuilder private func menu(_ task: TaskItem?) -> some View {
-        Button(item.isRoutine ? "ルーティンを編集" : "編集", systemImage: "pencil") { onOpen(item) }
-        if let task {
+        Button(item.isRoutine ? "ルーティンを編集" : item.isEvent ? "イベントを編集" : "編集", systemImage: "pencil") { onOpen(item) }
+        if let task, task.isEvent {
+            Button("明日に移す", systemImage: "arrow.right") {
+                store.change(task.id) { $0.plannedAt = Calendar.current.date(byAdding: .day, value: 1, to: $0.plannedAt ?? Date()) }
+            }
+            Button("削除", systemImage: "trash", role: .destructive) { store.delete(task.id) }
+        } else if let task {
             if let card = store.linkedCard(for: task), let openGuide {
                 Button("やり方を見る（\(card.title)）", systemImage: "book") { openGuide(card.id) }
             }
@@ -197,26 +209,33 @@ struct AgendaRow: View {
     }
 }
 
-/// The small round ⊕ in the lower right, reachable from every list.
+/// The small round ⊕ in the lower right. It first asks which kind of thing to add.
 struct FloatingAddButton: View {
-    let action: () -> Void
+    let onPick: (AddKind) -> Void
     var body: some View {
-        Button(action: action) {
+        Menu {
+            ForEach(AddKind.allCases) { kind in
+                Button { onPick(kind) } label: {
+                    Label { Text(kind.title); Text(kind.detail) } icon: { Image(systemName: kind.icon) }
+                }
+            }
+        } label: {
             Image(systemName: "plus").font(.title3.weight(.semibold)).foregroundStyle(.white)
                 .frame(width: 52, height: 52)
                 .background(Circle().fill(Palette.accent))
                 .shadow(color: .black.opacity(0.22), radius: 8, y: 3)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("タスクを追加")
+        .menuOrder(.fixed)
+        .accessibilityLabel("追加する")
+        .accessibilityHint("タスク・イベント・ルーティン・アイデアから選びます")
     }
 }
 
 extension View {
     /// Keeps the add button clear of the last row by reserving its space at the bottom.
-    func floatingAdd(_ action: @escaping () -> Void) -> some View {
+    func floatingAdd(_ onPick: @escaping (AddKind) -> Void) -> some View {
         safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
-            FloatingAddButton(action: action).padding(.trailing, 20).padding(.bottom, 10)
+            FloatingAddButton(onPick: onPick).padding(.trailing, 20).padding(.bottom, 10)
         }
     }
 }

@@ -577,6 +577,10 @@ private struct WeekBlock: View {
             if item.isBlock {
                 shape.fill(Color.secondary.opacity(0.08))
                 Hatch(spacing: 6).stroke(Color.secondary.opacity(0.25), lineWidth: 1).clipShape(shape)
+            } else if item.isEvent {
+                // Events read as appointments: a lighter fill with an outline instead of a side bar.
+                shape.fill(ProjectColor.tint(for: colorName, amount: 0.16))
+                shape.strokeBorder(accent.opacity(0.7), lineWidth: 1.2)
             } else {
                 shape.fill(ProjectColor.tint(for: colorName, amount: item.isDone ? 0.18 : 0.32))
                 if item.isDone { Hatch(spacing: 6, reversed: true).stroke(accent.opacity(0.45), lineWidth: 1.2).clipShape(shape) }
@@ -592,6 +596,7 @@ private struct WeekBlock: View {
                     if item.isRoutine && !item.isBlock {
                         Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 9)).foregroundStyle(.secondary)
                     }
+                    if item.isEvent { Image(systemName: "calendar").font(.system(size: 9)).foregroundStyle(accent) }
                     Text(item.title).font(.system(size: 12, weight: .medium))
                         .foregroundStyle(item.isBlock || item.isDone ? .secondary : .primary)
                         .strikethrough(item.isDone)

@@ -16,7 +16,7 @@ public struct TaskBoard {
     }
 
     public func isObligation(_ task: TaskItem, now: Date) -> Bool {
-        guard !task.isComplete else { return false }
+        guard !task.isComplete, !task.isEvent else { return false }
         let due = task.deadline.map { isOnOrBeforeToday($0, now: now) } ?? false
         let must = task.isMust && (task.plannedAt.map { isOnOrBeforeToday($0, now: now) } ?? true)
         return due || must
@@ -51,7 +51,7 @@ public struct TaskBoard {
     }
 
     public func pastPlanned(_ tasks: [TaskItem], now: Date) -> [TaskItem] {
-        tasks.filter { !$0.isComplete && $0.plannedAt.map { calendar.startOfDay(for: $0) < calendar.startOfDay(for: now) } == true }
+        tasks.filter { !$0.isComplete && !$0.isEvent && $0.plannedAt.map { calendar.startOfDay(for: $0) < calendar.startOfDay(for: now) } == true }
     }
 
     /// Suggestions are additive. Energy changes ranking, never obligation visibility.
@@ -59,7 +59,7 @@ public struct TaskBoard {
     public func candidates(_ tasks: [TaskItem], energy: Energy, now: Date, limit: Int = 3) -> [Candidate] {
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))!
         let pool = tasks.filter { task in
-            guard !task.isComplete, !isObligation(task, now: now) else { return false }
+            guard !task.isComplete, !task.isEvent, !isObligation(task, now: now) else { return false }
             if let deferUntil = task.suggestionDeferredUntil, deferUntil > now { return false }
             if let planned = task.plannedAt, !isOnOrBeforeToday(planned, now: now) { return false }
             return true

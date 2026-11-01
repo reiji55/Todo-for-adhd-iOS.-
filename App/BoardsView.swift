@@ -2,7 +2,7 @@ import SwiftUI
 
 @MainActor
 struct AllTasksView: View {
-    enum Mode: String, CaseIterable { case tasks = "タスク", routines = "ルーティン" }
+    enum Mode: String, CaseIterable { case tasks = "タスク", events = "イベント", routines = "ルーティン" }
     @EnvironmentObject private var store: TaskStore
     @State private var mode: Mode = .tasks
     @State private var search = ""
@@ -19,19 +19,20 @@ struct AllTasksView: View {
                 }.pickerStyle(.segmented)
                 switch mode {
                 case .tasks: taskList
+                case .events: eventList
                 case .routines: RoutineList(search: search, onEdit: onEditRoutine)
                 }
             }.padding(16).frame(maxWidth: 900).frame(maxWidth: .infinity)
         }
         .background(Palette.paper)
-        .searchable(text: $search, prompt: mode == .tasks ? "タスク・メモ・プロジェクトを検索" : "ルーティンを検索")
+        .searchable(text: $search, prompt: mode == .routines ? "ルーティンを検索" : mode == .events ? "イベントを検索" : "タスク・メモ・プロジェクトを検索")
     }
 
     @ViewBuilder private var taskList: some View {
         let matches = store.notebook.tasks.filter { task in
-            search.isEmpty || [task.title, task.project, task.memo, task.handoff, task.resumeNote]
+            !task.isEvent && (search.isEmpty || [task.title, task.project, task.memo, task.handoff, task.resumeNote]
                 .joined(separator: " ").localizedCaseInsensitiveContains(search)
-                || task.steps.contains { $0.title.localizedCaseInsensitiveContains(search) }
+                || task.steps.contains { $0.title.localizedCaseInsensitiveContains(search) })
         }
         // Checked off here a moment ago: keep in place, struck through, until the person leaves.
         let open = matches.filter { !$0.isComplete || store.recentlyDone.contains(AgendaItem(task: $0).id) }
@@ -77,6 +78,41 @@ struct AllTasksView: View {
         }
     }
 
+    /// Events from today on, by day; past ones fold away.
+    @ViewBuilder private var eventList: some View {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let events = store.notebook.tasks.filter { task in
+            task.isEvent && (search.isEmpty || [task.title, task.project, task.memo].joined(separator: " ").localizedCaseInsensitiveContains(search))
+        }
+        let upcoming = events.filter { ($0.plannedAt.map { calendar.startOfDay(for: $0) } ?? today) >= today }
+        let past = events.filter { ($0.plannedAt.map { calendar.startOfDay(for: $0) } ?? today) < today }
+            .sorted { ($0.plannedAt ?? .distantPast) > ($1.plannedAt ?? .distantPast) }
+        let byDay = Dictionary(grouping: upcoming) { calendar.startOfDay(for: $0.plannedAt ?? today) }
+        Text("その日にある予定。チェックはなく、タスクの候補には入りません。").font(.caption).foregroundStyle(.secondary)
+        if upcoming.isEmpty {
+            ContentUnavailableView(search.isEmpty ? "これからのイベントはありません" : "見つかりませんでした", systemImage: "calendar",
+                                   description: Text(search.isEmpty ? "右下の＋から「イベント」を選ぶと追加できます。" : "別の言葉で検索してみてください。"))
+        }
+        ForEach(byDay.keys.sorted(), id: \.self) { day in
+            SectionHeading(title: dayTitle(day, now: Date()))
+            ForEach(byDay[day]!.sorted(by: TaskBoard().scheduledOrder)) { task in
+                AgendaRow(item: AgendaItem(task: task), onOpen: onOpen)
+            }
+        }
+        if !past.isEmpty {
+            Toggle("過ぎたイベントを表示（\(past.count)件）", isOn: $showDone).font(.subheadline).padding(.vertical)
+            if showDone {
+                ForEach(past) { task in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(task.plannedAt.map { PlainText.dayTitle($0) } ?? "").font(.caption).foregroundStyle(.secondary)
+                        AgendaRow(item: AgendaItem(task: task), onOpen: onOpen)
+                    }
+                }
+            }
+        }
+    }
+
     private func dayTitle(_ day: Date, now: Date) -> String {
         let calendar = Calendar.current
         let label = day.formatted(.dateTime.month().day().weekday())
@@ -96,6 +132,7 @@ struct IdeasView: View {
     @EnvironmentObject private var store: TaskStore
     @State private var draft = ""
     @State private var editing: Idea?
+    @FocusState private var writing: Bool
     let onEditTask: (TaskItem) -> Void
     var body: some View {
         ScrollView {
@@ -104,10 +141,10 @@ struct IdeasView: View {
                     .font(.subheadline).foregroundStyle(.secondary)
                 VStack(alignment: .trailing) {
                     TextField("アイデアや気になること", text: $draft, axis: .vertical)
-                        .lineLimit(3...8).frame(minHeight: 80, alignment: .topLeading)
+                        .lineLimit(3...8).frame(minHeight: 80, alignment: .topLeading).focused($writing)
                     Button("書き留める", systemImage: "tray.and.arrow.down") {
                         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if store.commit({ $0.ideas.insert(Idea(text: text), at: 0) }) { draft = "" }
+                        if store.commit({ $0.ideas.insert(Idea(text: text), at: 0) }) { draft = ""; writing = false }
                     }.buttonStyle(.borderedProminent)
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }.padding().background(.background, in: RoundedRectangle(cornerRadius: 16))
@@ -135,6 +172,15 @@ struct IdeasView: View {
                 }
             }.padding(16).frame(maxWidth: 820).frame(maxWidth: .infinity)
         }.background(Palette.paper)
+            // The keyboard covers the tab bar; it must always be easy to put away.
+            .scrollDismissesKeyboard(.immediately)
+            .onTapGesture { writing = false }
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("完了") { writing = false }
+                }
+            }
             .sheet(item: $editing) { idea in IdeaEditor(idea: idea) }
             .alert("保存・読み込みのお知らせ", isPresented: Binding(
                 get: { editing == nil && store.error != nil }, set: { if !$0 { store.error = nil } }

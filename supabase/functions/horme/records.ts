@@ -11,6 +11,8 @@ export type Task = {
   id: string; title: string; plannedAt?: string | null; scheduledTime: string; deadline?: string | null;
   isMust: boolean; effort: string; project: string; memo: string; handoff: string; resumeNote: string;
   steps: Step[]; createdAt: string; completedAt?: string | null; notify?: boolean;
+  /** Something happening that day, not a to-do (TaskItem.isEvent in the app). */
+  isEvent?: boolean;
 };
 export type Idea = { id: string; text: string; createdAt: string };
 export type Card = { id: string; title: string; purpose: string; goal: string; detail: string; createdAt: string; rank: number };
@@ -122,7 +124,7 @@ export function startMinute(time: string): number {
 }
 
 export type AgendaItem = {
-  id: string; kind: "task" | "routine"; title: string; time: string; done: boolean; must: boolean;
+  id: string; kind: "task" | "event" | "routine"; title: string; time: string; done: boolean; must: boolean;
   project: string; held?: boolean; originalDay?: string; deadline?: string; nextStep?: string;
   resumeNote?: string; memo?: string; handoff?: string;
 };
@@ -154,7 +156,7 @@ export function agenda(book: Book, key: string): AgendaItem[] {
 export function taskItem(t: Task): AgendaItem {
   const next = t.steps.find((s) => !s.isDone);
   return {
-    id: t.id, kind: "task", title: t.title, time: t.scheduledTime ?? "", done: !!t.completedAt, must: !!t.isMust,
+    id: t.id, kind: t.isEvent ? "event" : "task", title: t.title, time: t.scheduledTime ?? "", done: !!t.completedAt, must: !!t.isMust,
     project: t.project ?? "", deadline: t.deadline ? dayKey(t.deadline) : undefined, nextStep: next?.title,
     resumeNote: t.resumeNote || undefined, memo: t.memo || undefined, handoff: t.handoff || undefined,
   };

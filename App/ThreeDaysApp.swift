@@ -29,6 +29,7 @@ struct TaskRoute: Identifiable {
 struct QuickAddRoute: Identifiable {
     let id = UUID()
     var day: Date?
+    var kind: AddKind = .task
 }
 
 @MainActor
@@ -65,7 +66,14 @@ struct RootView: View {
         .animation(.snappy, value: store.undoOffer)
         .sheet(item: $editor) { route in TaskEditor(task: route.task, original: route.original) }
         .sheet(item: $routineEditor) { routine in RoutineEditor(routine: routine) }
-        .sheet(item: $quickAdd) { route in QuickAddSheet(day: route.day) }
+        .sheet(item: $quickAdd) { route in
+            switch route.kind {
+            case .task: QuickAddSheet(day: route.day)
+            case .event: QuickAddSheet(day: route.day, isEvent: true)
+            case .routine: RoutineEditor(routine: Routine(title: "", time: "19:00-20:00"))
+            case .idea: IdeaQuickSheet()
+            }
+        }
         .sheet(isPresented: $focusOpen) { FocusView() }
         .sheet(isPresented: $settingsOpen) { SettingsView() }
         .sheet(item: $guide) { route in GuideSheet(cardID: route.id) }
@@ -111,22 +119,21 @@ struct RootView: View {
         switch tab {
         case .today:
             TodayView(onOpen: open, onStart: start, onWeek: { selectedTab = Tab.week.rawValue })
-                .floatingAdd { quickAdd = QuickAddRoute(day: nil) }
+                .floatingAdd { quickAdd = QuickAddRoute(day: nil, kind: $0) }
         case .week:
             // The grid fills the screen, so the button floats over it instead of taking a row.
             WeekView(onOpen: open, onStart: start, onAdd: { quickAdd = QuickAddRoute(day: $0) })
                 .overlay(alignment: .bottomTrailing) {
-                    FloatingAddButton { quickAdd = QuickAddRoute(day: nil) }.padding(.trailing, 14).padding(.bottom, 10)
+                    FloatingAddButton { quickAdd = QuickAddRoute(day: nil, kind: $0) }.padding(.trailing, 14).padding(.bottom, 10)
                 }
         case .all:
             AllTasksView(onOpen: open, onStart: start, onEditRoutine: { routineEditor = $0 })
-                .floatingAdd { quickAdd = QuickAddRoute(day: nil) }
+                .floatingAdd { quickAdd = QuickAddRoute(day: nil, kind: $0) }
         case .ideas:
+            // Ideas and the board have their own way to add, so the ⊕ would only confuse there.
             IdeasView(onEditTask: edit)
-                .floatingAdd { quickAdd = QuickAddRoute(day: nil) }
         case .board:
             GuideBoardView(onEdit: edit, onStart: start)
-                .floatingAdd { quickAdd = QuickAddRoute(day: nil) }
         }
     }
 

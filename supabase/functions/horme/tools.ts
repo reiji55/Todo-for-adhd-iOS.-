@@ -42,14 +42,14 @@ function day(book: Book, key: string) {
 }
 
 function leftovers(book: Book, today: string) {
-  return book.tasks.filter((t) => !t.completedAt && t.plannedAt && dayKey(t.plannedAt) < today)
+  return book.tasks.filter((t) => !t.completedAt && !t.isEvent && t.plannedAt && dayKey(t.plannedAt) < today)
     .map((t) => ({ ...taskItem(t), plannedDay: dayKey(t.plannedAt!) }));
 }
 
 /** Overdue deadlines and must tasks that are not planned for today (those are already in today's list). */
 function required(book: Book, today: string) {
   return book.tasks.filter((t) => {
-    if (t.completedAt || (t.plannedAt && dayKey(t.plannedAt) === today)) return false;
+    if (t.completedAt || t.isEvent || (t.plannedAt && dayKey(t.plannedAt) === today)) return false;
     const due = t.deadline ? dayKey(t.deadline) <= today : false;
     const must = t.isMust && (!t.plannedAt || dayKey(t.plannedAt) <= today);
     return due || must;
@@ -61,7 +61,7 @@ export const tools: Tool[] = [
     name: "get_today",
     title: "今日を読む",
     description:
-      "今日の時間割（タスクとルーティン、時刻順）、今日中に必要なもの（締切・必須で今日の予定に入っていないもの）、" +
+      "今日の時間割（タスク・イベント・ルーティン、時刻順。kind で見分ける）、今日中に必要なもの（締切・必須で今日の予定に入っていないもの）、" +
       "前の日から残っているタスクを返す。各項目の id を他のツールに渡す。書き換える前にまずこれを呼ぶ。" +
       "handoff は本人が「Claude にやってほしい」と書き残した依頼。held はルーティンのうち睡眠・仕事など時間を押さえているだけのもの。",
     inputSchema: { type: "object", properties: {} },
@@ -91,14 +91,14 @@ export const tools: Tool[] = [
     title: "日付なしのタスクを読む",
     description: "日付を決めていない未完了のタスク（「いつでも」）を返す。",
     inputSchema: { type: "object", properties: {} },
-    run: (_, { book }) => ({ result: book.tasks.filter((t) => !t.completedAt && !t.plannedAt).map(taskItem) }),
+    run: (_, { book }) => ({ result: book.tasks.filter((t) => !t.completedAt && !t.isEvent && !t.plannedAt).map(taskItem) }),
   },
   {
     name: "add_tasks",
-    title: "タスクを足す",
+    title: "タスク・イベントを足す",
     description:
-      "タスクを追加する。date を省くと今日、\"anytime\" で日付なし。同じものを二重に足さないよう、先に get_today / get_days で確認する。" +
-      "くり返すものはタスクではなくルーティンなので、本人に確認してから。",
+      "タスクかイベントを追加する。date を省くと今日、\"anytime\" で日付なし（タスクのみ）。同じものを二重に足さないよう、先に get_today / get_days で確認する。" +
+      "kind=\"event\" はその日にある予定（買い物、人に会う）で、チェックや締切はない。くり返すものはルーティンなので、本人に確認してから。",
     inputSchema: {
       type: "object",
       properties: {
@@ -108,7 +108,8 @@ export const tools: Tool[] = [
             type: "object",
             properties: {
               title: { type: "string" }, date: DATE, time: TIME, project: { type: "string" },
-              must: { type: "boolean", description: "本人が必須と決めたものだけ true" },
+              kind: { type: "string", enum: ["task", "event"], description: "task（既定）か event" },
+              must: { type: "boolean", description: "本人が必須と決めたものだけ true（タスクのみ）" },
               deadline: { type: "string", description: "締切 YYYY-MM-DD" },
               memo: { type: "string", description: "本人用のメモ" },
               handoff: { type: "string", description: "Claude への引き継ぎ" },
@@ -126,16 +127,18 @@ export const tools: Tool[] = [
         const title = String(input.title ?? "").trim();
         if (!title) throw new Error("title が空のタスクがあります。");
         const date = input.date ?? todayKey(now);
+        const isEvent = input.kind === "event";
         validDate(date); validTime(input.time ?? "");
+        if (isEvent && date === "anytime") throw new Error("イベントには日付が必要です。");
         if (input.deadline) validDate(input.deadline);
         const id = newID();
         const values: Args = {
           alive: true, id, title, scheduledTime: date === "anytime" ? "" : String(input.time ?? "").trim(),
-          isMust: !!input.must, effort: "medium", project: input.project ?? "", memo: input.memo ?? "",
+          isMust: isEvent ? false : !!input.must, isEvent, effort: "medium", project: input.project ?? "", memo: input.memo ?? "",
           handoff: input.handoff ?? "", resumeNote: "", createdAt: nowISO(now), notify: true,
         };
         if (date !== "anytime") values.plannedAt = dayToISO(date);
-        if (input.deadline && input.deadline !== "anytime") values.deadline = dayToISO(input.deadline);
+        if (!isEvent && input.deadline && input.deadline !== "anytime") values.deadline = dayToISO(input.deadline);
         writer.set(`task_${id}`, values);
         added.push(id);
       }
@@ -146,7 +149,7 @@ export const tools: Tool[] = [
     name: "update_task",
     title: "タスクを直す",
     description:
-      "タスクの名前・日付・時間帯・プロジェクト・必須・締切・メモ・引き継ぎを書き換える。渡した欄だけ変わる。" +
+      "タスクやイベントの名前・日付・時間帯・プロジェクト・必須・締切・メモ・引き継ぎ・種類を書き換える。渡した欄だけ変わる。" +
       'date="anytime" で日付と時間を外す。引き継ぎ（handoff）は対応したら memo に何をしたか書いてから空にする。',
     inputSchema: {
       type: "object",
@@ -154,6 +157,7 @@ export const tools: Tool[] = [
         id: { type: "string" }, title: { type: "string" }, date: DATE, time: TIME, project: { type: "string" },
         must: { type: "boolean" }, deadline: { type: "string", description: 'YYYY-MM-DD、空文字で締切を外す' },
         memo: { type: "string" }, handoff: { type: "string" },
+        kind: { type: "string", enum: ["task", "event"], description: "種類を変える。event にすると必須・締切・完了は外れる" },
       },
       required: ["id"],
     },
@@ -177,6 +181,13 @@ export const tools: Tool[] = [
         if (args.deadline) validDate(args.deadline);
         values.deadline = args.deadline ? dayToISO(args.deadline) : null;
       }
+      if (args.kind !== undefined) values.isEvent = args.kind === "event";
+      if (args.kind !== undefined ? args.kind === "event" : task.isEvent) {
+        const planned = "plannedAt" in values ? values.plannedAt : task.plannedAt;
+        if (!planned) throw new Error("イベントには日付が必要です。");
+        for (const key of ["isMust", "deadline"]) delete values[key];
+        if (args.kind === "event") Object.assign(values, { isMust: false, deadline: null, completedAt: null });
+      }
       if (!Object.keys(values).length) return { result: { changed: false } };
       writer.set(`task_${task.id}`, values);
       return { result: { changed: true, id: task.id }, changes: writer.changes };
@@ -189,7 +200,11 @@ export const tools: Tool[] = [
     inputSchema: { type: "object", properties: { ids: IDS, done: { type: "boolean" } }, required: ["ids", "done"] },
     run: ({ ids, done }, { records, book, now }) => {
       const writer = new Writer(records, "claude", now.getTime());
-      for (const id of ids as string[]) writer.set(`task_${find(book, id).id}`, { completedAt: done ? nowISO(now) : null });
+      for (const id of ids as string[]) {
+        const task = find(book, id);
+        if (task.isEvent) throw new Error(`「${task.title}」はイベントなので完了にしません。`);
+        writer.set(`task_${task.id}`, { completedAt: done ? nowISO(now) : null });
+      }
       return { result: { updated: ids.length }, changes: writer.changes };
     },
   },
@@ -288,7 +303,8 @@ export const tools: Tool[] = [
 ];
 
 export const instructions =
-  "Horme（本人のタスク管理アプリ）の中身を読み書きする。今日の時間割・タスク・ルーティン・ボード（やり方の書き置き）・アイデアがある。" +
+  "Horme（本人のタスク管理アプリ）の中身を読み書きする。種類はタスク（その日にやる・単発で終わる）、イベント（その日にある予定でチェックなし）、" +
+  "ルーティン（くり返し）、アイデア（まだ決めていない思いつき）。ほかにボード（やり方の書き置き）がある。" +
   "日付は日本時間。書き換える前に get_today / get_days で id と現状を確かめる。" +
   "handoff は本人が「Claude にやってほしい」と残した依頼で、対応したら memo に結果を書いて handoff を空にする。" +
   "変更はアプリと iCloud に数十秒以内に反映される。本人が決めること（必須にする・消す・ルーティンを作る）は勝手にしない。";

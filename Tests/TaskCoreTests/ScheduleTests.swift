@@ -162,4 +162,23 @@ final class ScheduleTests: XCTestCase {
         XCTAssertTrue(text.contains("AIへの引き継ぎ：番号を調べて"))
         XCTAssertTrue(text.contains("前の日から残っているもの\n[ ] 10月28日(水) 返却"))
     }
+
+    func testEventsAreOnTheScheduleButNeverToDos() {
+        let meet = TaskItem(title: "友達に会う", plannedAt: day(-1), scheduledTime: "18:00-21:00", isMust: true,
+                            deadline: day(-1), createdAt: day(-2), isEvent: true)
+        let shop = TaskItem(title: "買い物に行く", plannedAt: friday, scheduledTime: "11:00-12:00", createdAt: day(-2), isEvent: true)
+        let board = TaskBoard(calendar: calendar)
+        XCTAssertTrue(board.obligations([meet, shop], now: friday).isEmpty)
+        XCTAssertTrue(board.candidates([meet, shop], energy: .any, now: friday).isEmpty)
+        XCTAssertTrue(board.pastPlanned([meet, shop], now: friday).isEmpty)
+        let items = Agenda.items(on: friday, tasks: [shop], routines: [], calendar: calendar)
+        XCTAssertEqual(items.first?.isEvent, true)
+        XCTAssertTrue(PlainText.day(friday, book: Notebook(tasks: [shop]), calendar: calendar)
+            .contains("・ 11:00-12:00 買い物に行く〔イベント〕"))
+        let morning = calendar.date(from: DateComponents(year: 2026, month: 10, day: 30, hour: 9))!
+        let book = Notebook(tasks: [shop])
+        XCTAssertEqual(ReminderPlan.requests(for: book, now: morning, options: ReminderOptions(), calendar: calendar).first?.body,
+                       "11:00-12:00・予定")
+        XCTAssertTrue(ReminderPlan.requests(for: book, now: morning, options: ReminderOptions(events: false), calendar: calendar).isEmpty)
+    }
 }

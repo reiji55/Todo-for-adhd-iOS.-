@@ -14,10 +14,11 @@ public enum PlainText {
         let time = item.slot?.label ?? "時間未定"
         var tags: [String] = []
         if item.isRoutine { tags.append(item.isBlock ? "押さえている時間" : "ルーティン") }
+        if item.isEvent { tags.append("イベント") }
         if item.isMust { tags.append("必須") }
         if let due = task?.deadline { tags.append("締切\(Calendar.current.component(.month, from: due))/\(Calendar.current.component(.day, from: due))") }
         if !item.project.isEmpty { tags.append(item.project) }
-        let mark = item.isBlock ? "・" : (item.isDone ? "[x]" : "[ ]")
+        let mark = item.isBlock || item.isEvent ? "・" : (item.isDone ? "[x]" : "[ ]")
         var text = "\(mark) \(time) \(item.title)" + (tags.isEmpty ? "" : "〔\(tags.joined(separator: "・"))〕")
         if let task, !task.isComplete {
             if let next = task.nextStep { text += "\n    次の一手：\(next.title)" }
@@ -66,7 +67,7 @@ public enum PlainText {
     }
 
     public static func anytime(book: Notebook) -> String {
-        let tasks = book.tasks.filter { !$0.isComplete && $0.plannedAt == nil }
+        let tasks = book.tasks.filter { !$0.isComplete && !$0.isEvent && $0.plannedAt == nil }
         guard !tasks.isEmpty else { return "日付を決めていないタスクはありません。" }
         return "いつでも（日付なし）\n" + tasks.map { line(AgendaItem(task: $0), task: $0) }.joined(separator: "\n")
     }
@@ -75,6 +76,6 @@ public enum PlainText {
 public extension AgendaItem {
     init(task: TaskItem) {
         self.init(source: .task(task.id), title: task.title, project: task.project, slot: task.slot,
-                  isDone: task.isComplete, isMust: task.isMust, isBlock: false)
+                  isDone: task.isComplete, isMust: task.isMust, isBlock: false, isEvent: task.isEvent)
     }
 }

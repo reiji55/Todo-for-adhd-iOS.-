@@ -34,7 +34,7 @@ struct TaskEntity: AppEntity {
         id = task.id
         title = task.title
         summary = [task.plannedAt.map { PlainText.dayTitle($0) }, task.slot?.label, task.project.isEmpty ? nil : task.project,
-                   task.isComplete ? "完了" : nil].compactMap { $0 }.joined(separator: " · ")
+                   task.isEvent ? "イベント" : nil, task.isComplete ? "完了" : nil].compactMap { $0 }.joined(separator: " · ")
     }
 
     var displayRepresentation: DisplayRepresentation {
@@ -152,6 +152,27 @@ struct AddTaskIntent: AppIntent {
     }
 }
 
+struct AddEventIntent: AppIntent {
+    static var title: LocalizedStringResource = "イベントを追加"
+    static var description = IntentDescription("その日にある予定（買い物、人に会うなど）を追加します。時刻を省くと終日になります。")
+    @Parameter(title: "予定") var name: String
+    @Parameter(title: "日付") var date: Date
+    @Parameter(title: "開始時刻") var start: Date?
+    @Parameter(title: "長さ（分）", default: 60, inclusiveRange: (5, 720)) var minutes: Int
+    @Parameter(title: "メモ") var memo: String?
+
+    @MainActor func perform() async throws -> some IntentResult & ReturnsValue<TaskEntity> & ProvidesDialog {
+        guard !TaskStore.shared.isDemo else { throw HormeIntentError.demo }
+        let store = TaskStore.shared
+        var event = TaskItem(title: name.trimmingCharacters(in: .whitespacesAndNewlines), plannedAt: date, memo: memo ?? "", isEvent: true)
+        if let start { event.slot = TimeSlot(start: ClockMinutes.minutes(start), duration: minutes) }
+        guard !event.title.isEmpty else { throw HormeIntentError.saveFailed("予定の名前が空です。") }
+        guard store.upsert(event) else { throw HormeIntentError.saveFailed(store.error ?? "") }
+        return .result(value: TaskEntity(event),
+                       dialog: "「\(event.title)」を\(PlainText.dayTitle(date))\(event.slot.map { " " + $0.label } ?? "（終日）")に入れました。")
+    }
+}
+
 struct CompleteTaskIntent: AppIntent {
     static var title: LocalizedStringResource = "タスクを完了にする"
     @Parameter(title: "タスク") var task: TaskEntity
@@ -160,6 +181,7 @@ struct CompleteTaskIntent: AppIntent {
         guard !TaskStore.shared.isDemo else { throw HormeIntentError.demo }
         let store = TaskStore.shared
         guard let current = store.task(task.id) else { throw HormeIntentError.notFound }
+        guard !current.isEvent else { throw HormeIntentError.saveFailed("イベントは完了にするものではありません。") }
         if !current.isComplete { store.complete(current.id) }
         return .result(dialog: "「\(current.title)」を完了にしました。")
     }
@@ -215,6 +237,8 @@ struct HormeShortcuts: AppShortcutsProvider {
                     shortTitle: "今日の予定", systemImageName: "sun.max")
         AppShortcut(intent: AddTaskIntent(), phrases: ["\(.applicationName)にタスクを追加", "\(.applicationName)でタスクを追加"],
                     shortTitle: "タスクを追加", systemImageName: "plus.circle")
+        AppShortcut(intent: AddEventIntent(), phrases: ["\(.applicationName)に予定を追加", "\(.applicationName)にイベントを追加"],
+                    shortTitle: "イベントを追加", systemImageName: "calendar.badge.plus")
         AppShortcut(intent: AddIdeaIntent(), phrases: ["\(.applicationName)にアイデアを書き留める"],
                     shortTitle: "アイデアを書き留める", systemImageName: "tray.and.arrow.down")
         AppShortcut(intent: GetWeekIntent(), phrases: ["\(.applicationName)で今週の予定"],

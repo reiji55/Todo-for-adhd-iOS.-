@@ -24,16 +24,27 @@ struct TaskEditor: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("タスク名", text: $task.title, axis: .vertical)
+                    Picker("種類", selection: Binding(
+                        get: { task.isEvent },
+                        set: { task.isEvent = $0; if $0 && task.plannedAt == nil { task.plannedAt = Date() } }
+                    )) {
+                        Text("タスク").tag(false)
+                        Text("イベント").tag(true)
+                    }.pickerStyle(.segmented)
+                    TextField(task.isEvent ? "予定（例：友達に会う）" : "タスク名", text: $task.title, axis: .vertical)
                         .font(.headline).lineLimit(1...5)
-                    Toggle("必須にする", isOn: $task.isMust).tint(Palette.must)
+                    if !task.isEvent { Toggle("必須にする", isOn: $task.isMust).tint(Palette.must) }
                 } footer: {
-                    Text("必須は予定日が来たら上段に表示。日付なしなら今日から表示します。")
+                    Text(task.isEvent
+                         ? "イベントはその日にある予定です。チェックはなく、候補や残りのタスクには入りません。"
+                         : "必須は予定日が来たら上段に表示。日付なしなら今日から表示します。")
                 }
-                Section("いつやるか") {
-                    Toggle("予定日を決める", isOn: Binding(
-                        get: { task.plannedAt != nil }, set: { task.plannedAt = $0 ? (task.plannedAt ?? Date()) : nil }
-                    ))
+                Section(task.isEvent ? "いつ" : "いつやるか") {
+                    if !task.isEvent {
+                        Toggle("予定日を決める", isOn: Binding(
+                            get: { task.plannedAt != nil }, set: { task.plannedAt = $0 ? (task.plannedAt ?? Date()) : nil }
+                        ))
+                    }
                     if task.plannedAt != nil {
                         DatePicker("予定日", selection: Binding(
                             get: { task.plannedAt ?? Date() }, set: { task.plannedAt = $0 }
@@ -48,6 +59,7 @@ struct TaskEditor: View {
                         TimeSlotFields(slot: $task.slot, legacyLabel: task.scheduledTime) { task.scheduledTime = "" }
                     }
                 }
+                if !task.isEvent {
                 Section {
                     Toggle("締切がある", isOn: Binding(
                         get: { task.deadline != nil }, set: { task.deadline = $0 ? (task.deadline ?? Date()) : nil }
@@ -58,11 +70,16 @@ struct TaskEditor: View {
                         ), displayedComponents: .date)
                     }
                 } footer: { Text("予定日を変えても締切は変わりません。締切日になったら必ず上段に表示します。") }
-                if (task.plannedAt != nil && task.slot != nil) || task.deadline != nil {
+                }
+                if (task.plannedAt != nil && task.slot != nil) || (!task.isEvent && task.deadline != nil) {
                     Section {
                         Toggle("通知", isOn: $task.notify)
-                    } footer: { Text("始まる時刻と締切の日の朝にバナーで知らせます。タイミングは設定で変えられます。") }
+                    } footer: {
+                        Text(task.isEvent ? "始まる時刻にバナーで知らせます。タイミングは設定で変えられます。"
+                             : "始まる時刻と締切の日の朝にバナーで知らせます。タイミングは設定で変えられます。")
+                    }
                 }
+                if !task.isEvent {
                 Section {
                     ForEach($task.steps) { $step in
                         HStack {
@@ -85,8 +102,9 @@ struct TaskEditor: View {
                 Section("続きに戻るためのメモ") {
                     TextField("どこまで進んだ？", text: $task.resumeNote, axis: .vertical).lineLimit(2...6)
                 }
+                }
                 Section {
-                    TextField("このタスクについて覚えておきたいこと", text: $task.memo, axis: .vertical).lineLimit(3...12)
+                    TextField(task.isEvent ? "場所や持ち物など" : "このタスクについて覚えておきたいこと", text: $task.memo, axis: .vertical).lineLimit(3...12)
                     if let card = store.linkedCard(for: task) {
                         Button { guide = GuideRoute(id: card.id) } label: {
                             Label("ボードのやり方：\(card.title)", systemImage: "book")
@@ -98,6 +116,7 @@ struct TaskEditor: View {
                          ? "繰り返し使う手順は、ボードのカードに書いてプロジェクトで結ぶと、どのタスクからも開けます。"
                          : "手順はボードのカードにあります。このタスクだけのことはメモへ。")
                 }
+                if !task.isEvent {
                 Section {
                     TextField("AIに頼みたいこと", text: $task.handoff, axis: .vertical).lineLimit(2...8)
                     if !task.handoff.isEmpty {
@@ -107,6 +126,7 @@ struct TaskEditor: View {
                     }
                 } header: { Text("AIへの引き継ぎ") }
                 footer: { Text("内容を保存して共有できます。AIへの自動送信はありません。") }
+                }
                 Section("任意の属性") {
                     HStack {
                         TextField("プロジェクト", text: $task.project)
@@ -119,18 +139,20 @@ struct TaskEditor: View {
                                 .accessibilityLabel("ボードのカードから選ぶ")
                         }
                     }
-                    Picker("取り組む負荷", selection: $task.effort) {
-                        ForEach(Effort.allCases) { Text($0.label).tag($0) }
+                    if !task.isEvent {
+                        Picker("取り組む負荷", selection: $task.effort) {
+                            ForEach(Effort.allCases) { Text($0.label).tag($0) }
+                        }
                     }
-                    if task.suggestionDeferredUntil.map({ $0 > Date() }) == true {
+                    if !task.isEvent, task.suggestionDeferredUntil.map({ $0 > Date() }) == true {
                         Button("候補の「あとで」を解除") { task.suggestionDeferredUntil = nil }
                     }
                 }
                 if store.task(task.id) != nil {
-                    Section { Button("このタスクを削除", role: .destructive) { showDelete = true } }
+                    Section { Button(task.isEvent ? "このイベントを削除" : "このタスクを削除", role: .destructive) { showDelete = true } }
                 }
             }
-            .navigationTitle(store.task(task.id) == nil ? "タスクを追加" : "タスクを編集")
+            .navigationTitle("\(task.isEvent ? "イベント" : "タスク")を\(store.task(task.id) == nil ? "追加" : "編集")")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -139,13 +161,18 @@ struct TaskEditor: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
                         task.title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                        // An event is a happening on a day, not a to-do: no must, deadline or completion.
+                        if task.isEvent {
+                            task.isMust = false; task.deadline = nil; task.completedAt = nil
+                            if task.plannedAt == nil { task.plannedAt = Date() }
+                        }
                         task.steps = task.steps.filter { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                         addStep()
                         if store.upsert(task, original: original) { dismiss() }
                     }.disabled(task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .confirmationDialog("このタスクを削除しますか？", isPresented: $showDelete, titleVisibility: .visible) {
+            .confirmationDialog(task.isEvent ? "このイベントを削除しますか？" : "このタスクを削除しますか？", isPresented: $showDelete, titleVisibility: .visible) {
                 Button("削除", role: .destructive) {
                     store.delete(task.id)
                     if store.task(task.id) == nil { dismiss() }

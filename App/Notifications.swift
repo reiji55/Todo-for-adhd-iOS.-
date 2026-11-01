@@ -12,11 +12,12 @@ final class Reminders: NSObject, ObservableObject, UNUserNotificationCenterDeleg
     enum Key {
         static let enabled = "notify.enabled", lead = "notify.lead", tasks = "notify.tasks"
         static let routines = "notify.routines", deadlines = "notify.deadlines", deadlineHour = "notify.deadlineHour"
+        static let events = "notify.events"
     }
 
     override init() {
         super.init()
-        UserDefaults.standard.register(defaults: [Key.enabled: true, Key.lead: 0, Key.tasks: true, Key.routines: true,
+        UserDefaults.standard.register(defaults: [Key.enabled: true, Key.lead: 0, Key.tasks: true, Key.routines: true, Key.events: true,
                                                   Key.deadlines: true, Key.deadlineHour: 8])
         center.delegate = self
     }
@@ -24,7 +25,8 @@ final class Reminders: NSObject, ObservableObject, UNUserNotificationCenterDeleg
     var options: ReminderOptions {
         let d = UserDefaults.standard
         return ReminderOptions(leadMinutes: d.integer(forKey: Key.lead), tasks: d.bool(forKey: Key.tasks),
-                               routines: d.bool(forKey: Key.routines), deadlines: d.bool(forKey: Key.deadlines),
+                               routines: d.bool(forKey: Key.routines), events: d.bool(forKey: Key.events),
+                               deadlines: d.bool(forKey: Key.deadlines),
                                deadlineHour: d.integer(forKey: Key.deadlineHour))
     }
 
@@ -85,6 +87,7 @@ struct NotificationSettingsSection: View {
     @AppStorage(Reminders.Key.lead) private var lead = 0
     @AppStorage(Reminders.Key.tasks) private var tasks = true
     @AppStorage(Reminders.Key.routines) private var routines = true
+    @AppStorage(Reminders.Key.events) private var events = true
     @AppStorage(Reminders.Key.deadlines) private var deadlines = true
     @AppStorage(Reminders.Key.deadlineHour) private var deadlineHour = 8
     @Environment(\.openURL) private var openURL
@@ -110,6 +113,7 @@ struct NotificationSettingsSection: View {
                     ForEach([5, 10, 15, 30], id: \.self) { Text("\($0)分前").tag($0) }
                 }
                 Toggle("タスク", isOn: $tasks)
+                Toggle("イベント", isOn: $events)
                 Toggle("ルーティン", isOn: $routines)
                 Toggle("締切の日の朝", isOn: $deadlines)
                 if deadlines {
@@ -120,9 +124,9 @@ struct NotificationSettingsSection: View {
             }
         } header: { Text("通知") }
         footer: {
-            Text("時刻を決めたタスクとルーティンをバナーで知らせます。個別に止めるときは、それぞれの編集画面で「通知」を切ります。睡眠などの「押さえるだけ」の時間は知らせません。")
+            Text("時刻を決めたタスク・イベント・ルーティンをバナーで知らせます。個別に止めるときは、それぞれの編集画面で「通知」を切ります。睡眠などの「押さえるだけ」の時間は知らせません。")
         }
-        .onChange(of: [enabled, tasks, routines, deadlines]) { _, _ in reminders.reschedule(store.realNotebook) }
+        .onChange(of: [enabled, tasks, routines, events, deadlines]) { _, _ in reminders.reschedule(store.realNotebook) }
         .onChange(of: [lead, deadlineHour]) { _, _ in reminders.reschedule(store.realNotebook) }
         .task { await reminders.refreshStatus() }
     }

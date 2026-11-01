@@ -58,19 +58,22 @@ public struct TaskItem: Codable, Identifiable, Equatable {
     public var suggestionDeferredUntil: Date?
     /// Announce the start time with a banner. On unless the person turns it off for this task.
     public var notify: Bool
+    /// Something happening that day (meeting a friend, going shopping), not a to-do: no checkbox, never
+    /// suggested, never a leftover. Always has a date.
+    public var isEvent: Bool
 
     public init(id: UUID = UUID(), title: String, plannedAt: Date? = nil,
                 scheduledTime: String = "", deadline: Date? = nil, isMust: Bool = false,
                 effort: Effort = .medium, project: String = "", memo: String = "",
                 handoff: String = "", resumeNote: String = "", steps: [Step] = [],
                 createdAt: Date = Date(), lastStartedAt: Date? = nil, completedAt: Date? = nil,
-                suggestionDeferredUntil: Date? = nil, notify: Bool = true) {
+                suggestionDeferredUntil: Date? = nil, notify: Bool = true, isEvent: Bool = false) {
         self.id = id; self.title = title; self.plannedAt = plannedAt
         self.scheduledTime = scheduledTime; self.deadline = deadline; self.isMust = isMust
         self.effort = effort; self.project = project; self.memo = memo; self.handoff = handoff
         self.resumeNote = resumeNote; self.steps = steps; self.createdAt = createdAt
         self.lastStartedAt = lastStartedAt; self.completedAt = completedAt
-        self.suggestionDeferredUntil = suggestionDeferredUntil; self.notify = notify
+        self.suggestionDeferredUntil = suggestionDeferredUntil; self.notify = notify; self.isEvent = isEvent
     }
     public var isComplete: Bool { completedAt != nil }
     public var nextStep: Step? { steps.first { !$0.isDone } }
@@ -155,7 +158,7 @@ extension Step {
 extension TaskItem {
     enum CodingKeys: String, CodingKey {
         case id, title, plannedAt, scheduledTime, deadline, isMust, effort, project, memo, handoff
-        case resumeNote, steps, createdAt, lastStartedAt, completedAt, suggestionDeferredUntil, notify
+        case resumeNote, steps, createdAt, lastStartedAt, completedAt, suggestionDeferredUntil, notify, isEvent
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -173,7 +176,8 @@ extension TaskItem {
                   lastStartedAt: try c.decodeIfPresent(Date.self, forKey: .lastStartedAt),
                   completedAt: try c.decodeIfPresent(Date.self, forKey: .completedAt),
                   suggestionDeferredUntil: try c.decodeIfPresent(Date.self, forKey: .suggestionDeferredUntil),
-                  notify: try c.decodeIfPresent(Bool.self, forKey: .notify) ?? true)
+                  notify: try c.decodeIfPresent(Bool.self, forKey: .notify) ?? true,
+                  isEvent: try c.decodeIfPresent(Bool.self, forKey: .isEvent) ?? false)
     }
 }
 

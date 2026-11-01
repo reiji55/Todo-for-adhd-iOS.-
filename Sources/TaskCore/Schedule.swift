@@ -144,6 +144,8 @@ public struct AgendaItem: Identifiable, Equatable {
     public var isDone: Bool
     public var isMust: Bool
     public var isBlock: Bool
+    /// A happening, not a to-do: shown on the schedule without a checkbox.
+    public var isEvent = false
     public var id: String {
         switch source {
         case .task(let id): return "task-\(id.uuidString)"
@@ -158,10 +160,7 @@ public enum Agenda {
     /// Completed tasks are included so the person can see and undo them; callers filter when needed.
     public static func items(on day: Date, tasks: [TaskItem], routines: [Routine], calendar: Calendar = .current) -> [AgendaItem] {
         let key = DayKey.of(day, calendar: calendar)
-        var result = tasks.filter { $0.plannedAt.map { calendar.isDate($0, inSameDayAs: day) } == true }.map { task in
-            AgendaItem(source: .task(task.id), title: task.title, project: task.project, slot: task.slot,
-                       isDone: task.isComplete, isMust: task.isMust, isBlock: false)
-        }
+        var result = tasks.filter { $0.plannedAt.map { calendar.isDate($0, inSameDayAs: day) } == true }.map(AgendaItem.init(task:))
         for routine in routines where !routine.isPaused {
             for original in occurrenceDays(of: routine, landingOn: key, near: day, calendar: calendar) {
                 let move = routine.moves[original]
