@@ -26,7 +26,7 @@
 ## 保留中の作業
 
 ### Claude連携（Supabase）
-- [ ] `HORME_KEY` を設定する（[Edge Function Secrets](https://supabase.com/dashboard/project/vdufjfnhgkocccueqaws/functions/secrets)）
+- [x] `HORME_KEY` を設定する（[Edge Function Secrets](https://supabase.com/dashboard/project/vdufjfnhgkocccueqaws/functions/secrets)）
 - [ ] 動作確認で作ったアイデア「b」（`idea_00000000-0000-0000-0000-0000000000AA`）を消す。アプリをつないだあとアプリから消してもよい
 - [ ] アプリとclaude.aiのコネクタをつないで、通しで確かめる
 - [ ] task-3days用のTodoコネクタは、GitHubトークンの期限切れで止まっている。使い続けるなら作り直す
@@ -36,10 +36,11 @@
 - [ ] 通知（時刻・何分前・締切の日の朝・個別に切った場合）
 - [ ] ショートカット・Siri・Spotlightからの操作
 - [ ] 右端から引き出す「今できそうなもの」のパネル
+- [ ] ⊕から種類（タスク・イベント・ルーティン・アイデア）を選ぶメニューの出方
+- [ ] アイデア入力中に、スクロール・枠の外のタップ・「完了」でキーボードが閉じること
 
 ### 機能の候補
 - [ ] 週の表に「いつでも」のタスク置き場を付け、表へドラッグして予定に入れられるようにする
-- [ ] 週の表を元のtask-3daysと同じ向き（縦が日付・横が時刻）にする案の検討
 - [ ] iPhoneのカレンダー（Googleカレンダーを含む）を週の表に重ねて表示する（元の `week.json` の代わり）
 - [ ] ルーティンの古いチェック記録の整理（日ごとの記録が増え続ける）
 - [ ] AppleがショートカットのしくみのMCP対応を正式に出したら、iPhoneのClaudeアプリからHormeを直接操作できるか試す
