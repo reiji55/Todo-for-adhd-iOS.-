@@ -408,8 +408,10 @@ struct HormeTabBar: View {
                 .frame(width: 60, height: 60)
                 Text("今日").font(.system(size: 10, weight: .bold)).foregroundStyle(selected ? Palette.accent : Color.secondary)
             }
-            .offset(y: -20)
-            .frame(maxWidth: .infinity, minHeight: 48, alignment: .top)
+            .padding(.bottom, 3)
+            // The bar keeps its height; the round button rises above it instead of making it taller.
+            .frame(maxWidth: .infinity)
+            .frame(height: 48, alignment: .bottom)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
