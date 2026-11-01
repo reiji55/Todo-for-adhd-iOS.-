@@ -222,7 +222,11 @@ struct WeekRows: View {
                         }
                     }
             }
-            .onAppear { anchor = initialAnchor(hours: hours) }
+            .onAppear {
+                // Set after the first layout pass; a position set while the scroll view is still sizing is ignored.
+                let start = initialAnchor(hours: hours)
+                DispatchQueue.main.async { anchor = start }
+            }
             .onChange(of: days.first) { _, _ in
                 switch landing {
                 case .start: anchor = Self.untimedAnchor
