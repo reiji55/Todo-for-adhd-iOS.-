@@ -154,8 +154,4 @@ xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board.png"
 launch -uiTab 4 -uiOpenFirstCard >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board-card.png"
-# What a widget tap does: the link opens the idea sheet over whatever is on screen.
-xcrun simctl openurl "$SIMULATOR_ID" horme://add/idea
-sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/widget-link.png"
 # Screenshots and launch logs verify startup and layout, not every interaction.

@@ -590,7 +590,7 @@ private struct WeekBlock: View {
             VStack(alignment: .leading, spacing: 1) {
                 if showsTime, let slot = item.slot {
                     // A narrow block keeps the start time only, so the title still has room.
-                    Text(size.width >= 66 ? slot.label : slot.startLabel)
+                    Text(size.width >= 80 ? slot.label : slot.startLabel)
                         .font(.system(size: 10, weight: .bold, design: .rounded)).monospacedDigit()
                         .foregroundStyle(.secondary).lineLimit(1)
                 }
