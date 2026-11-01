@@ -6,6 +6,7 @@ umask 077
 cd "$(dirname "$0")/.."
 RELEASE_VERSION=$(python3 scripts/release_config.py)
 BUNDLE_ID=io.github.reiji55.threedays
+WIDGET_BUNDLE_ID=$BUNDLE_ID.widgets
 RELEASE_DIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/threedays-release.XXXXXX")
 SIGNING_KEYCHAIN="$RELEASE_DIR/signing.keychain-db"
 export APP_STORE_CONNECT_DISABLE_JWT_CACHE=true
@@ -44,6 +45,18 @@ app-store-connect fetch-signing-files "$BUNDLE_ID" \
   --certificates-dir "$RELEASE_DIR/certificates" \
   --profiles-dir "$RELEASE_DIR/profiles"
 python3 scripts/cloud_profile.py "$RELEASE_DIR/profiles"
+# The widget extension has its own App ID and profile (created on first use), signed with the same certificate.
+# It needs no iCloud, so it is fetched after the CloudKit check and its certificate copy is not imported again.
+app-store-connect fetch-signing-files "$WIDGET_BUNDLE_ID" \
+  --type IOS_APP_STORE --strict-match-identifier --create \
+  --certificates-dir "$RELEASE_DIR/widget-certificates" \
+  --profiles-dir "$RELEASE_DIR/widget-profiles"
+WIDGET_PROFILES=("$RELEASE_DIR"/widget-profiles/*.mobileprovision)
+if [[ ! -f "${WIDGET_PROFILES[0]}" ]]; then
+  echo '::error::ウィジェット（io.github.reiji55.threedays.widgets）の配布プロファイルを取得できませんでした。'
+  exit 1
+fi
+mv "${WIDGET_PROFILES[@]}" "$RELEASE_DIR/profiles/"
 # Xcode searches its standard profile directory during archive/export.
 python3 - "$RELEASE_DIR" <<'PY'
 import pathlib, shutil, sys
@@ -73,8 +86,9 @@ python3 - "$RELEASE_DIR/ExportOptions.plist" <<'PY'
 import pathlib, plistlib, sys
 path = pathlib.Path(sys.argv[1])
 options = plistlib.loads(path.read_bytes())
-if not options.get('teamID') or 'io.github.reiji55.threedays' not in options.get('provisioningProfiles', {}):
-    raise SystemExit('::error::アプリに対応する署名設定を生成できませんでした。')
+profiles = options.get('provisioningProfiles', {})
+if not options.get('teamID') or not {'io.github.reiji55.threedays', 'io.github.reiji55.threedays.widgets'} <= set(profiles):
+    raise SystemExit('::error::アプリとウィジェットに対応する署名設定を生成できませんでした。')
 options.update(method='app-store-connect', destination='export')
 path.write_bytes(plistlib.dumps(options))
 PY

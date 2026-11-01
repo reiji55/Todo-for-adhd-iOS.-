@@ -224,10 +224,11 @@ struct FloatingAddButton: View {
                 }
             }
         } label: {
+            // Lighter and see-through, so a block or row underneath still shows.
             Image(systemName: "plus").font(.title3.weight(.semibold)).foregroundStyle(.white)
                 .frame(width: 52, height: 52)
-                .background(Circle().fill(Palette.accent))
-                .shadow(color: .black.opacity(0.22), radius: 8, y: 3)
+                .background(Circle().fill(Palette.accent.opacity(0.7)))
+                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
         }
         .menuOrder(.fixed)
         .accessibilityLabel("追加する")

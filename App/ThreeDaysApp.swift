@@ -82,15 +82,22 @@ struct RootView: View {
             set: { if !$0 { store.error = nil } }
         )) { Button("閉じる", role: .cancel) { store.error = nil } } message: { Text(store.error ?? "") }
         .modifier(ShareJoinAlert(enabled: editor == nil && !focusOpen && !settingsOpen))
+        // Widgets open horme://add/task or /idea; the Control Center buttons leave a request instead.
+        .onOpenURL { url in if let link = QuickAddLink(url: url) { openQuickAdd(link) } }
+        .onReceive(NotificationCenter.default.publisher(for: QuickAddLink.requested)) { _ in takeQuickAddRequest() }
         .onAppear {
             store.setForeground(phase == .active)
+            takeQuickAddRequest()
 #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-horme-settings-preview") { settingsOpen = true }
 #endif
         }
         .onChange(of: phase) { _, newPhase in
             store.setForeground(newPhase == .active)
-            if newPhase == .active { refreshDate = Date(); Reminders.shared.reschedule(store.realNotebook) }
+            if newPhase == .active {
+                refreshDate = Date(); Reminders.shared.reschedule(store.realNotebook)
+                takeQuickAddRequest()
+            }
             else { store.clearRecentlyDone() }
         }
         // Rows checked off stay visible on the screen they were checked on, and go once the person moves on.
@@ -113,6 +120,20 @@ struct RootView: View {
 
     private var presenting: Bool {
         editor != nil || routineEditor != nil || quickAdd != nil || focusOpen || settingsOpen || guide != nil
+    }
+
+    private func takeQuickAddRequest() {
+        guard let raw = UserDefaults.standard.string(forKey: QuickAddLink.pendingKey) else { return }
+        UserDefaults.standard.removeObject(forKey: QuickAddLink.pendingKey)
+        if let link = QuickAddLink(rawValue: raw) { openQuickAdd(link) }
+    }
+
+    /// Something to write down from a widget: close whatever sheet is open, then show the add screen.
+    private func openQuickAdd(_ link: QuickAddLink) {
+        let route = QuickAddRoute(day: nil, kind: link == .task ? .task : .idea)
+        guard presenting else { quickAdd = route; return }
+        editor = nil; routineEditor = nil; quickAdd = nil; focusOpen = false; settingsOpen = false; guide = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { quickAdd = route }
     }
 
     @ViewBuilder private func screen(_ tab: Tab) -> some View {

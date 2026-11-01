@@ -570,6 +570,87 @@
 				<string>231DD800721140848975E00B</string>
 			</array>
 		</dict>
+		<key>5E784A81C777DCD3D41C806E</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>QuickAddLink.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>FDA9C176884170C492B3E888</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>5E784A81C777DCD3D41C806E</string>
+		</dict>
+		<key>BCC71E80FAC7C5C1403F191E</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>5E784A81C777DCD3D41C806E</string>
+		</dict>
+		<key>D18AAC96B905B4B3C839891B</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>path</key>
+			<string>Shared</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+			<key>children</key>
+			<array>
+				<string>5E784A81C777DCD3D41C806E</string>
+			</array>
+		</dict>
+		<key>3562AE4C6BFCF0DD420AC77D</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>HormeWidgets.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>3A0B0681F4C9857B2C637643</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>3562AE4C6BFCF0DD420AC77D</string>
+		</dict>
+		<key>2D8BA804C79141991B71B2A9</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>path</key>
+			<string>Widgets</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+			<key>children</key>
+			<array>
+				<string>3562AE4C6BFCF0DD420AC77D</string>
+				<string>E81B39B863BE773D8B0C646D</string>
+			</array>
+		</dict>
+		<key>E81B39B863BE773D8B0C646D</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.xml</string>
+			<key>path</key>
+			<string>Info.plist</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
 		<key>3685E330EC5277A9DD5661C6</key>
 		<dict>
 			<key>isa</key>
@@ -641,6 +722,19 @@
 			<key>sourceTree</key>
 			<string>BUILT_PRODUCTS_DIR</string>
 		</dict>
+		<key>F231F6FE549E641636571AA6</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>explicitFileType</key>
+			<string>wrapper.app-extension</string>
+			<key>includeInIndex</key>
+			<string>0</string>
+			<key>path</key>
+			<string>HormeWidgets.appex</string>
+			<key>sourceTree</key>
+			<string>BUILT_PRODUCTS_DIR</string>
+		</dict>
 		<key>FBDC4F23F93125BBEEAE800C</key>
 		<dict>
 			<key>isa</key>
@@ -650,6 +744,7 @@
 			<key>children</key>
 			<array>
 				<string>38A007151ABE87CC01A5B6E9</string>
+				<string>F231F6FE549E641636571AA6</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
@@ -662,10 +757,45 @@
 			<array>
 				<string>7D1043473D55BFA90E8530D3</string>
 				<string>94A0426E8D3203DA5468CCF0</string>
+				<string>D18AAC96B905B4B3C839891B</string>
+				<string>2D8BA804C79141991B71B2A9</string>
 				<string>FBDC4F23F93125BBEEAE800C</string>
 			</array>
 			<key>sourceTree</key>
 			<string>&lt;group&gt;</string>
+		</dict>
+		<key>CC2D9DF2F93C86C9758FC90A</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>F231F6FE549E641636571AA6</string>
+			<key>settings</key>
+			<dict>
+				<key>ATTRIBUTES</key>
+				<array>
+					<string>RemoveHeadersOnCopy</string>
+				</array>
+			</dict>
+		</dict>
+		<key>A725348DB565792F7F782603</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXCopyFilesBuildPhase</string>
+			<key>buildActionMask</key>
+			<string>2147483647</string>
+			<key>dstPath</key>
+			<string></string>
+			<key>dstSubfolderSpec</key>
+			<string>13</string>
+			<key>name</key>
+			<string>Embed Foundation Extensions</string>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<string>0</string>
+			<key>files</key>
+			<array>
+				<string>CC2D9DF2F93C86C9758FC90A</string>
+			</array>
 		</dict>
 		<key>BCE16DD0260827ECF338C787</key>
 		<dict>
@@ -703,6 +833,7 @@
 				<string>892BD8710E65355EE123A39D</string>
 				<string>5AFFFE3B9A275ED4EBEF78E9</string>
 				<string>85CB91C8571261DE0F3BBD33</string>
+				<string>FDA9C176884170C492B3E888</string>
 			</array>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
@@ -729,6 +860,42 @@
 				<string>FB90684E69A6C96ED866993E</string>
 				<string>B397C018A17BFBF166508EA2</string>
 			</array>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<string>0</string>
+		</dict>
+		<key>2D81737A052BBAAD15A6D3C1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXSourcesBuildPhase</string>
+			<key>buildActionMask</key>
+			<string>2147483647</string>
+			<key>files</key>
+			<array>
+				<string>BCC71E80FAC7C5C1403F191E</string>
+				<string>3A0B0681F4C9857B2C637643</string>
+			</array>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<string>0</string>
+		</dict>
+		<key>7683A40AB86681224A5404DF</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFrameworksBuildPhase</string>
+			<key>buildActionMask</key>
+			<string>2147483647</string>
+			<key>files</key>
+			<array/>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<string>0</string>
+		</dict>
+		<key>FE608D3A8638F8175D740C08</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXResourcesBuildPhase</string>
+			<key>buildActionMask</key>
+			<string>2147483647</string>
+			<key>files</key>
+			<array/>
 			<key>runOnlyForDeploymentPostprocessing</key>
 			<string>0</string>
 		</dict>
@@ -831,6 +998,50 @@
 				<string>development</string>
 			</dict>
 		</dict>
+		<key>A5F76F131F0062F90BEF60DA</key>
+		<dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>name</key>
+			<string>Debug</string>
+			<key>buildSettings</key>
+			<dict>
+				<key>APPLICATION_EXTENSION_API_ONLY</key>
+				<string>YES</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Automatic</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>1</string>
+				<key>GENERATE_INFOPLIST_FILE</key>
+				<string>YES</string>
+				<key>INFOPLIST_FILE</key>
+				<string>Widgets/Info.plist</string>
+				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
+				<string>Horme</string>
+				<key>LD_RUNPATH_SEARCH_PATHS</key>
+				<array>
+					<string>$(inherited)</string>
+					<string>@executable_path/Frameworks</string>
+					<string>@executable_path/../../Frameworks</string>
+				</array>
+				<key>MARKETING_VERSION</key>
+				<string>0.3.0</string>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>io.github.reiji55.threedays.widgets</string>
+				<key>PRODUCT_NAME</key>
+				<string>$(TARGET_NAME)</string>
+				<key>SKIP_INSTALL</key>
+				<string>YES</string>
+				<key>SUPPORTED_PLATFORMS</key>
+				<string>iphoneos iphonesimulator</string>
+				<key>SUPPORTS_MACCATALYST</key>
+				<string>NO</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1,2</string>
+				<key>SWIFT_EMIT_LOC_STRINGS</key>
+				<string>YES</string>
+			</dict>
+		</dict>
 		<key>5283471FF90C511CFE244FFF</key>
 		<dict>
 			<key>isa</key>
@@ -924,6 +1135,50 @@
 				<string>production</string>
 			</dict>
 		</dict>
+		<key>CA26578A15E7534361BF6A1F</key>
+		<dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>name</key>
+			<string>Release</string>
+			<key>buildSettings</key>
+			<dict>
+				<key>APPLICATION_EXTENSION_API_ONLY</key>
+				<string>YES</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Automatic</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>1</string>
+				<key>GENERATE_INFOPLIST_FILE</key>
+				<string>YES</string>
+				<key>INFOPLIST_FILE</key>
+				<string>Widgets/Info.plist</string>
+				<key>INFOPLIST_KEY_CFBundleDisplayName</key>
+				<string>Horme</string>
+				<key>LD_RUNPATH_SEARCH_PATHS</key>
+				<array>
+					<string>$(inherited)</string>
+					<string>@executable_path/Frameworks</string>
+					<string>@executable_path/../../Frameworks</string>
+				</array>
+				<key>MARKETING_VERSION</key>
+				<string>0.3.0</string>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>io.github.reiji55.threedays.widgets</string>
+				<key>PRODUCT_NAME</key>
+				<string>$(TARGET_NAME)</string>
+				<key>SKIP_INSTALL</key>
+				<string>YES</string>
+				<key>SUPPORTED_PLATFORMS</key>
+				<string>iphoneos iphonesimulator</string>
+				<key>SUPPORTS_MACCATALYST</key>
+				<string>NO</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1,2</string>
+				<key>SWIFT_EMIT_LOC_STRINGS</key>
+				<string>YES</string>
+			</dict>
+		</dict>
 		<key>389E3AB3166B5E85D4DB22E9</key>
 		<dict>
 			<key>isa</key>
@@ -952,6 +1207,67 @@
 			<key>defaultConfigurationName</key>
 			<string>Release</string>
 		</dict>
+		<key>06A42D11AF1C2A300FE12411</key>
+		<dict>
+			<key>isa</key>
+			<string>XCConfigurationList</string>
+			<key>buildConfigurations</key>
+			<array>
+				<string>A5F76F131F0062F90BEF60DA</string>
+				<string>CA26578A15E7534361BF6A1F</string>
+			</array>
+			<key>defaultConfigurationIsVisible</key>
+			<string>0</string>
+			<key>defaultConfigurationName</key>
+			<string>Release</string>
+		</dict>
+		<key>704A160D8849979DE00DDB64</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXNativeTarget</string>
+			<key>buildConfigurationList</key>
+			<string>06A42D11AF1C2A300FE12411</string>
+			<key>buildPhases</key>
+			<array>
+				<string>2D81737A052BBAAD15A6D3C1</string>
+				<string>7683A40AB86681224A5404DF</string>
+				<string>FE608D3A8638F8175D740C08</string>
+			</array>
+			<key>buildRules</key>
+			<array/>
+			<key>dependencies</key>
+			<array/>
+			<key>name</key>
+			<string>HormeWidgets</string>
+			<key>productName</key>
+			<string>HormeWidgets</string>
+			<key>productReference</key>
+			<string>F231F6FE549E641636571AA6</string>
+			<key>productType</key>
+			<string>com.apple.product-type.app-extension</string>
+		</dict>
+		<key>5632E9FDC70F2DC0B2D4E983</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXContainerItemProxy</string>
+			<key>containerPortal</key>
+			<string>98F54143AB4E86B28C3AFEE0</string>
+			<key>proxyType</key>
+			<string>1</string>
+			<key>remoteGlobalIDString</key>
+			<string>704A160D8849979DE00DDB64</string>
+			<key>remoteInfo</key>
+			<string>HormeWidgets</string>
+		</dict>
+		<key>4DA75641BEA61A776F463463</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXTargetDependency</string>
+			<key>target</key>
+			<string>704A160D8849979DE00DDB64</string>
+			<key>targetProxy</key>
+			<string>5632E9FDC70F2DC0B2D4E983</string>
+		</dict>
 		<key>0E8A3AD980EC179856012B7E</key>
 		<dict>
 			<key>isa</key>
@@ -963,11 +1279,14 @@
 				<string>BCE16DD0260827ECF338C787</string>
 				<string>7561BFB015D8F536760CB671</string>
 				<string>0189424A5A60FED329FA868E</string>
+				<string>A725348DB565792F7F782603</string>
 			</array>
 			<key>buildRules</key>
 			<array/>
 			<key>dependencies</key>
-			<array/>
+			<array>
+				<string>4DA75641BEA61A776F463463</string>
+			</array>
 			<key>name</key>
 			<string>ThreeDays</string>
 			<key>productName</key>
@@ -992,6 +1311,11 @@
 				<key>TargetAttributes</key>
 				<dict>
 					<key>0E8A3AD980EC179856012B7E</key>
+					<dict>
+						<key>CreatedOnToolsVersion</key>
+						<string>16.0</string>
+					</dict>
+					<key>704A160D8849979DE00DDB64</key>
 					<dict>
 						<key>CreatedOnToolsVersion</key>
 						<string>16.0</string>
@@ -1023,6 +1347,7 @@
 			<key>targets</key>
 			<array>
 				<string>0E8A3AD980EC179856012B7E</string>
+				<string>704A160D8849979DE00DDB64</string>
 			</array>
 		</dict>
 	</dict>

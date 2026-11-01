@@ -1,4 +1,7 @@
+import plistlib
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -6,7 +9,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from release_config import build_number, validate_secrets
+from release_config import build_number, prepare_project, validate_secrets
 
 
 def pem(key):
@@ -68,3 +71,24 @@ class ReleaseConfigTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PrepareProjectTests(unittest.TestCase):
+    def test_app_and_widget_share_the_build_number(self):
+        source = Path(__file__).resolve().parents[2] / "ThreeDays.xcodeproj" / "project.pbxproj"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "project.pbxproj"
+            shutil.copyfile(source, path)
+            prepare_project(path, "3.4.1")
+            settings = [item["buildSettings"] for item in plistlib.loads(path.read_bytes())["objects"].values()
+                        if "PRODUCT_BUNDLE_IDENTIFIER" in item.get("buildSettings", {})]
+        identifiers = {s["PRODUCT_BUNDLE_IDENTIFIER"] for s in settings}
+        self.assertEqual(identifiers, {"io.github.reiji55.threedays", "io.github.reiji55.threedays.widgets"})
+        self.assertTrue(all(s["CURRENT_PROJECT_VERSION"] == "3.4.1" for s in settings))
+
+    def test_unknown_bundle_id_stops_upload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "project.pbxproj"
+            path.write_bytes(plistlib.dumps({"objects": {"A": {"buildSettings": {"PRODUCT_BUNDLE_IDENTIFIER": "com.example.other"}}}}))
+            with self.assertRaises(ValueError):
+                prepare_project(path, "1.0.1")

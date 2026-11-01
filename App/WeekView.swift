@@ -240,9 +240,10 @@ struct WeekRows: View {
         }
     }
 
-    /// Every week opens on the morning, so 6:00 to noon is in view at once.
+    /// Every week opens an hour before the current time, so now and what comes next are in view.
     private func initialAnchor(hours: ClosedRange<Int>) -> Int {
-        min(max(hours.lowerBound, 6), hours.upperBound - 1)
+        let hour = Calendar.current.component(.hour, from: now) - 1
+        return min(max(hours.lowerBound, hour), hours.upperBound - 1)
     }
 
     /// Pulling past either end turns the week, once per pull.

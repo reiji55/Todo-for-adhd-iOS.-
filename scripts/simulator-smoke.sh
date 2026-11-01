@@ -59,7 +59,14 @@ assert set(info['UISupportedInterfaceOrientations~ipad']) == expected
 assert not info.get('UIRequiresFullScreen', False), 'iPad multitasking must remain available'
 assert info.get('CKSharingSupported') is True, 'CloudKit invitations must be supported'
 assert 'remote-notification' in info.get('UIBackgroundModes', []), 'Silent sync refresh must be enabled'
-print('Verified universal device family, all iPad orientations, and multitasking metadata')
+assert any('horme' in t.get('CFBundleURLSchemes', []) for t in info.get('CFBundleURLTypes', [])), 'Widgets need the horme:// links'
+import os
+with open(os.path.join(os.path.dirname(sys.argv[1]), 'PlugIns/HormeWidgets.appex/Info.plist'), 'rb') as f:
+    widget = plistlib.load(f)
+assert widget['NSExtension']['NSExtensionPointIdentifier'] == 'com.apple.widgetkit-extension', 'Widget extension must be embedded'
+assert widget['CFBundleIdentifier'] == info['CFBundleIdentifier'] + '.widgets'
+assert widget['CFBundleVersion'] == info['CFBundleVersion'] and widget['CFBundleShortVersionString'] == info['CFBundleShortVersionString']
+print('Verified universal device family, all iPad orientations, multitasking metadata, and the embedded widgets')
 PY
 xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
 
@@ -147,4 +154,8 @@ xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board.png"
 launch -uiTab 4 -uiOpenFirstCard >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board-card.png"
+# What a widget tap does: the link opens the idea sheet over whatever is on screen.
+xcrun simctl openurl "$SIMULATOR_ID" horme://add/idea
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/widget-link.png"
 # Screenshots and launch logs verify startup and layout, not every interaction.
