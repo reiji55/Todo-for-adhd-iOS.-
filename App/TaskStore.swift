@@ -252,7 +252,7 @@ final class TaskStore: ObservableObject {
     }
 
     func deleteIdea(_ id: UUID) {
-        if commit({ $0.ideas.removeAll { $0.id == id } }) { offerUndo("アイデアを削除しました") }
+        if commit({ $0.ideas.removeAll { $0.id == id } }) { offerUndo("付箋をはがしました") }
     }
 
     func start(_ task: TaskItem) {

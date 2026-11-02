@@ -39,7 +39,7 @@ struct IdeasView: View {
                 if !cold.isEmpty {
                     HStack(spacing: 8) {
                         Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 1)
-                        Text("冷めてきた（2週間さわっていない）").font(.footnote.weight(.semibold)).foregroundStyle(.secondary).fixedSize()
+                        Text("2週間以上さわっていない").font(.footnote.weight(.semibold)).foregroundStyle(.secondary).fixedSize()
                         Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 1)
                     }
                     .padding(.top, 8)
@@ -149,25 +149,106 @@ struct StickyWall: View {
     private func column(_ items: [Idea], tilt: Double) -> some View {
         VStack(spacing: 16) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, idea in
-                Button { onOpen(idea) } label: {
-                    StickyNote(idea: idea, now: now, tilt: index % 2 == 0 ? tilt : -tilt * 0.6)
-                }
-                .buttonStyle(.plain)
-                .contextMenu {
-                    Button("タスクにする", systemImage: "arrow.up.right") { onPlan(idea) }
-                    StickyDeleteButton(idea: idea)
-                }
+                PeelableSticky(idea: idea, now: now, tilt: index % 2 == 0 ? tilt : -tilt * 0.6, onOpen: onOpen, onPlan: onPlan)
             }
         }
         .frame(maxWidth: .infinity, alignment: .top)
     }
 }
 
-private struct StickyDeleteButton: View {
+/// A sticky note that peels off from its top-left corner: drag the corner down and to the right far
+/// enough and it comes away and is gone, with 取り消す as for any deletion. Short of that it springs back.
+/// Only drags that start at the corner peel, so scrolling over the notes works as usual.
+@MainActor
+struct PeelableSticky: View {
     @EnvironmentObject private var store: TaskStore
     let idea: Idea
+    let now: Date
+    let tilt: Double
+    let onOpen: (Idea) -> Void
+    let onPlan: (Idea) -> Void
+    @State private var pull: CGSize = .zero
+    @State private var gone = false
+    @State private var armed = false
+    private let distance: CGFloat = 150
+
     var body: some View {
-        Button("はがす", systemImage: "trash", role: .destructive) { store.deleteIdea(idea.id) }
+        let progress = min(1, hypot(pull.width, pull.height) / distance)
+        Button { onOpen(idea) } label: { StickyNote(idea: idea, now: now, tilt: tilt, peel: progress) }
+            .buttonStyle(.plain)
+            .contextMenu {
+                Button("タスクにする", systemImage: "arrow.up.right") { onPlan(idea) }
+                Button("はがす", systemImage: "trash", role: .destructive) { store.deleteIdea(idea.id) }
+            }
+            .overlay(alignment: .topLeading) { corner }
+            // Lifting from the top-left, hinged at the bottom-right corner that is still stuck down.
+            .rotation3DEffect(.degrees(Double(progress) * 34 + (gone ? 46 : 0)), axis: (x: 1, y: -1, z: 0),
+                              anchor: .bottomTrailing, perspective: 0.6)
+            .offset(x: pull.width * 0.3 + (gone ? 340 : 0), y: pull.height * 0.3 + (gone ? 560 : 0))
+            .scaleEffect(1 + progress * 0.05)
+            .shadow(color: .black.opacity(Double(progress) * 0.35), radius: 14 * progress, x: 6 * progress, y: 10 * progress)
+            .opacity(gone ? 0 : 1)
+            .zIndex(progress > 0 || gone ? 10 : 0)
+            .accessibilityAction(named: "はがす") { store.deleteIdea(idea.id) }
+    }
+
+    private var corner: some View {
+        Color.clear.frame(width: 54, height: 54).contentShape(Rectangle())
+            .onTapGesture { onOpen(idea) }
+            .gesture(
+                DragGesture(minimumDistance: 4)
+                    .onChanged { value in
+                        pull = CGSize(width: max(0, value.translation.width), height: max(0, value.translation.height))
+                        let ready = hypot(pull.width, pull.height) >= distance
+                        if ready != armed {
+                            armed = ready
+                            UIImpactFeedbackGenerator(style: ready ? .medium : .light).impactOccurred()
+                        }
+                    }
+                    .onEnded { value in
+                        let thrown = hypot(max(0, value.predictedEndTranslation.width), max(0, value.predictedEndTranslation.height))
+                        if armed || thrown >= distance * 1.8 {
+                            peelOff()
+                        } else {
+                            armed = false
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.68)) { pull = .zero }
+                        }
+                    }
+            )
+            .accessibilityHidden(true)
+    }
+
+    private func peelOff() {
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        withAnimation(.easeIn(duration: 0.34)) { gone = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.34) { store.deleteIdea(idea.id) }
+    }
+}
+
+/// The top-left corner folded over: a small dog-ear at rest that shows where to grab, growing as the
+/// note is peeled.
+struct StickyCorner: View {
+    let size: CGFloat
+    let paper: Color
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            // Where the corner lifted, the page shows through.
+            Path { path in
+                path.move(to: .zero); path.addLine(to: CGPoint(x: size, y: 0)); path.addLine(to: CGPoint(x: 0, y: size))
+                path.closeSubpath()
+            }
+            .fill(Palette.paper)
+            // The flap: the corner turned over, its back a little lighter.
+            Path { path in
+                path.move(to: CGPoint(x: size, y: 0)); path.addLine(to: CGPoint(x: 0, y: size)); path.addLine(to: CGPoint(x: size, y: size))
+                path.closeSubpath()
+            }
+            .fill(LinearGradient(colors: [Color.white.opacity(0.9), paper], startPoint: .bottomTrailing, endPoint: .topLeading))
+            .shadow(color: .black.opacity(0.25), radius: 3, x: 2, y: 2)
+        }
+        .frame(width: size, height: size, alignment: .topLeading)
+        .allowsHitTesting(false)
     }
 }
 
@@ -175,6 +256,8 @@ struct StickyNote: View {
     let idea: Idea
     let now: Date
     var tilt: Double = 0
+    /// 0 at rest … 1 ready to come off.
+    var peel: CGFloat = 0
 
     var body: some View {
         let warmth = idea.warmth(now: now)
@@ -205,6 +288,7 @@ struct StickyNote: View {
             // A strip of tape holding it up.
             Rectangle().fill(Color.white.opacity(0.5)).frame(width: 44, height: 13).offset(y: -6)
         }
+        .overlay(alignment: .topLeading) { StickyCorner(size: 12 + peel * 70, paper: colors.paper) }
         // Cooler notes lose some color before they go gray.
         .saturation(warmth == 3 ? 1 : warmth == 2 ? 0.85 : warmth == 1 ? 0.55 : 1)
         .rotationEffect(.degrees(tilt))
