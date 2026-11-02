@@ -51,26 +51,40 @@ struct WeekView: View {
     private func grid(now: Date) -> some View {
         WeekRows(days: days, now: now, selectedDay: selectedDay, highlighted: focusedItem,
                  onSelectItem: { item, day in
-                     selectedDay = Calendar.current.startOfDay(for: day)
-                     focusedItem = item.id
+                     withAnimation(.easeInOut(duration: 0.2)) {
+                         selectedDay = Calendar.current.startOfDay(for: day)
+                         focusedItem = item.id
+                     }
                  },
                  onSelectDay: { day in
-                     selectedDay = Calendar.current.startOfDay(for: day)
-                     focusedItem = nil
+                     withAnimation(.easeInOut(duration: 0.2)) {
+                         selectedDay = Calendar.current.startOfDay(for: day)
+                         focusedItem = nil
+                     }
                  },
                  onTurn: shift)
     }
 
+    private static let dayListTop = "dayListTop"
+
     private var dayList: some View {
         ScrollViewReader { proxy in
             ScrollView {
+                Color.clear.frame(height: 0).id(Self.dayListTop)
+                // A new day replaces the list (it fades over), so a change of day is plain to see.
                 DayList(day: selectedDay, highlighted: focusedItem, onOpen: onOpen, onStart: onStart, onAdd: onAdd)
                     .padding(.horizontal, 16).padding(.vertical, 12)
                     .frame(maxWidth: 760).frame(maxWidth: .infinity)
+                    .id(selectedDay)
+                    .transition(.opacity)
             }
             .onChange(of: focusedItem) { _, id in
                 guard let id else { return }
                 withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
+            }
+            // Picking a date starts its list from the top.
+            .onChange(of: selectedDay) { _, _ in
+                if focusedItem == nil { proxy.scrollTo(Self.dayListTop, anchor: .top) }
             }
         }
     }
@@ -142,6 +156,7 @@ struct WeekRows: View {
     @State private var drag: DragState?
     @State private var anchor: Int?
     @State private var offset: CGFloat = 0
+    @State private var maxOffset: CGFloat = 0
     @State private var turnArmed = true
     @State private var landing: Landing?
     @State private var edgeScroll: Task<Void, Never>?
@@ -222,7 +237,8 @@ struct WeekRows: View {
                         .scrollTargetLayout()
                         .overlay(alignment: .topLeading) {
                             ZStack(alignment: .topLeading) {
-                                WeekRowsBackground(days: days, now: now, layout: layout)
+                                WeekRowsBackground(days: days, now: now, layout: layout,
+                                                   selectedRow: days.firstIndex { Calendar.current.isDate($0, inSameDayAs: selectedDay) })
                                 if let drag, let origin = placed.first(where: { $0.id == drag.item.id }) {
                                     // Where it came from stays outlined until it lands.
                                     RoundedRectangle(cornerRadius: 7).strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
@@ -240,10 +256,13 @@ struct WeekRows: View {
                                         .opacity(drag?.item.id == block.id ? 0 : 1)
                                         .zIndex(block.item.isBlock ? 0 : 1)
                                         .onTapGesture { onSelectItem(block.item, days[block.row]) }
-                                        .gesture(moveGesture(block, layout: layout, viewportWidth: viewportWidth))
+                                        // Routines come back every week at their own time; they are not dragged one day out of line.
+                                        .gesture(moveGesture(block, layout: layout, viewportWidth: viewportWidth),
+                                                 including: block.item.isRoutine ? .subviews : .all)
                                         .accessibilityElement(children: .ignore)
                                         .accessibilityLabel("\(block.item.slot?.label ?? "時間なし") \(block.item.title)\(block.item.isDone ? "、完了" : "")")
-                                        .accessibilityHint("ダブルタップで下の一覧に出します。長押しして動かすと日時を変えられます。")
+                                        .accessibilityHint(block.item.isRoutine ? "ダブルタップで下の一覧に出します。"
+                                                           : "ダブルタップで下の一覧に出します。長押しして動かすと日時を変えられます。")
                                 }
                                 ForEach(placement.labels) { label in
                                     Text(label.title).font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)
@@ -266,12 +285,16 @@ struct WeekRows: View {
                     .coordinateSpace(name: "weekViewport")
                     .overlay(alignment: .topLeading) { liftedBlock }
                     .onPreferenceChange(ScrollOffsetKey.self) { value in
-                        offset = value
-                        turnPage(maxOffset: max(0, layout.contentWidth - viewportWidth))
-                        if var state = drag {
-                            state.target = target(for: state, layout: layout)
-                            if state.target != drag?.target { drag?.target = state.target }
-                        }
+                        // iOS 18 reads the scroll position directly (below); this is the iOS 17 way.
+                        if #unavailable(iOS 18.0) { scrolled(to: value, max: max(0, layout.contentWidth - viewportWidth), layout: layout) }
+                    }
+                    .modifier(ScrollGeometryReader { x, maxX in scrolled(to: x, max: maxX, layout: layout) })
+                    // Pulling past either end shows where the pull leads before the week turns.
+                    .overlay(alignment: .trailing) {
+                        pageHint("次の週", systemImage: "chevron.right", amount: (offset - maxOffset) / Self.turnThreshold)
+                    }
+                    .overlay(alignment: .leading) {
+                        pageHint("前の週", systemImage: "chevron.left", amount: -offset / Self.turnThreshold)
                     }
             }
             .onAppear {
@@ -297,8 +320,31 @@ struct WeekRows: View {
     }
 
     /// Pulling past either end turns the week, once per pull.
+    static let turnThreshold: CGFloat = 56
+
+    private func scrolled(to x: CGFloat, max maxX: CGFloat, layout: WeekRowsLayout) {
+        offset = x
+        maxOffset = maxX
+        turnPage(maxOffset: maxX)
+        if var state = drag {
+            state.target = target(for: state, layout: layout)
+            if state.target != drag?.target { drag?.target = state.target }
+        }
+    }
+
+    private func pageHint(_ label: String, systemImage: String, amount: CGFloat) -> some View {
+        let shown = min(1, max(0, amount))
+        return Label(label, systemImage: systemImage).font(.caption.weight(.bold)).foregroundStyle(Palette.accent)
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(.regularMaterial, in: Capsule())
+            .opacity(Double(shown)).scaleEffect(0.85 + 0.15 * shown)
+            .padding(.horizontal, 6)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
     private func turnPage(maxOffset: CGFloat) {
-        let threshold: CGFloat = 70
+        let threshold = Self.turnThreshold
         if offset > -5 && offset < maxOffset + 5 { turnArmed = true; return }
         guard turnArmed, drag == nil else { return }
         if offset > maxOffset + threshold {
@@ -345,6 +391,11 @@ struct WeekRows: View {
                     .background {
                         if calendar.isDate(day, inSameDayAs: selectedDay) {
                             RoundedRectangle(cornerRadius: 8).fill(Palette.accent.opacity(0.12)).padding(2)
+                        }
+                    }
+                    .overlay {
+                        if calendar.isDate(day, inSameDayAs: selectedDay) {
+                            RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.accent, lineWidth: 1.5).padding(2)
                         }
                     }
                 }
@@ -578,6 +629,7 @@ private struct WeekRowsBackground: View {
     let days: [Date]
     let now: Date
     let layout: WeekRowsLayout
+    var selectedRow: Int?
 
     var body: some View {
         let calendar = Calendar.current
@@ -621,6 +673,12 @@ private struct WeekRowsBackground: View {
                 Rectangle().fill(Color.red).frame(width: 2, height: layout.rowHeight)
                     .offset(x: x - 1, y: layout.y(row: todayRow))
                 Circle().fill(Color.red).frame(width: 8, height: 8).offset(x: x - 4, y: layout.y(row: todayRow) - 4)
+            }
+            // The chosen day's row, lightly outlined to match its date.
+            if let selectedRow {
+                RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.accent.opacity(0.6), lineWidth: 1.5)
+                    .frame(width: layout.contentWidth - 2, height: layout.rowHeight - 2)
+                    .offset(x: 1, y: layout.y(row: selectedRow) + 1)
             }
         }
         .frame(width: layout.contentWidth, height: layout.height, alignment: .topLeading)
@@ -728,6 +786,26 @@ struct DayList: View {
             }
             Text("表の帯をタップすると、ここで目立たせます。ここをタップすると編集できます。表で長押しして動かすと日付と時間を変えられます（ルーティンはその日だけ）。左右の端からさらに引くと前後の週に移ります。")
                 .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
+        }
+    }
+}
+
+/// The horizontal scroll position and how far it can go, read from the scroll view itself (iOS 18).
+private struct ScrollGeometryReader: ViewModifier {
+    struct Position: Equatable { var x: CGFloat; var maxX: CGFloat }
+    let onChange: (CGFloat, CGFloat) -> Void
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.onScrollGeometryChange(for: Position.self) { geometry in
+                Position(x: geometry.contentOffset.x + geometry.contentInsets.leading,
+                         maxX: max(0, geometry.contentSize.width + geometry.contentInsets.leading
+                                   + geometry.contentInsets.trailing - geometry.containerSize.width))
+            } action: { _, position in
+                onChange(position.x, position.maxX)
+            }
+        } else {
+            content
         }
     }
 }
