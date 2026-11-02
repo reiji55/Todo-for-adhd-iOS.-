@@ -275,6 +275,14 @@ final class TaskStore: ObservableObject {
         return commit { $0.convertIdea(idea.id, plannedAt: plannedAt) }
     }
 
+    func makeTasks(from idea: Idea, _ drafts: [TaskItem], keepIdea: Bool) -> Bool {
+        guard notebook.ideas.contains(where: { $0.id == idea.id }) else {
+            error = "このアイデアはすでに削除またはタスク化されています。最新の一覧を確認してください。"
+            return false
+        }
+        return commit { $0.makeTasks(fromIdea: idea.id, drafts, keepIdea: keepIdea) }
+    }
+
     func saveIdea(_ idea: Idea) -> Bool {
         guard notebook.ideas.contains(where: { $0.id == idea.id }) else {
             error = "このアイデアは別の端末で削除またはタスク化されました。入力した内容をコピーしてから閉じてください。"

@@ -13,6 +13,19 @@ public extension Notebook {
         return true
     }
 
+    /// Tasks written from an idea: split into several, or derived while the idea stays for more.
+    /// When the idea goes, the first task takes its identity, so two offline devices converting the
+    /// same idea still end up with one task for it, as with convertIdea.
+    @discardableResult
+    mutating func makeTasks(fromIdea id: UUID, _ drafts: [TaskItem], keepIdea: Bool) -> Bool {
+        guard ideas.contains(where: { $0.id == id }), !drafts.isEmpty || !keepIdea else { return false }
+        var made = drafts
+        if !keepIdea, !made.isEmpty, !tasks.contains(where: { $0.id == id }) { made[0].id = id }
+        tasks.append(contentsOf: made)
+        if !keepIdea { ideas.removeAll { $0.id == id } }
+        return true
+    }
+
     mutating func startTask(_ id: UUID, at now: Date = Date()) {
         guard let target = tasks.firstIndex(where: { $0.id == id && !$0.isComplete }) else { return }
         guard activeSession?.taskID != id else { return }

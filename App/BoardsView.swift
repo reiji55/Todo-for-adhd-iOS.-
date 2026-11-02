@@ -180,6 +180,7 @@ struct IdeasView: View {
     @EnvironmentObject private var store: TaskStore
     @State private var draft = ""
     @State private var editing: Idea?
+    @State private var converting: Idea?
     @FocusState private var writing: Bool
     let onEditTask: (TaskItem) -> Void
     var body: some View {
@@ -208,10 +209,8 @@ struct IdeasView: View {
                         }.buttonStyle(.plain)
                         Text(idea.createdAt.shortDay).font(.caption).foregroundStyle(.secondary)
                         HStack {
-                            Menu {
-                                Button("今日のタスクにする") { _ = store.convert(idea, plannedAt: Date()) }
-                                Button("日付なしのタスクにする") { _ = store.convert(idea, plannedAt: nil) }
-                            } label: { Label("タスクにする", systemImage: "arrow.up.right").font(.subheadline) }
+                            Button { converting = idea } label: { Label("タスクにする", systemImage: "arrow.up.right").font(.subheadline) }
+                                .buttonStyle(.borderless)
                             Spacer()
                             Button(role: .destructive) {
                                 store.deleteIdea(idea.id)
@@ -232,6 +231,7 @@ struct IdeasView: View {
                 }
             }
             .sheet(item: $editing) { idea in IdeaEditor(idea: idea) }
+            .sheet(item: $converting) { idea in IdeaToTasksSheet(idea: idea) }
             .alert("保存・読み込みのお知らせ", isPresented: Binding(
                 get: { editing == nil && store.error != nil }, set: { if !$0 { store.error = nil } }
             )) { Button("閉じる", role: .cancel) { store.error = nil } } message: { Text(store.error ?? "") }

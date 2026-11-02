@@ -154,6 +154,24 @@
 			<key>fileRef</key>
 			<string>36B0BA04D51CBF0868C9C026</string>
 		</dict>
+		<key>2B7E09D2153F55F53B7D3DBD</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>IdeaToTasks.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>5CC8A29F56EA2A002E6517C4</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>2B7E09D2153F55F53B7D3DBD</string>
+		</dict>
 		<key>5D94E39A7D2B5A745A88C030</key>
 		<dict>
 			<key>isa</key>
@@ -334,6 +352,7 @@
 				<string>4FD55C6CF8F61990123A29D9</string>
 				<string>E3785987ADB1574119C54188</string>
 				<string>36B0BA04D51CBF0868C9C026</string>
+				<string>2B7E09D2153F55F53B7D3DBD</string>
 				<string>5D94E39A7D2B5A745A88C030</string>
 				<string>6CDDF72F14E5BAD3AA595670</string>
 				<string>1230A3660298F0563A3416FA</string>
@@ -813,6 +832,7 @@
 				<string>A126386360F61480A7AF45EB</string>
 				<string>3131AB76C1A133FFC281A5AD</string>
 				<string>28A1F2A4CEC5603A945B9561</string>
+				<string>5CC8A29F56EA2A002E6517C4</string>
 				<string>E006F41FD741337DEFED01E2</string>
 				<string>51ECD113769314AB421E88F1</string>
 				<string>A6A64AAE4E724728DC43998C</string>

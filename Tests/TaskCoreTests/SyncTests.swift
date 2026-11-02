@@ -307,4 +307,17 @@ final class SyncTests: XCTestCase {
         var orphan = loaded; orphan.bridge = nil
         XCTAssertThrowsError(try SharedStoreState.decode(orphan.encoded()))
     }
+
+    func testIdeaSplitsIntoTasksAndCanStay() {
+        let idea = Idea(text: "引っ越しの準備\n段ボールを集める\n住所変更")
+        var book = Notebook(ideas: [idea])
+        let drafts = [TaskItem(title: "段ボールを集める"), TaskItem(title: "住所変更")]
+        XCTAssertTrue(book.makeTasks(fromIdea: idea.id, drafts, keepIdea: true))
+        XCTAssertEqual(book.tasks.map(\.title), ["段ボールを集める", "住所変更"])
+        XCTAssertEqual(book.ideas.count, 1, "a kept idea stays for more tasks")
+        XCTAssertTrue(book.makeTasks(fromIdea: idea.id, [TaskItem(title: "不用品を売る")], keepIdea: false))
+        XCTAssertTrue(book.ideas.isEmpty)
+        XCTAssertEqual(book.tasks.last?.id, idea.id, "the last task takes the idea's identity when the idea goes")
+        XCTAssertFalse(book.makeTasks(fromIdea: idea.id, [TaskItem(title: "もう一度")], keepIdea: false))
+    }
 }
