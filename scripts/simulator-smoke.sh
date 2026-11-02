@@ -23,12 +23,13 @@ print(devices[0]['udid'])
 PY
 )
 
-# A launch that hangs must give up within a minute and a half and leave a stack sample of the app, instead of
-# silently using up the whole job. It is tried once more, so a simulator hiccup alone does not fail the run.
+# A launch that hangs must give up within four minutes and leave a stack sample of the app, instead of
+# silently using up the whole job. (A cold simulator's first launch can take over a minute on a busy runner.)
+# It is tried once more, so a simulator hiccup alone does not fail the run.
 launch() {
   local attempt pid
   for attempt in 1 2; do
-    if perl -e 'alarm shift; exec @ARGV' 90 xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" \
+    if perl -e 'alarm shift; exec @ARGV' 240 xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" \
         io.github.reiji55.threedays -AppleLanguages '(ja)' -AppleLocale ja_JP "$@"; then return 0; fi
     echo "::warning::Launch with $* did not finish (attempt $attempt)" >&2
     pid=$(pgrep -f 'ThreeDays.app/ThreeDays' | head -1 || true)
