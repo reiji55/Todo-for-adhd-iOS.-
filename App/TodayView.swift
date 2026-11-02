@@ -9,6 +9,8 @@ struct TodayView: View {
     @State private var drawerOpen = false
     @State private var rolloverOpen = false
     @State private var showDone = false
+    /// -1 yesterday, 0 today, 1 tomorrow. Yesterday and tomorrow are for a look; coming back is always today.
+    @State private var dayOffset = 0
     let onOpen: (AgendaItem) -> Void
     let onStart: (TaskItem) -> Void
     let onWeek: () -> Void
@@ -28,8 +30,10 @@ struct TodayView: View {
                 } else {
                     ScrollView { main(now: now).padding(16) }
                         .overlay(alignment: .trailing) {
-                            CandidateDrawer(isOpen: $drawerOpen) {
-                                CandidatePanel(energy: $energy, now: now, onOpen: onOpen, onStart: onStart)
+                            if dayOffset == 0 {
+                                CandidateDrawer(isOpen: $drawerOpen) {
+                                    CandidatePanel(energy: $energy, now: now, onOpen: onOpen, onStart: onStart)
+                                }
                             }
                         }
                 }
@@ -38,9 +42,44 @@ struct TodayView: View {
         }
         .sheet(isPresented: $rolloverOpen) { RolloverSheet() }
         .onChange(of: energy) { _, value in EnergyMemory.save(value) }
+        .onAppear { dayOffset = 0 }
+        .onDisappear { dayOffset = 0 }
     }
 
     @ViewBuilder private func main(now: Date) -> some View {
+        if dayOffset == 0 { today(now: now) } else { otherDay(now: now) }
+    }
+
+    /// Yesterday or tomorrow, to look at: the same timeline and list, without today's extras.
+    private func otherDay(now: Date) -> some View {
+        let calendar = Calendar.current
+        let day = calendar.date(byAdding: .day, value: dayOffset, to: now) ?? now
+        let items = Agenda.items(on: day, tasks: store.notebook.tasks, routines: store.notebook.routines).filter { !$0.isBlock }
+        let timed = items.filter { $0.slot != nil }
+        let untimed = items.filter { $0.slot == nil }
+        return LazyVStack(alignment: .leading, spacing: 10) {
+            DaySwitcher(offset: $dayOffset, now: now)
+            SectionHeading(title: dayOffset > 0 ? "明日の時間割" : "昨日の時間割")
+            if items.isEmpty {
+                Text(dayOffset > 0 ? "明日の予定はまだありません。右下の＋から足せます。" : "昨日の予定はありませんでした。")
+                    .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 6)
+            }
+            if !timed.isEmpty {
+                TimelinePanel(items: timed, now: now, showsNow: false, onOpen: onOpen, onStart: onStart).padding(.bottom, 6)
+            }
+            if !untimed.isEmpty {
+                Text("時間を決めていない").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, timed.isEmpty ? 0 : 8)
+                ForEach(untimed) { item in AgendaRow(item: item, style: .loose, onOpen: onOpen, onStart: onStart) }
+            }
+            if dayOffset < 0 {
+                Text("やり残したものは、今日の画面の「前の日から残っているタスク」から振り分けられます。")
+                    .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
+            }
+        }
+        .frame(maxWidth: 760).frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder private func today(now: Date) -> some View {
         let board = TaskBoard()
         let tasks = store.notebook.tasks
         // Something checked off a moment ago keeps its place until the person leaves this screen.
@@ -64,11 +103,7 @@ struct TodayView: View {
             .filter { !$0.isDone && !$0.isBlock }.count
 
         LazyVStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(now.formatted(.dateTime.month().day().weekday(.wide))).font(.subheadline).foregroundStyle(.secondary)
-                Spacer()
-                Button(tomorrowCount > 0 ? "明日 \(tomorrowCount)件 ›" : "週を見る ›", action: onWeek).font(.subheadline)
-            }
+            DaySwitcher(offset: $dayOffset, now: now, tomorrowCount: tomorrowCount)
             if store.loadFailed {
                 Label("保存データを開けません。設定から復旧できます。", systemImage: "exclamationmark.triangle")
                     .font(.subheadline).foregroundStyle(.red)
@@ -129,6 +164,8 @@ struct TimelinePanel: View {
     @Environment(\.colorScheme) private var scheme
     let items: [AgendaItem]
     let now: Date
+    /// The red line for now; off for days other than today.
+    var showsNow = true
     let onOpen: (AgendaItem) -> Void
     let onStart: (TaskItem) -> Void
 
@@ -138,7 +175,7 @@ struct TimelinePanel: View {
     var body: some View {
         let calendar = Calendar.current
         let minute = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
-        let nowIndex = items.firstIndex { ($0.slot?.start ?? Int.max) > minute } ?? items.count
+        let nowIndex = showsNow ? (items.firstIndex { ($0.slot?.start ?? Int.max) > minute } ?? items.count) : -1
         VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                 if index == nowIndex {
@@ -421,5 +458,44 @@ struct RolloverSheet: View {
         action(selected)
         selected = []
         if TaskBoard().pastPlanned(store.notebook.tasks, now: Date()).isEmpty { dismiss() }
+    }
+}
+
+/// 昨日 · 今日 · 明日, as in task-3days. Each shows its date; 明日 shows how many things are planned.
+struct DaySwitcher: View {
+    @Binding var offset: Int
+    let now: Date
+    var tomorrowCount = 0
+
+    var body: some View {
+        let calendar = Calendar.current
+        HStack(spacing: 4) {
+            ForEach([-1, 0, 1], id: \.self) { value in
+                let day = calendar.date(byAdding: .day, value: value, to: now) ?? now
+                let selected = value == offset
+                Button { withAnimation(.snappy) { offset = value } } label: {
+                    VStack(spacing: 1) {
+                        HStack(spacing: 4) {
+                            Text(["昨日", "今日", "明日"][value + 1]).font(.subheadline.weight(selected ? .bold : .medium))
+                            if value == 1 && tomorrowCount > 0 && !selected {
+                                Text("\(tomorrowCount)").font(.caption2.weight(.bold)).monospacedDigit()
+                                    .padding(.horizontal, 5).background(Capsule().fill(Palette.accent.opacity(0.18)))
+                            }
+                        }
+                        Text(day.formatted(.dateTime.month(.defaultDigits).day().weekday(.abbreviated)))
+                            .font(.caption2).monospacedDigit().opacity(0.8)
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 7)
+                    .foregroundStyle(selected ? Color.white : Color.primary)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(selected ? Palette.accent : Color.clear))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(["昨日", "今日", "明日"][value + 1])
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(4)
+        .background(RoundedRectangle(cornerRadius: 15).fill(Color(uiColor: .secondarySystemGroupedBackground)))
     }
 }

@@ -409,10 +409,11 @@ struct HormeTabBar: View {
                 Text("今日").font(.system(size: 10, weight: .bold)).foregroundStyle(selected ? Palette.accent : Color.secondary)
             }
             .padding(.bottom, 3)
-            // The bar keeps its height; the round button rises above it instead of making it taller.
             .frame(maxWidth: .infinity)
-            .frame(height: 48, alignment: .bottom)
+            // The whole button answers, the raised top of the circle included…
             .contentShape(Rectangle())
+            // …while the bar keeps its height; the circle rises above it instead of making it taller.
+            .frame(height: 48, alignment: .bottom)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("今日")

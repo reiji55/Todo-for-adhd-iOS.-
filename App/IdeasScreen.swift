@@ -300,16 +300,15 @@ struct StickyNote: View {
     }
 }
 
-/// The next stretches of free time: today's (from now), tomorrow's and the day after's.
-func nextFreeSlots(now: Date, tasks: [TaskItem], routines: [Routine]) -> [(day: Date, gap: TimeSlot)] {
+/// Free stretches from now on: every one today, then tomorrow's and the day after's, up to `limit`.
+func nextFreeSlots(now: Date, tasks: [TaskItem], routines: [Routine], limit: Int = 5) -> [(day: Date, gap: TimeSlot)] {
     let calendar = Calendar.current
     let minute = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
-    return (0..<3).compactMap { offset in
-        guard let day = calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: now)),
-              let gap = FreeTime.gaps(on: day, tasks: tasks, routines: routines, notBefore: offset == 0 ? minute : nil).first
-        else { return nil }
-        return (day, gap)
+    let all = (0..<3).flatMap { offset -> [(day: Date, gap: TimeSlot)] in
+        guard let day = calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: now)) else { return [] }
+        return FreeTime.gaps(on: day, tasks: tasks, routines: routines, notBefore: offset == 0 ? minute : nil).map { (day, $0) }
     }
+    return Array(all.prefix(limit))
 }
 
 /// A free stretch of time is at most two hours of work on an idea.
@@ -323,52 +322,94 @@ func freeDayLabel(_ day: Date) -> String {
 }
 
 /// The day's schedule as a thin bar, its free stretch lit, and the warmest idea offered for it.
+/// When there is more than one free stretch, each is a chip to pick from.
 struct FreeTimeCard: View {
     @EnvironmentObject private var store: TaskStore
     let idea: Idea
     let now: Date
     let onPlace: (Date, TimeSlot) -> Void
+    @State private var chosen = 0
 
     private let from = 8 * 60, to = 22 * 60
 
     var body: some View {
-        if let next = nextFreeSlots(now: now, tasks: store.notebook.tasks, routines: store.notebook.routines).first {
-            let busy = Agenda.items(on: next.day, tasks: store.notebook.tasks, routines: store.notebook.routines).compactMap(\.slot)
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    ForEach([8, 12, 16, 20], id: \.self) { hour in
-                        Text("\(hour):00").font(.system(size: 10, design: .rounded)).monospacedDigit().foregroundStyle(.secondary)
-                        if hour != 20 { Spacer() }
-                    }
-                }
-                GeometryReader { geometry in
-                    let width = geometry.size.width
-                    let x = { (minute: Int) in CGFloat(min(max(minute, from), to) - from) / CGFloat(to - from) * width }
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.secondary.opacity(0.15))
-                        ForEach(Array(busy.enumerated()), id: \.offset) { _, slot in
-                            Rectangle().fill(Color.secondary.opacity(0.45))
-                                .frame(width: max(0, x(slot.end) - x(slot.start))).offset(x: x(slot.start))
-                        }
-                        Rectangle().fill(Palette.accent)
-                            .frame(width: max(4, x(next.gap.end) - x(next.gap.start))).offset(x: x(next.gap.start))
-                            .shadow(color: Palette.accent.opacity(0.6), radius: 6)
-                    }
-                    .clipShape(Capsule())
-                }
-                .frame(height: 14)
-                .accessibilityHidden(true)
-                HStack(alignment: .center, spacing: 10) {
-                    (Text("\(freeDayLabel(next.day)) \(next.gap.label) が空き。").bold().foregroundColor(Palette.accent)
-                     + Text("「\(Self.firstLine(idea.text))」を入れる？"))
-                        .font(.subheadline).fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button("入れる") { onPlace(next.day, ideaWorkSlot(next.gap)) }
-                        .font(.subheadline.weight(.bold)).buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+        let options = nextFreeSlots(now: now, tasks: store.notebook.tasks, routines: store.notebook.routines)
+        if !options.isEmpty {
+            let index = min(chosen, options.count - 1)
+            card(options: options, index: index)
+        }
+    }
+
+    private func card(options: [(day: Date, gap: TimeSlot)], index: Int) -> some View {
+        let pick = options[index]
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                ForEach([8, 12, 16, 20], id: \.self) { hour in
+                    Text("\(hour):00").font(.system(size: 10, design: .rounded)).monospacedDigit().foregroundStyle(.secondary)
+                    if hour != 20 { Spacer() }
                 }
             }
-            .padding(14)
-            .background(RoundedRectangle(cornerRadius: 18).fill(Color(uiColor: .secondarySystemGroupedBackground)))
+            bar(options: options, index: index).frame(height: 14).accessibilityHidden(true)
+            if options.count > 1 { chips(options: options, index: index) }
+            HStack(alignment: .center, spacing: 10) {
+                (Text("\(freeDayLabel(pick.day)) \(pick.gap.label) が空き。").bold().foregroundColor(Palette.accent)
+                 + Text("「\(Self.firstLine(idea.text))」を入れる？"))
+                    .font(.subheadline).fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("入れる") { onPlace(pick.day, ideaWorkSlot(pick.gap)) }
+                    .font(.subheadline.weight(.bold)).buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 18).fill(Color(uiColor: .secondarySystemGroupedBackground)))
+    }
+
+    /// The chosen day's schedule: taken time gray, every free stretch that day tinted, the chosen one lit.
+    /// Tapping a stretch picks it.
+    private func bar(options: [(day: Date, gap: TimeSlot)], index: Int) -> some View {
+        let day = options[index].day
+        let busy = Agenda.items(on: day, tasks: store.notebook.tasks, routines: store.notebook.routines).compactMap(\.slot)
+        let sameDay = options.indices.filter { Calendar.current.isDate(options[$0].day, inSameDayAs: day) }
+        return GeometryReader { geometry in
+            let width = geometry.size.width
+            let span = CGFloat(to - from)
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.secondary.opacity(0.15))
+                ForEach(Array(busy.enumerated()), id: \.offset) { _, slot in
+                    let start = CGFloat(min(max(slot.start, from), to) - from) / span * width
+                    let end = CGFloat(min(max(slot.end, from), to) - from) / span * width
+                    Rectangle().fill(Color.secondary.opacity(0.45)).frame(width: max(0, end - start)).offset(x: start)
+                }
+                ForEach(sameDay, id: \.self) { option in
+                    let gap = options[option].gap
+                    let start = CGFloat(min(max(gap.start, from), to) - from) / span * width
+                    let end = CGFloat(min(max(gap.end, from), to) - from) / span * width
+                    Rectangle().fill(Palette.accent.opacity(option == index ? 1 : 0.3))
+                        .frame(width: max(4, end - start)).offset(x: start)
+                        .shadow(color: Palette.accent.opacity(option == index ? 0.6 : 0), radius: 6)
+                        .onTapGesture { withAnimation(.snappy) { chosen = option } }
+                }
+            }
+            .clipShape(Capsule())
+        }
+    }
+
+    private func chips(options: [(day: Date, gap: TimeSlot)], index: Int) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(options.indices, id: \.self) { option in
+                    let selected = option == index
+                    Button("\(freeDayLabel(options[option].day)) \(options[option].gap.label)") {
+                        withAnimation(.snappy) { chosen = option }
+                    }
+                    .font(.caption.weight(selected ? .bold : .regular)).monospacedDigit()
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .foregroundStyle(selected ? Color.white : Color.primary)
+                    .background(Capsule().fill(selected ? Palette.accent : Color(uiColor: .tertiarySystemFill)))
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
         }
     }
 
