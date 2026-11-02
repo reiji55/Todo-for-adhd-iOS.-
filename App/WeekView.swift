@@ -256,12 +256,13 @@ struct WeekRows: View {
                                         .opacity(drag?.item.id == block.id ? 0 : 1)
                                         .zIndex(block.item.isBlock ? 0 : 1)
                                         .onTapGesture { onSelectItem(block.item, days[block.row]) }
-                                        // Routines come back every week at their own time; they are not dragged one day out of line.
+                                        // Held time (sleep, work) is the frame of the week, not something to move about;
+                                        // a nudge would leave one night out of line, and its hours may be off the grid.
                                         .gesture(moveGesture(block, layout: layout, viewportWidth: viewportWidth),
-                                                 including: block.item.isRoutine ? .subviews : .all)
+                                                 including: block.item.isBlock ? .subviews : .all)
                                         .accessibilityElement(children: .ignore)
                                         .accessibilityLabel("\(block.item.slot?.label ?? "時間なし") \(block.item.title)\(block.item.isDone ? "、完了" : "")")
-                                        .accessibilityHint(block.item.isRoutine ? "ダブルタップで下の一覧に出します。"
+                                        .accessibilityHint(block.item.isBlock ? "ダブルタップで下の一覧に出します。"
                                                            : "ダブルタップで下の一覧に出します。長押しして動かすと日時を変えられます。")
                                 }
                                 ForEach(placement.labels) { label in
