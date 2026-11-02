@@ -117,6 +117,7 @@ struct IdeaToTasksSheet: View {
             if draft.wrappedValue.when == .other {
                 DatePicker("日付", selection: draft.day, displayedComponents: .date)
             }
+            freeTimes(draft)
             if draft.wrappedValue.when != .anytime, let slot = draft.wrappedValue.slot {
                 HStack {
                     Label(slot.label, systemImage: "clock").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.accent)
@@ -129,6 +130,49 @@ struct IdeaToTasksSheet: View {
                 .disabled(draft.wrappedValue.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(.vertical, 4)
+    }
+
+    /// The next free stretches of the schedule, one tap to put this task there.
+    @ViewBuilder private func freeTimes(_ draft: Binding<Draft>) -> some View {
+        let options = nextFreeSlots(now: Date(), tasks: store.notebook.tasks, routines: store.notebook.routines)
+        if !options.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("空いている時間から選ぶ").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(options.indices, id: \.self) { index in
+                            let option = options[index]
+                            let slot = ideaWorkSlot(option.gap)
+                            let picked = draft.wrappedValue.slot == slot && isDay(draft.wrappedValue, option.day)
+                            Button("\(freeDayLabel(option.day)) \(slot.label)") { place(draft, on: option.day, at: slot) }
+                                .font(.caption.weight(picked ? .bold : .regular)).monospacedDigit()
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                                .foregroundStyle(picked ? Color.white : Color.primary)
+                                .background(Capsule().fill(picked ? Palette.accent : Color(uiColor: .tertiarySystemFill)))
+                                .buttonStyle(.borderless)
+                                .accessibilityAddTraits(picked ? .isSelected : [])
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func isDay(_ draft: Draft, _ day: Date) -> Bool {
+        let calendar = Calendar.current
+        switch draft.when {
+        case .today: return calendar.isDateInToday(day)
+        case .tomorrow: return calendar.isDateInTomorrow(day)
+        case .other: return calendar.isDate(draft.day, inSameDayAs: day)
+        case .anytime: return false
+        }
+    }
+
+    private func place(_ draft: Binding<Draft>, on day: Date, at slot: TimeSlot) {
+        let calendar = Calendar.current
+        draft.wrappedValue.when = calendar.isDateInToday(day) ? .today : calendar.isDateInTomorrow(day) ? .tomorrow : .other
+        draft.wrappedValue.day = day
+        draft.wrappedValue.slot = slot
     }
 
     private func task(from draft: Draft) -> TaskItem {

@@ -214,16 +214,16 @@ struct FocusView: View {
                             .fixedSize(horizontal: false, vertical: true)
                         // A pomodoro-style dial: time spent against the task's planned length (one pomodoro if none).
                         HStack(spacing: 20) {
-                            ElapsedTimer(start: session.startedAt, minutes: plannedMinutes(task.slot), size: 120)
+                            ElapsedTimer(start: session.startedAt, minutes: plannedMinutes(task.slot), size: 60)
                             TimelineView(.periodic(from: .now, by: 1)) { context in
                                 let elapsed = context.date.timeIntervalSince(session.startedAt)
                                 let planned = plannedMinutes(task.slot)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("経過").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                                    Text(ElapsedTimer.clock(elapsed)).font(.system(size: 34, weight: .bold, design: .rounded)).monospacedDigit()
+                                    Text(ElapsedTimer.clock(elapsed)).font(.system(size: 26, weight: .bold, design: .rounded)).monospacedDigit()
                                     if elapsed >= Double(planned * 60) {
                                         Text("予定の\(planned)分を\(Int(elapsed / 60) - planned)分こえています")
-                                            .font(.caption.weight(.semibold)).foregroundStyle(.orange)
+                                            .font(.caption.weight(.semibold)).foregroundStyle(.red)
                                     } else {
                                         Text(task.slot == nil ? "目安 \(planned)分（1ポモドーロ）" : "予定 \(planned)分")
                                             .font(.caption).foregroundStyle(.secondary)

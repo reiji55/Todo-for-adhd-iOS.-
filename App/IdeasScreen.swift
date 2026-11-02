@@ -457,7 +457,6 @@ struct IdeaDetailSheet: View {
         let now = Date()
         let warmth = idea.warmth(now: now)
         let colors = StickyColor.colors(for: idea, warmth: warmth)
-        let slots = nextFreeSlots(now: now, tasks: store.notebook.tasks, routines: store.notebook.routines)
         return ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 8) {
@@ -510,24 +509,6 @@ struct IdeaDetailSheet: View {
                     }
                     .padding(.leading, 14).padding(.trailing, 6).padding(.vertical, 6)
                     .background(RoundedRectangle(cornerRadius: 22).fill(Color(uiColor: .tertiarySystemFill)))
-                }
-
-                if !slots.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("空いている時間に入れる").font(.subheadline.weight(.bold)).foregroundStyle(.secondary)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(Array(slots.enumerated()), id: \.offset) { index, next in
-                                    Button("\(freeDayLabel(next.day)) \(ideaWorkSlot(next.gap).label)") {
-                                        planning = IdeaPlan(idea: idea, day: next.day, slot: ideaWorkSlot(next.gap))
-                                    }
-                                    .font(.subheadline.weight(index == 0 ? .bold : .regular))
-                                    .buttonStyle(.bordered).buttonBorderShape(.capsule)
-                                    .tint(index == 0 ? Palette.accent : .secondary)
-                                }
-                            }
-                        }
-                    }
                 }
 
                 HStack(spacing: 10) {

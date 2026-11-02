@@ -1,54 +1,35 @@
 import SwiftUI
 import UIKit
 
-/// A slice from twelve o'clock, clockwise: how much of the planned time has passed.
-struct PieSlice: Shape {
-    var progress: Double
-    var animatableData: Double {
-        get { progress }
-        set { progress = newValue }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        guard progress > 0 else { return path }
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        path.move(to: center)
-        path.addArc(center: center, radius: min(rect.width, rect.height) / 2, startAngle: .degrees(-90),
-                    endAngle: .degrees(-90 + 360 * min(progress, 1)), clockwise: false)
-        path.closeSubpath()
-        return path
-    }
-}
-
-/// A pomodoro-style dial that fills as time passes against a planned length. It shows time spent, not
-/// time left; past the plan it turns orange and keeps counting.
+/// A timer ring: full at the start, it empties as the planned time is used up; the minutes left are
+/// in the middle. Past the plan a red ring grows instead, with the minutes over in the middle.
 struct ElapsedTimer: View {
     let start: Date
     let minutes: Int
     var size: CGFloat = 30
-    /// For a dial on a colored bar.
+    /// For a ring on a colored bar.
     var tint: Color? = nil
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let elapsed = max(0, context.date.timeIntervalSince(start))
             let total = Double(max(1, minutes) * 60)
-            let color = tint ?? (elapsed >= total ? Color.orange : Palette.accent)
+            let over = elapsed > total
+            let fraction = over ? min(1, (elapsed - total) / total) : max(0, 1 - elapsed / total)
+            let color = over ? Color.red : (tint ?? Palette.accent)
+            let line = max(3, size * 0.16)
+            let number = over ? "+\(Int((elapsed - total) / 60))" : "\(Int(ceil((total - elapsed) / 60)))"
             ZStack {
-                Circle().fill(tint == nil ? Color(uiColor: .secondarySystemGroupedBackground) : color.opacity(0.2))
-                PieSlice(progress: elapsed / total).fill(color.opacity(0.85))
-                Circle().strokeBorder(color.opacity(0.7), lineWidth: max(1, size / 22))
-                if size >= 80 {
-                    // Quarter marks, as on a kitchen timer.
-                    ForEach(0..<12, id: \.self) { mark in
-                        Capsule().fill(color.opacity(0.5))
-                            .frame(width: mark % 3 == 0 ? 2.5 : 1.5, height: mark % 3 == 0 ? 9 : 5)
-                            .offset(y: -size / 2 + 8)
-                            .rotationEffect(.degrees(Double(mark) * 30))
-                    }
-                }
+                Circle().stroke(color.opacity(0.2), lineWidth: line)
+                Circle().trim(from: 0, to: fraction)
+                    .stroke(color, style: StrokeStyle(lineWidth: line, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Text(number).font(.system(size: max(9, size * 0.3), weight: .bold, design: .rounded)).monospacedDigit()
+                    .minimumScaleFactor(0.6).lineLimit(1)
+                    .foregroundStyle(over ? Color.red : (tint ?? Color.primary))
+                    .padding(line)
             }
+            .padding(line / 2)
             .frame(width: size, height: size)
         }
         .accessibilityHidden(true)
