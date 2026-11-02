@@ -8,7 +8,6 @@ struct TodayView: View {
     @State private var energy: Energy = EnergyMemory.load()
     @State private var drawerOpen = false
     @State private var rolloverOpen = false
-    @State private var showDone = false
     /// -1 yesterday, 0 today, 1 tomorrow. Yesterday and tomorrow are for a look; coming back is always today.
     @State private var dayOffset = 0
     let onOpen: (AgendaItem) -> Void
@@ -91,8 +90,8 @@ struct TodayView: View {
         let calendar = Calendar.current
         // Held time (sleep, work) is context for the week grid, not something to do; keep it out of this list.
         let agenda = Agenda.items(on: now, tasks: tasks, routines: store.notebook.routines).filter { !$0.isBlock }
-        let visible = agenda.filter { !$0.isDone || store.recentlyDone.contains($0.id) }
-        let doneEarlier = agenda.filter { $0.isDone && !store.recentlyDone.contains($0.id) }
+        // Finished things stay where they were, struck through, so a look back at the day shows what it held.
+        let visible = agenda
         // Today's planned work is already in the timetable; this list is what would otherwise be missed.
         let required = board.obligations(placement, now: now).filter { task in
             task.plannedAt.map { calendar.isDate($0, inSameDayAs: now) } != true
@@ -140,15 +139,6 @@ struct TodayView: View {
             if !untimed.isEmpty {
                 Text("時間を決めていない").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, timed.isEmpty ? 0 : 8)
                 ForEach(untimed) { item in AgendaRow(item: item, style: .loose, onOpen: onOpen, onStart: onStart) }
-            }
-            if !doneEarlier.isEmpty {
-                Button { withAnimation { showDone.toggle() } } label: {
-                    Label("今日やったこと \(doneEarlier.count)件", systemImage: showDone ? "chevron.down" : "chevron.right")
-                        .font(.subheadline).frame(minHeight: 44)
-                }
-                if showDone {
-                    ForEach(doneEarlier) { item in AgendaRow(item: item, onOpen: onOpen) }
-                }
             }
             UpcomingDeadlines(now: now, onOpen: onOpen)
         }

@@ -437,6 +437,7 @@ struct IdeaDetailSheet: View {
                 if let idea = store.idea(ideaID) { content(idea) } else { Color.clear.onAppear { dismiss() } }
             }
             .navigationBarTitleDisplayMode(.inline)
+            .keyboardDismissable()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } }
                 ToolbarItem(placement: .primaryAction) {

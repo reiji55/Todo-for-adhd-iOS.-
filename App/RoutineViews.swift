@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 enum ClockMinutes {
     static func date(_ minutes: Int) -> Date {
@@ -227,6 +228,17 @@ struct RoutineEditor: View {
                 Section("メモ") {
                     TextField("やること、気をつけること", text: $routine.memo, axis: .vertical).lineLimit(2...8)
                 }
+                if exists && !routine.isBlock {
+                    Section {
+                        NavigationLink { RoutineLogView(routineID: routine.id) } label: {
+                            LabeledContent {
+                                Text(RoutineLogView.format(store.routine(routine.id)?.durations.values.reduce(0, +) ?? 0)).monospacedDigit()
+                            } label: {
+                                Label("計った記録を見る", systemImage: "chart.bar")
+                            }
+                        }
+                    } footer: { Text("今日の画面の▶で計ると、日ごとの時間が残ります。") }
+                }
                 if exists {
                     Section { Button("このルーティンを削除", role: .destructive) { showDelete = true } }
                 }
@@ -237,7 +249,7 @@ struct RoutineEditor: View {
                     if !exists { dismiss() }
                 }
             } message: { Text("これまでのチェックも消えます。休むだけなら「一時停止」が使えます。") }
-            .navigationTitle(exists ? "ルーティンを編集" : "ルーティンを追加").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(exists ? "ルーティンを編集" : "ルーティンを追加").keyboardDismissable().navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("キャンセル") { if changed { confirmDiscard = true } else { dismiss() } }
@@ -256,5 +268,66 @@ struct RoutineEditor: View {
             Button("破棄して閉じる", role: .destructive) { dismiss() }
         }
         .storeErrorAlert()
+    }
+}
+
+/// A routine's timed days: the total, a bar for each recent day, and the list of days with their time.
+@MainActor
+struct RoutineLogView: View {
+    @EnvironmentObject private var store: TaskStore
+    let routineID: UUID
+
+    struct Entry { var day: Date; var seconds: Int }
+
+    var body: some View {
+        let routine = store.routine(routineID)
+        let entries = (routine?.durations ?? [:]).compactMap { key, seconds in DayKey.date(key).map { Entry(day: $0, seconds: seconds) } }
+            .sorted { $0.day > $1.day }
+        let total = entries.reduce(0) { $0 + $1.seconds }
+        List {
+            Section {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("合計").font(.caption).foregroundStyle(.secondary)
+                        Text(Self.format(total)).font(.title2.weight(.bold)).monospacedDigit()
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("計った日").font(.caption).foregroundStyle(.secondary)
+                        Text("\(entries.count)日").font(.title2.weight(.bold)).monospacedDigit()
+                    }
+                }
+                if !entries.isEmpty {
+                    Chart(Array(entries.prefix(30)), id: \.day) { entry in
+                        BarMark(x: .value("日", entry.day, unit: .day), y: .value("分", Double(entry.seconds) / 60))
+                            .foregroundStyle(Palette.accent)
+                    }
+                    .chartYAxisLabel("分")
+                    .frame(height: 180)
+                    .padding(.vertical, 6)
+                    .accessibilityLabel("日ごとの時間のグラフ")
+                }
+            } footer: {
+                if entries.count > 30 { Text("グラフは新しい30日分です。") }
+            }
+            Section("日ごとの記録") {
+                if entries.isEmpty {
+                    Text("今日の画面でこのルーティンの▶を押して計ると、ここに残ります。").foregroundStyle(.secondary)
+                }
+                ForEach(entries, id: \.day) { entry in
+                    LabeledContent(entry.day.formatted(.dateTime.year().month().day().weekday(.abbreviated))) {
+                        Text(Self.format(entry.seconds)).monospacedDigit()
+                    }
+                }
+            }
+        }
+        .navigationTitle(routine?.title ?? "記録").navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// "1時間05分", "25分", "45秒".
+    static func format(_ seconds: Int) -> String {
+        let minutes = seconds / 60
+        if minutes >= 60 { return "\(minutes / 60)時間\(String(format: "%02d", minutes % 60))分" }
+        return minutes > 0 ? "\(minutes)分" : "\(seconds)秒"
     }
 }

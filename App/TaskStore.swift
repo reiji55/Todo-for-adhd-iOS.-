@@ -3,9 +3,18 @@ import SwiftUI
 import CloudKit
 import Network
 
+/// A routine being timed on this device: which one, which day of it, and since when.
+struct RoutineRun: Codable, Equatable {
+    var routineID: UUID
+    var day: String
+    var startedAt: Date
+}
+
 @MainActor
 final class TaskStore: ObservableObject {
     static let shared = TaskStore()
+    /// Kept on this device only, so a running timer survives the app being closed.
+    @Published private(set) var routineRun: RoutineRun? = TaskStore.loadRoutineRun()
     @Published private(set) var notebook = Notebook()
     @Published var error: String?
     /// Items checked off while this screen is open. They stay visible, struck through, so a mistaken tap
@@ -128,6 +137,8 @@ final class TaskStore: ObservableObject {
         isDemo = false
         history = []; recentlyDone = []; undoOffer = nil
         notebook = state.notebook
+        // A timer started on a sample routine has nothing to finish once the samples are gone.
+        if let run = routineRun, !notebook.routines.contains(where: { $0.id == run.routineID }) { cancelRoutineTimer() }
         requestSync()
     }
 
@@ -176,6 +187,49 @@ final class TaskStore: ObservableObject {
     }
 
     func clearRecentlyDone() { if !recentlyDone.isEmpty { recentlyDone = [] } }
+
+    // MARK: Routine timer
+
+    private static let routineRunKey = "horme.routineRun"
+
+    private static func loadRoutineRun() -> RoutineRun? {
+        UserDefaults.standard.data(forKey: routineRunKey).flatMap { try? JSONDecoder().decode(RoutineRun.self, from: $0) }
+    }
+
+    private func saveRoutineRun() {
+        if let routineRun, let data = try? JSONEncoder().encode(routineRun) {
+            UserDefaults.standard.set(data, forKey: Self.routineRunKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.routineRunKey)
+        }
+    }
+
+    func isTiming(_ item: AgendaItem) -> Bool {
+        guard case .routine(let id, let day) = item.source, let run = routineRun else { return false }
+        return run.routineID == id && run.day == day
+    }
+
+    /// Starts timing one day of a routine. Only one runs at a time; starting another drops the first.
+    func startRoutineTimer(_ item: AgendaItem) {
+        guard case .routine(let id, let day) = item.source else { return }
+        routineRun = RoutineRun(routineID: id, day: day, startedAt: Date())
+        saveRoutineRun()
+    }
+
+    /// Stops the timer: that day of the routine is done, with the time it took.
+    func finishRoutineTimer() {
+        guard let run = routineRun else { return }
+        let seconds = Int(Date().timeIntervalSince(run.startedAt))
+        if commit({ $0.finishRoutine(run.routineID, originalDay: run.day, seconds: seconds) }) {
+            routineRun = nil
+            saveRoutineRun()
+        }
+    }
+
+    func cancelRoutineTimer() {
+        routineRun = nil
+        saveRoutineRun()
+    }
 
     /// Moves a row to another day and time. A routine moves for that one day only.
     /// No undo offer: a drag on the week grid is easy to drag back, and a banner there gets in the way.

@@ -105,7 +105,7 @@ public struct SyncReplica: Codable, Equatable {
             guard try Self.object(record.fields["alive"]?.value) as? Bool == true else { continue }
             var object: [String: Any] = [:]
             for (key, field) in record.fields where key != "alive" && !key.hasPrefix("step.")
-                && !key.hasPrefix("done.") && !key.hasPrefix("move.") {
+                && !key.hasPrefix("done.") && !key.hasPrefix("move.") && !key.hasPrefix("time.") {
                 object[key] = try Self.object(field.value)
             }
             if record.id.hasPrefix("task_") {
@@ -140,13 +140,16 @@ public struct SyncReplica: Codable, Equatable {
                 // Each day's check and move is its own field, so different days edited on two devices both survive.
                 var done: [String] = []
                 var moves: [String: Any] = [:]
+                var durations: [String: Any] = [:]
                 for (key, field) in record.fields {
                     let value = try Self.object(field.value)
                     if key.hasPrefix("done."), value as? Bool == true { done.append(String(key.dropFirst(5))) }
                     if key.hasPrefix("move."), value is [String: Any] { moves[String(key.dropFirst(5))] = value }
+                    if key.hasPrefix("time."), let seconds = value as? Int { durations[String(key.dropFirst(5))] = seconds }
                 }
                 object["doneDays"] = done.sorted()
                 object["moves"] = moves
+                object["durations"] = durations
                 let routine: Routine = try Self.decodeObject(object)
                 guard record.id == "routine_\(routine.id.uuidString)" else { throw NotebookError.invalidData }
                 routines.append(routine)
@@ -201,8 +204,9 @@ public struct SyncReplica: Codable, Equatable {
         }
         for routine in book.routines {
             var fields = try fieldsFor(routine)
-            fields.removeValue(forKey: "doneDays"); fields.removeValue(forKey: "moves")
+            fields.removeValue(forKey: "doneDays"); fields.removeValue(forKey: "moves"); fields.removeValue(forKey: "durations")
             for day in routine.doneDays { fields["done." + day] = try jsonData(true) }
+            for (day, seconds) in routine.durations { fields["time." + day] = try jsonData(seconds) }
             for (day, move) in routine.moves {
                 fields["move." + day] = try jsonData(["toDay": move.toDay, "time": move.time])
             }

@@ -86,13 +86,17 @@ public struct Routine: Codable, Identifiable, Equatable {
     public var doneDays: [String]
     /// Keyed by the original day.
     public var moves: [String: RoutineMove]
+    /// Seconds spent, by the original day, when it was done with the timer.
+    public var durations: [String: Int]
 
     public init(id: UUID = UUID(), title: String, project: String = "", memo: String = "",
                 weekdays: [Int] = Array(1...7), time: String = "", notify: Bool = true, isBlock: Bool = false,
-                isPaused: Bool = false, createdAt: Date = Date(), doneDays: [String] = [], moves: [String: RoutineMove] = [:]) {
+                isPaused: Bool = false, createdAt: Date = Date(), doneDays: [String] = [], moves: [String: RoutineMove] = [:],
+                durations: [String: Int] = [:]) {
         self.id = id; self.title = title; self.project = project; self.memo = memo
         self.weekdays = weekdays; self.time = time; self.notify = notify; self.isBlock = isBlock
         self.isPaused = isPaused; self.createdAt = createdAt; self.doneDays = doneDays; self.moves = moves
+        self.durations = durations
     }
 
     public var slot: TimeSlot? {
@@ -113,7 +117,7 @@ public struct Routine: Codable, Identifiable, Equatable {
 
 extension Routine {
     enum CodingKeys: String, CodingKey {
-        case id, title, project, memo, weekdays, time, notify, isBlock, isPaused, createdAt, doneDays, moves
+        case id, title, project, memo, weekdays, time, notify, isBlock, isPaused, createdAt, doneDays, moves, durations
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -126,7 +130,8 @@ extension Routine {
                   isPaused: try c.decodeIfPresent(Bool.self, forKey: .isPaused) ?? false,
                   createdAt: try c.decode(Date.self, forKey: .createdAt),
                   doneDays: try c.decodeIfPresent([String].self, forKey: .doneDays) ?? [],
-                  moves: try c.decodeIfPresent([String: RoutineMove].self, forKey: .moves) ?? [:])
+                  moves: try c.decodeIfPresent([String: RoutineMove].self, forKey: .moves) ?? [:],
+                  durations: try c.decodeIfPresent([String: Int].self, forKey: .durations) ?? [:])
     }
 }
 
@@ -214,8 +219,17 @@ public extension Notebook {
 
     mutating func toggleRoutine(_ id: UUID, originalDay: String) {
         guard let i = routines.firstIndex(where: { $0.id == id }), !routines[i].isBlock else { return }
-        if let j = routines[i].doneDays.firstIndex(of: originalDay) { routines[i].doneDays.remove(at: j) }
-        else { routines[i].doneDays.append(originalDay) }
+        if let j = routines[i].doneDays.firstIndex(of: originalDay) {
+            routines[i].doneDays.remove(at: j)
+            routines[i].durations[originalDay] = nil
+        } else { routines[i].doneDays.append(originalDay) }
+    }
+
+    /// One day of a routine done with the timer: checked off, with the time it took.
+    mutating func finishRoutine(_ id: UUID, originalDay: String, seconds: Int) {
+        guard let i = routines.firstIndex(where: { $0.id == id }), !routines[i].isBlock else { return }
+        if !routines[i].doneDays.contains(originalDay) { routines[i].doneDays.append(originalDay) }
+        routines[i].durations[originalDay] = max(0, seconds)
     }
 
     /// Moves a task to a day and time, keeping any deadline as it is.

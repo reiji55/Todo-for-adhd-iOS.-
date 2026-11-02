@@ -62,12 +62,16 @@ struct RootView: View {
                 phoneNavigation
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) { activeTaskBar }
-        .safeAreaInset(edge: .top, spacing: 0) { demoBar }
-        // iPhone: Horme's own tab bar, with 今日 raised in the middle. Each tab keeps room for it (see
-        // phoneNavigation), since the tab view does not pass this space on. It steps aside for the keyboard.
+        // iPhone: Horme's own tab bar, with 今日 raised in the middle, and above it the task in progress.
+        // Each tab keeps room for them (see phoneNavigation), since the tab view does not pass this space on.
+        // They step aside for the keyboard.
         .overlay(alignment: .bottom) {
-            if isPhone && !keyboardShown { HormeTabBar(selection: $selectedTab) }
+            if isPhone && !keyboardShown {
+                VStack(spacing: 0) {
+                    activeTaskBar
+                    HormeTabBar(selection: $selectedTab)
+                }
+            }
         }
         .overlay(alignment: .bottom) { undoToast }
         .animation(.snappy, value: store.undoOffer)
@@ -188,6 +192,8 @@ struct RootView: View {
                     .navigationTitle((Tab(rawValue: selectedTab) ?? .today).title)
                     .navigationBarTitleDisplayMode(selectedTab == Tab.week.rawValue ? .inline : .automatic)
                     .toolbar { commonToolbar }
+                    .safeAreaInset(edge: .top, spacing: 0) { demoBar }
+                    .safeAreaInset(edge: .bottom, spacing: 0) { activeTaskBar }
             }
             // One stack serves every section; a card pushed on the board must not stay on top of 今日.
             .id(selectedTab)
@@ -204,7 +210,11 @@ struct RootView: View {
                         .navigationBarTitleDisplayMode(tab == .week ? .inline : .automatic)
                         .toolbar { commonToolbar }
                         .toolbar(.hidden, for: .tabBar)
-                        .safeAreaInset(edge: .bottom, spacing: 0) { Color.clear.frame(height: HormeTabBar.height) }
+                        // The demo notice sits under the title bar, inside the screen, so no button is covered.
+                        .safeAreaInset(edge: .top, spacing: 0) { demoBar }
+                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                            Color.clear.frame(height: HormeTabBar.height + (store.notebook.activeSession != nil ? Self.activeBarHeight : 0))
+                        }
                 }
                 .toolbar(.hidden, for: .tabBar)
                 .tag(tab.rawValue)
@@ -212,11 +222,13 @@ struct RootView: View {
         }
     }
 
+    static let activeBarHeight: CGFloat = 56
+
     @ViewBuilder private var activeTaskBar: some View {
         if let session = store.notebook.activeSession, let task = store.task(session.taskID) {
             Button { focusOpen = true } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: "play.circle.fill")
+                    ElapsedTimer(start: session.startedAt, minutes: plannedMinutes(task.slot), size: 28, tint: .white)
                     VStack(alignment: .leading) {
                         Text("取り組み中").font(.caption)
                         Text(task.actionTitle).font(.subheadline.weight(.medium)).lineLimit(1)
@@ -224,7 +236,7 @@ struct RootView: View {
                     Spacer()
                     Image(systemName: "chevron.up")
                 }
-                .padding(.horizontal, 20).padding(.vertical, 10)
+                .padding(.horizontal, 20).frame(height: Self.activeBarHeight)
                 .foregroundStyle(.white).background(Palette.accent)
             }.accessibilityLabel("取り組み中：\(task.actionTitle)。集中画面を開く")
         }

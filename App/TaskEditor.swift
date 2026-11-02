@@ -152,7 +152,7 @@ struct TaskEditor: View {
                     Section { Button(task.isEvent ? "このイベントを削除" : "このタスクを削除", role: .destructive) { showDelete = true } }
                 }
             }
-            .navigationTitle("\(task.isEvent ? "イベント" : "タスク")を\(store.task(task.id) == nil ? "追加" : "編集")")
+            .navigationTitle("\(task.isEvent ? "イベント" : "タスク")を\(store.task(task.id) == nil ? "追加" : "編集")").keyboardDismissable()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -212,10 +212,26 @@ struct FocusView: View {
                         Text(task.title).font(.subheadline).foregroundStyle(.secondary)
                         Text(actionTitle(task, session: session)).font(.largeTitle.weight(.semibold))
                             .fixedSize(horizontal: false, vertical: true)
-                        TimelineView(.periodic(from: .now, by: 60)) { context in
-                            Text("経過 \(max(0, Int(context.date.timeIntervalSince(session.startedAt) / 60)))分")
-                                .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                        // A pomodoro-style dial: time spent against the task's planned length (one pomodoro if none).
+                        HStack(spacing: 20) {
+                            ElapsedTimer(start: session.startedAt, minutes: plannedMinutes(task.slot), size: 120)
+                            TimelineView(.periodic(from: .now, by: 1)) { context in
+                                let elapsed = context.date.timeIntervalSince(session.startedAt)
+                                let planned = plannedMinutes(task.slot)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("経過").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                    Text(ElapsedTimer.clock(elapsed)).font(.system(size: 34, weight: .bold, design: .rounded)).monospacedDigit()
+                                    if elapsed >= Double(planned * 60) {
+                                        Text("予定の\(planned)分を\(Int(elapsed / 60) - planned)分こえています")
+                                            .font(.caption.weight(.semibold)).foregroundStyle(.orange)
+                                    } else {
+                                        Text(task.slot == nil ? "目安 \(planned)分（1ポモドーロ）" : "予定 \(planned)分")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
                         }
+                        .accessibilityElement(children: .combine)
                         if let card = store.linkedCard(for: task) {
                             // The method is what people forget mid-task; keep it one tap away.
                             DisclosureGroup {
@@ -246,7 +262,7 @@ struct FocusView: View {
                             .buttonStyle(.bordered).controlSize(.large)
                     }.padding(24)
                 }
-                .navigationTitle("今やるひとつ").navigationBarTitleDisplayMode(.inline)
+                .navigationTitle("今やるひとつ").keyboardDismissable().navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("一覧へ") { dismiss() } } }
                 .onAppear { loadNote(task) }
                 .onChange(of: session.taskID) { _, _ in loadNote(task) }

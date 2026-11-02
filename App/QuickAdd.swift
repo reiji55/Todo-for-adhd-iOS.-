@@ -86,7 +86,7 @@ struct QuickAddSheet: View {
                     Button(isEvent ? "場所やメモも書く" : "必須・締切・工程も書く", systemImage: "square.and.pencil") { details = makeTask() }
                 }
             }
-            .navigationTitle(isEvent ? "イベントを追加" : "タスクを追加").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(isEvent ? "イベントを追加" : "タスクを追加").keyboardDismissable().navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("追加", action: add).disabled(trimmed.isEmpty) }
@@ -145,7 +145,7 @@ struct IdeaQuickSheet: View {
                     TextField("思いついたこと", text: $text, axis: .vertical).lineLimit(3...10).focused($focused)
                 } footer: { Text("アイデアはタスクの候補や一覧には混ざりません。あとでタスクにできます。") }
             }
-            .navigationTitle("アイデアを書き留める").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("アイデアを書き留める").keyboardDismissable().navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {

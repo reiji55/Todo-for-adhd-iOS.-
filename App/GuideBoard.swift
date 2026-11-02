@@ -419,7 +419,7 @@ struct GuideCardEditor: View {
                     if store.card(card.id) == nil { dismiss() }
                 }
             } message: { Text("「\(original.title)」の目的・ゴール・やり方が消えます。") }
-            .navigationTitle(store.card(card.id) == nil ? "カードを追加" : "カードを編集")
+            .navigationTitle(store.card(card.id) == nil ? "カードを追加" : "カードを編集").keyboardDismissable()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

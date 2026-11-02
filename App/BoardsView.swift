@@ -183,7 +183,7 @@ struct IdeaEditor: View {
     var body: some View {
         NavigationStack {
             TextEditor(text: $idea.text).padding()
-                .navigationTitle("アイデアを編集").navigationBarTitleDisplayMode(.inline)
+                .navigationTitle("アイデアを編集").keyboardDismissable().navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } }
                     ToolbarItem(placement: .confirmationAction) {

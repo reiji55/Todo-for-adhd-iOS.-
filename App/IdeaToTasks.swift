@@ -83,7 +83,7 @@ struct IdeaToTasksSheet: View {
                     Text(keepIdea ? "残しておくと、あとでここから続きのタスクを作れます。" : "タスクを作ると、このアイデアは一覧から消えます。")
                 }
             }
-            .navigationTitle("タスクにする").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("タスクにする").keyboardDismissable().navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {

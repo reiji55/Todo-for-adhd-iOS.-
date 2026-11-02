@@ -208,4 +208,24 @@ final class ScheduleTests: XCTestCase {
         let evening = FreeTime.gaps(on: friday, tasks: [call], routines: [work], notBefore: 21 * 60 + 30, calendar: calendar)
         XCTAssertTrue(evening.isEmpty)
     }
+
+    func testRoutineTimesSyncPerDayAndGoWhenUnchecked() throws {
+        let routine = Routine(title: "TOEIC", time: "19:00-20:30", createdAt: Date(timeIntervalSince1970: 1_790_000_000))
+        let base = Notebook(routines: [routine])
+        var phone = SyncReplica()
+        try phone.apply(before: Notebook(), after: base, device: "phone")
+        var pad = SyncReplica()
+        try pad.merge(Array(phone.records.values))
+        var onPhone = base; onPhone.finishRoutine(routine.id, originalDay: "2026-10-29", seconds: 1500)
+        try phone.apply(before: base, after: onPhone, device: "phone")
+        var onPad = base; onPad.finishRoutine(routine.id, originalDay: "2026-10-30", seconds: 2400)
+        try pad.apply(before: base, after: onPad, device: "pad")
+        try phone.merge(Array(pad.records.values))
+        let merged = try phone.materialize()
+        XCTAssertEqual(merged.routines[0].durations, ["2026-10-29": 1500, "2026-10-30": 2400])
+        XCTAssertEqual(merged.routines[0].doneDays, ["2026-10-29", "2026-10-30"])
+        var unchecked = merged; unchecked.toggleRoutine(routine.id, originalDay: "2026-10-29")
+        try phone.apply(before: merged, after: unchecked, device: "phone")
+        XCTAssertEqual(try phone.materialize().routines[0].durations, ["2026-10-30": 2400])
+    }
 }

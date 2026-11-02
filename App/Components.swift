@@ -155,10 +155,6 @@ struct AgendaRow: View {
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain)
-            if let task, !done, !task.isEvent, let onStart {
-                Button { onStart(task) } label: { Image(systemName: "play.fill").font(.subheadline) }
-                    .buttonStyle(.bordered).buttonBorderShape(.circle).accessibilityLabel("\(task.title)を今やる")
-            }
         }
         .padding(.vertical, 9).padding(.leading, style == .timeline ? 0 : 6).padding(.trailing, style == .timeline ? 4 : 10)
         .background { surface }
@@ -195,6 +191,32 @@ struct AgendaRow: View {
             Hatch(spacing: 4).stroke(Color.secondary.opacity(0.6), lineWidth: 1)
                 .frame(width: 20, height: 20).clipShape(RoundedRectangle(cornerRadius: 5))
                 .frame(width: 44, height: 44).accessibilityLabel("時間を押さえているだけの予定")
+        } else if item.isRoutine && !item.isDone {
+            // A routine is timed right here: ▶ starts the dial, a tap on the dial finishes it.
+            if store.isTiming(item), let run = store.routineRun {
+                Button { store.finishRoutineTimer() } label: {
+                    ElapsedTimer(start: run.startedAt, minutes: plannedMinutes(item.slot), size: 30).frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(item.title)を計測中。タップで完了")
+            } else {
+                Button { store.startRoutineTimer(item) } label: { playMark }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(item.title)を始める")
+            }
+        } else if let task, !item.isDone, !task.isEvent, let onStart {
+            // A task starts from here; it is checked off when its steps are done in the focus screen.
+            if let session = store.notebook.activeSession, session.taskID == task.id {
+                Button { onStart(task) } label: {
+                    ElapsedTimer(start: session.startedAt, minutes: plannedMinutes(task.slot), size: 30).frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(task.title)に取り組み中。集中画面を開く")
+            } else {
+                Button { onStart(task) } label: { playMark }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(task.title)を今やる")
+            }
         } else {
             Button { store.toggle(item) } label: {
                 Image(systemName: item.isDone ? "checkmark.circle.fill" : "circle").font(.title2).frame(width: 44, height: 44)
@@ -203,8 +225,27 @@ struct AgendaRow: View {
         }
     }
 
+    private var playMark: some View {
+        Image(systemName: "play.fill").font(.subheadline.weight(.bold)).foregroundStyle(Palette.accent)
+            .frame(width: 32, height: 32).background(Circle().fill(Palette.accent.opacity(0.14)))
+            .frame(width: 44, height: 44).contentShape(Rectangle())
+    }
+
     @ViewBuilder private func menu(_ task: TaskItem?) -> some View {
         Button(item.isRoutine ? "ルーティンを編集" : item.isEvent ? "イベントを編集" : "編集", systemImage: "pencil") { onOpen(item) }
+        if item.isRoutine && !item.isBlock {
+            if store.isTiming(item) {
+                Button("計測をやめる（完了にしない）", systemImage: "stop") { store.cancelRoutineTimer() }
+            }
+            Button(item.isDone ? "未完了に戻す" : "計らずに完了にする", systemImage: item.isDone ? "arrow.uturn.backward" : "checkmark") {
+                store.toggle(item)
+            }
+        }
+        if let task, !task.isEvent {
+            Button(item.isDone ? "未完了に戻す" : "完了にする", systemImage: item.isDone ? "arrow.uturn.backward" : "checkmark") {
+                store.toggle(item)
+            }
+        }
         if let task, task.isEvent {
             Button("明日に移す", systemImage: "arrow.right") {
                 store.change(task.id) { $0.plannedAt = Calendar.current.date(byAdding: .day, value: 1, to: $0.plannedAt ?? Date()) }

@@ -84,7 +84,7 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("設定とデータ").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("設定とデータ").keyboardDismissable().navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } } }
             .onChange(of: store.sharingSheet?.id) { _, id in
                 guard id != nil, let item = store.sharingSheet else { return }
