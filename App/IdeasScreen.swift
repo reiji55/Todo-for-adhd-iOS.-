@@ -193,29 +193,30 @@ struct PeelableSticky: View {
     }
 
     private var corner: some View {
-        Color.clear.frame(width: 54, height: 54).contentShape(Rectangle())
+        Color.clear.frame(width: 60, height: 60).contentShape(Rectangle())
             .onTapGesture { onOpen(idea) }
-            .gesture(
-                DragGesture(minimumDistance: 4)
-                    .onChanged { value in
-                        pull = CGSize(width: max(0, value.translation.width), height: max(0, value.translation.height))
-                        let ready = hypot(pull.width, pull.height) >= distance
-                        if ready != armed {
-                            armed = ready
-                            UIImpactFeedbackGenerator(style: ready ? .medium : .light).impactOccurred()
-                        }
-                    }
-                    .onEnded { value in
-                        let thrown = hypot(max(0, value.predictedEndTranslation.width), max(0, value.predictedEndTranslation.height))
-                        if armed || thrown >= distance * 1.8 {
-                            peelOff()
-                        } else {
-                            armed = false
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.68)) { pull = .zero }
-                        }
-                    }
-            )
+            .modifier(PeelGesture(onChange: follow, onEnd: release))
             .accessibilityHidden(true)
+    }
+
+    private func follow(_ translation: CGSize) {
+        pull = CGSize(width: max(0, translation.width), height: max(0, translation.height))
+        let ready = hypot(pull.width, pull.height) >= distance
+        if ready != armed {
+            armed = ready
+            UIImpactFeedbackGenerator(style: ready ? .medium : .light).impactOccurred()
+        }
+    }
+
+    /// Let go past the line, or flicked hard enough toward it: off it comes. Otherwise it springs back.
+    private func release(_ translation: CGSize, _ projected: CGSize) {
+        let thrown = hypot(max(0, projected.width), max(0, projected.height))
+        if armed || thrown >= distance * 1.8 {
+            peelOff()
+        } else {
+            armed = false
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.68)) { pull = .zero }
+        }
     }
 
     private func peelOff() {
@@ -511,5 +512,59 @@ struct IdeaDetailSheet: View {
 
     private func addNote() {
         if store.addIdeaNote(note, to: ideaID) { note = "" }
+    }
+}
+
+/// The drag that peels a note. From iOS 18 it is a UIKit pan the scroll view waits for, so a drag that
+/// starts on the corner moves the note at once instead of scrolling first (no press-and-hold needed).
+private struct PeelGesture: ViewModifier {
+    let onChange: (CGSize) -> Void
+    /// The translation, and where the flick would carry it.
+    let onEnd: (CGSize, CGSize) -> Void
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.gesture(PeelPan(onChange: onChange, onEnd: onEnd))
+        } else {
+            content.gesture(DragGesture(minimumDistance: 4)
+                .onChanged { onChange($0.translation) }
+                .onEnded { onEnd($0.translation, $0.predictedEndTranslation) })
+        }
+    }
+}
+
+@available(iOS 18.0, *)
+private struct PeelPan: UIGestureRecognizerRepresentable {
+    let onChange: (CGSize) -> Void
+    let onEnd: (CGSize, CGSize) -> Void
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let pan = UIPanGestureRecognizer()
+        pan.delegate = context.coordinator
+        return pan
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        let t = recognizer.translation(in: recognizer.view)
+        let translation = CGSize(width: t.x, height: t.y)
+        switch recognizer.state {
+        case .began, .changed:
+            onChange(translation)
+        case .ended, .cancelled, .failed:
+            let v = recognizer.velocity(in: recognizer.view)
+            onEnd(translation, CGSize(width: t.x + v.x * 0.25, height: t.y + v.y * 0.25))
+        default:
+            break
+        }
+    }
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        /// Scrolling waits until this pan has failed, so a drag from the corner never becomes a scroll.
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            otherGestureRecognizer.view is UIScrollView
+        }
     }
 }
