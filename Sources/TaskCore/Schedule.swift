@@ -225,3 +225,25 @@ public extension Notebook {
         tasks[i].slot = slot
     }
 }
+
+/// Open time in a day's schedule, for fitting an idea into it.
+public enum FreeTime {
+    /// Gaps of at least `minimum` minutes between `from` and `to` (minutes of the day), not before
+    /// `notBefore`. Everything timed that day counts as taken, done or not, held time included.
+    public static func gaps(on day: Date, tasks: [TaskItem], routines: [Routine], from: Int = 8 * 60, to: Int = 22 * 60,
+                            notBefore: Int? = nil, minimum: Int = 60, calendar: Calendar = .current) -> [TimeSlot] {
+        let busy = Agenda.items(on: day, tasks: tasks, routines: routines, calendar: calendar)
+            .compactMap(\.slot).map { ($0.start, $0.end) }.sorted { $0.0 < $1.0 }
+        // Start on the next quarter hour after now, so a suggestion never begins in the past.
+        var cursor = max(from, notBefore.map { ($0 + 14) / 15 * 15 } ?? from)
+        var result: [TimeSlot] = []
+        for (start, end) in busy {
+            let gapEnd = min(start, to)
+            if gapEnd - cursor >= minimum { result.append(TimeSlot(start: cursor, duration: gapEnd - cursor)) }
+            cursor = max(cursor, end)
+            if start >= to || cursor >= to { cursor = max(cursor, to); break }
+        }
+        if to - cursor >= minimum { result.append(TimeSlot(start: cursor, duration: to - cursor)) }
+        return result.filter { $0.duration >= minimum }
+    }
+}

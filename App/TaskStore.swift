@@ -289,7 +289,42 @@ final class TaskStore: ObservableObject {
             return false
         }
         return commit { book in
-            if let index = book.ideas.firstIndex(where: { $0.id == idea.id }) { book.ideas[index].text = idea.text }
+            if let index = book.ideas.firstIndex(where: { $0.id == idea.id }) {
+                book.ideas[index].text = idea.text
+                book.ideas[index].touchedAt = Date()
+            }
+        }
+    }
+
+    func idea(_ id: UUID) -> Idea? { notebook.ideas.first { $0.id == id } }
+
+    /// Opening an idea warms it. Once an hour is enough; every glance need not be a change to sync.
+    func touchIdea(_ id: UUID) {
+        guard let idea = idea(id), Date().timeIntervalSince(idea.lastTouched) > 3600 else { return }
+        commit { book in
+            if let index = book.ideas.firstIndex(where: { $0.id == id }) { book.ideas[index].touchedAt = Date() }
+        }
+    }
+
+    /// A line added to an idea (メモ). It warms the idea, and lets it become fully warm.
+    func addIdeaNote(_ text: String, to id: UUID) -> Bool {
+        let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !line.isEmpty else { return false }
+        guard idea(id) != nil else {
+            error = "このアイデアは別の端末で削除またはタスク化されました。"
+            return false
+        }
+        return commit { book in
+            guard let index = book.ideas.firstIndex(where: { $0.id == id }) else { return }
+            book.ideas[index].notes.append(IdeaNote(text: line))
+            book.ideas[index].touchedAt = Date()
+        }
+    }
+
+    func deleteIdeaNote(_ noteID: UUID, from id: UUID) {
+        commit { book in
+            guard let index = book.ideas.firstIndex(where: { $0.id == id }) else { return }
+            book.ideas[index].notes.removeAll { $0.id == noteID }
         }
     }
 
@@ -615,7 +650,7 @@ extension Notebook {
             TaskItem(title: "図書館に本を返す", plannedAt: day(-1)),
             TaskItem(title: "気になる資料を読む", effort: .medium)
         ], ideas: [
-            Idea(text: "散歩中に聞ける勉強メモを作れそう\nやると決めるまではアイデアに置く。")
+            Idea(text: "散歩中に聞ける勉強メモを作れそう", notes: [IdeaNote(text: "通勤の15分で聞ける長さにする")])
         ], boardCards: [
             BoardCard(title: "部屋のリセット", purpose: "散らかった机が目に入ると、始める前に気力が削られるため。",
                       goal: "机の上に、いま使う物しかない状態。",

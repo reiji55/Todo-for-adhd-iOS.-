@@ -81,12 +81,58 @@ public struct TaskItem: Codable, Identifiable, Equatable {
     public var actionTitle: String { nextStep?.title ?? title }
 }
 
-public struct Idea: Codable, Identifiable, Equatable {
+/// A line added to an idea later, as it takes shape.
+public struct IdeaNote: Codable, Identifiable, Equatable {
     public var id: UUID
     public var text: String
     public var createdAt: Date
     public init(id: UUID = UUID(), text: String, createdAt: Date = Date()) {
         self.id = id; self.text = text; self.createdAt = createdAt
+    }
+}
+
+public struct Idea: Codable, Identifiable, Equatable {
+    public var id: UUID
+    public var text: String
+    public var createdAt: Date
+    /// Lines added later (メモ); having any is what lets an idea become fully warm.
+    public var notes: [IdeaNote]
+    /// When it was last opened or changed; nil means only when it was written.
+    public var touchedAt: Date?
+
+    public init(id: UUID = UUID(), text: String, createdAt: Date = Date(), notes: [IdeaNote] = [], touchedAt: Date? = nil) {
+        self.id = id; self.text = text; self.createdAt = createdAt; self.notes = notes; self.touchedAt = touchedAt
+    }
+
+    enum CodingKeys: String, CodingKey { case id, text, createdAt, notes, touchedAt }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        text = try c.decode(String.self, forKey: .text)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        notes = try c.decodeIfPresent([IdeaNote].self, forKey: .notes) ?? []
+        touchedAt = try c.decodeIfPresent(Date.self, forKey: .touchedAt)
+    }
+
+    /// The last time it was written, opened or added to.
+    public var lastTouched: Date {
+        max(touchedAt ?? createdAt, notes.map(\.createdAt).max() ?? createdAt, createdAt)
+    }
+
+    /// 3 hot … 0 cold. Touching an idea warms it; it cools a step at 3 days, a week and two weeks
+    /// untouched. Only an idea that has grown at least one note can be fully hot.
+    public func warmth(now: Date, calendar: Calendar = .current) -> Int {
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: lastTouched),
+                                           to: calendar.startOfDay(for: now)).day ?? 0
+        let level: Int
+        switch days {
+        case ..<3: level = 3
+        case ..<7: level = 2
+        case ..<14: level = 1
+        default: level = 0
+        }
+        return notes.isEmpty ? min(level, 2) : level
     }
 }
 

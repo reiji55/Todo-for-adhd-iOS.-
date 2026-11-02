@@ -11,13 +11,15 @@ struct IdeaToTasksSheet: View {
         var title: String
         var when: When = .anytime
         var day = Date()
+        /// A time picked from the free time in the schedule.
+        var slot: TimeSlot?
     }
 
     @EnvironmentObject private var store: TaskStore
     @Environment(\.dismiss) private var dismiss
     let idea: Idea
     @State private var drafts: [Draft]
-    @State private var keepIdea = false
+    @State private var keepIdea: Bool
     /// A draft opened in the full editor, and how many were saved from there.
     @State private var detailed: TaskItem?
     @State private var detailedDraft: UUID?
@@ -25,10 +27,20 @@ struct IdeaToTasksSheet: View {
     @State private var savedInEditor = 0
     @FocusState private var focused: UUID?
 
-    init(idea: Idea) {
+    /// With a day and time from the free-time suggestion, the first task starts there, and the idea
+    /// stays by default: working on it in that time is a step, not the end of it.
+    init(idea: Idea, day: Date? = nil, slot: TimeSlot? = nil, keepIdea: Bool = false) {
         self.idea = idea
         let lines = Self.lines(of: idea.text)
-        _drafts = State(initialValue: [Draft(title: lines.first ?? idea.text)])
+        var first = Draft(title: lines.first ?? idea.text)
+        if let day {
+            let calendar = Calendar.current
+            first.when = calendar.isDateInToday(day) ? .today : calendar.isDateInTomorrow(day) ? .tomorrow : .other
+            first.day = day
+            first.slot = slot
+        }
+        _drafts = State(initialValue: [first])
+        _keepIdea = State(initialValue: keepIdea)
     }
 
     /// The idea's lines without list marks, for splitting it one task per line.
@@ -105,6 +117,13 @@ struct IdeaToTasksSheet: View {
             if draft.wrappedValue.when == .other {
                 DatePicker("日付", selection: draft.day, displayedComponents: .date)
             }
+            if draft.wrappedValue.when != .anytime, let slot = draft.wrappedValue.slot {
+                HStack {
+                    Label(slot.label, systemImage: "clock").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.accent)
+                    Spacer()
+                    Button("時間を外す") { draft.wrappedValue.slot = nil }.font(.subheadline).buttonStyle(.borderless)
+                }
+            }
             Button("必須・締切・工程も書く", systemImage: "square.and.pencil") { openEditor(draft.wrappedValue) }
                 .font(.subheadline).buttonStyle(.borderless)
                 .disabled(draft.wrappedValue.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -123,8 +142,11 @@ struct IdeaToTasksSheet: View {
         case .anytime: day = nil
         }
         // The idea's words stay with the task, unless the task already says the same thing.
-        let memo = idea.text.trimmingCharacters(in: .whitespacesAndNewlines) == title ? "" : "アイデアから：\n\(idea.text)"
-        return TaskItem(title: title, plannedAt: day, memo: memo)
+        var memo = idea.text.trimmingCharacters(in: .whitespacesAndNewlines) == title ? "" : "アイデアから：\n\(idea.text)"
+        if !idea.notes.isEmpty { memo += (memo.isEmpty ? "" : "\n") + idea.notes.map { "・\($0.text)" }.joined(separator: "\n") }
+        var task = TaskItem(title: title, plannedAt: day, memo: memo)
+        if day != nil { task.slot = draft.slot }
+        return task
     }
 
     private func openEditor(_ draft: Draft) {

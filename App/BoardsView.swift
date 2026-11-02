@@ -176,69 +176,6 @@ struct AllTasksView: View {
 }
 
 @MainActor
-struct IdeasView: View {
-    @EnvironmentObject private var store: TaskStore
-    @State private var draft = ""
-    @State private var editing: Idea?
-    @State private var converting: Idea?
-    @FocusState private var writing: Bool
-    let onEditTask: (TaskItem) -> Void
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
-                Text("思いつきを、そのまま。やるかどうかは後で決められます。")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                VStack(alignment: .trailing) {
-                    TextField("アイデアや気になること", text: $draft, axis: .vertical)
-                        .lineLimit(3...8).frame(minHeight: 80, alignment: .topLeading).focused($writing)
-                    Button("書き留める", systemImage: "tray.and.arrow.down") {
-                        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if store.commit({ $0.ideas.insert(Idea(text: text), at: 0) }) { draft = ""; writing = false }
-                    }.buttonStyle(.borderedProminent)
-                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }.padding().background(.background, in: RoundedRectangle(cornerRadius: 16))
-                    // Taps inside the box keep writing; only taps elsewhere put the keyboard away.
-                    .contentShape(Rectangle()).onTapGesture { writing = true }
-                if store.notebook.ideas.isEmpty {
-                    ContentUnavailableView("まだ書き留めたものはありません", systemImage: "lightbulb", description: Text("アイデアは、タスク候補や必須の一覧には混ざりません。"))
-                }
-                ForEach(store.notebook.ideas.sorted { $0.createdAt > $1.createdAt }) { idea in
-                    VStack(alignment: .leading, spacing: 12) {
-                        Button { editing = idea } label: {
-                            Text(idea.text).foregroundStyle(.primary).frame(maxWidth: .infinity, alignment: .leading)
-                        }.buttonStyle(.plain)
-                        Text(idea.createdAt.shortDay).font(.caption).foregroundStyle(.secondary)
-                        HStack {
-                            Button { converting = idea } label: { Label("タスクにする", systemImage: "arrow.up.right").font(.subheadline) }
-                                .buttonStyle(.borderless)
-                            Spacer()
-                            Button(role: .destructive) {
-                                store.deleteIdea(idea.id)
-                            } label: { Image(systemName: "trash").frame(width: 44, height: 44) }
-                                .accessibilityLabel("アイデアを削除")
-                        }
-                    }.padding().background(.background, in: RoundedRectangle(cornerRadius: 16))
-                }
-            }.padding(16).frame(maxWidth: 820).frame(maxWidth: .infinity)
-        }.background(Palette.paper)
-            // The keyboard covers the tab bar; it must always be easy to put away.
-            .scrollDismissesKeyboard(.immediately)
-            .onTapGesture { writing = false }
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("完了") { writing = false }
-                }
-            }
-            .sheet(item: $editing) { idea in IdeaEditor(idea: idea) }
-            .sheet(item: $converting) { idea in IdeaToTasksSheet(idea: idea) }
-            .alert("保存・読み込みのお知らせ", isPresented: Binding(
-                get: { editing == nil && store.error != nil }, set: { if !$0 { store.error = nil } }
-            )) { Button("閉じる", role: .cancel) { store.error = nil } } message: { Text(store.error ?? "") }
-    }
-}
-
-@MainActor
 struct IdeaEditor: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.dismiss) private var dismiss

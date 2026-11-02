@@ -186,4 +186,26 @@ final class ScheduleTests: XCTestCase {
                        "11:00-12:00・予定")
         XCTAssertTrue(ReminderPlan.requests(for: book, now: morning, options: ReminderOptions(events: false), calendar: calendar).isEmpty)
     }
+
+    func testIdeasCoolDownAndOnlyGrownOnesGetHot() {
+        let written = day(-1)
+        var idea = Idea(text: "散歩中に聞ける勉強メモ", createdAt: written)
+        XCTAssertEqual(idea.warmth(now: friday, calendar: calendar), 2, "without a note an idea stops at 2")
+        idea.notes.append(IdeaNote(text: "金フレの音声を流用", createdAt: friday))
+        XCTAssertEqual(idea.warmth(now: friday, calendar: calendar), 3)
+        XCTAssertEqual(idea.warmth(now: day(4), calendar: calendar), 2)
+        XCTAssertEqual(idea.warmth(now: day(8), calendar: calendar), 1)
+        XCTAssertEqual(idea.warmth(now: day(15), calendar: calendar), 0)
+        idea.touchedAt = day(15)
+        XCTAssertEqual(idea.warmth(now: day(15), calendar: calendar), 3, "opening it warms it again")
+    }
+
+    func testFreeTimeSkipsWhatIsTakenAndThePast() {
+        let call = TaskItem(title: "電話", plannedAt: friday, scheduledTime: "9:00-10:00")
+        let work = Routine(title: "仕事", weekdays: [6], time: "10:00-15:00", isBlock: true, createdAt: day(-30))
+        let gaps = FreeTime.gaps(on: friday, tasks: [call], routines: [work], notBefore: 8 * 60 + 5, calendar: calendar)
+        XCTAssertEqual(gaps.map(\.label), ["15:00-22:00"], "8:15-9:00 is too short; 10-15 is held")
+        let evening = FreeTime.gaps(on: friday, tasks: [call], routines: [work], notBefore: 21 * 60 + 30, calendar: calendar)
+        XCTAssertTrue(evening.isEmpty)
+    }
 }

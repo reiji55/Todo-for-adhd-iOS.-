@@ -87,7 +87,7 @@ struct RootView: View {
         .sheet(isPresented: $settingsOpen) { SettingsView() }
         .sheet(item: $guide) { route in GuideSheet(cardID: route.id) }
         .alert("保存・読み込みのお知らせ", isPresented: Binding(
-            get: { selectedTab != Tab.ideas.rawValue && !presenting && store.error != nil },
+            get: { !presenting && store.error != nil },
             set: { if !$0 { store.error = nil } }
         )) { Button("閉じる", role: .cancel) { store.error = nil } } message: { Text(store.error ?? "") }
         .modifier(ShareJoinAlert(enabled: editor == nil && !focusOpen && !settingsOpen))

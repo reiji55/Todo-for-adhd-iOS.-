@@ -121,7 +121,19 @@ routines = [
     routine('睡眠', '0:00-7:00', isBlock=True, notify=False),
     routine('仕事（通勤含む）', '8:00-18:00', isBlock=True, notify=False, weekdays=[2, 3, 4, 5]),
 ]
-path.write_text(json.dumps(dict(version=1, tasks=tasks, ideas=[], boardCards=cards, routines=routines), ensure_ascii=False))
+def idea(text, written, touched=None, notes=()):
+    item = dict(id=str(uuid.uuid4()), text=text, createdAt=date(now - timedelta(days=written)),
+                notes=[dict(id=str(uuid.uuid4()), text=line, createdAt=date(now - timedelta(days=ago))) for line, ago in notes])
+    if touched is not None:
+        item['touchedAt'] = date(now - timedelta(days=touched))
+    return item
+ideas = [
+    idea('散歩中に聞ける勉強メモを作れそう', 2, 0, [('金フレの音声を流用できるか調べる', 1), ('1本5分くらいの長さにする', 0)]),
+    idea('部屋の配置を変えて、机を窓際に', 1, 1),
+    idea('TOEICの単語、通勤中にアプリで回せないか', 4),
+    idea('誕生日プレゼント、イヤホンケースはどうか', 16),
+]
+path.write_text(json.dumps(dict(version=1, tasks=tasks, ideas=ideas, boardCards=cards, routines=routines), ensure_ascii=False))
 PY
 launch -uiNoPrompt | tee "$RESULT_DIR/launch.txt"
 sleep 5
@@ -153,6 +165,9 @@ xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/all.png"
 launch -uiTab 3 >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/ideas.png"
+launch -uiTab 3 -uiOpenFirstIdea >/dev/null
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/idea-open.png"
 launch -uiTab 4 >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board.png"
