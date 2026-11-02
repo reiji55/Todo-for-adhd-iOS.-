@@ -411,7 +411,7 @@ struct IdeaDetailSheet: View {
                     Button(role: .destructive) { confirmDelete = true } label: {
                         Text("はがす").font(.subheadline.weight(.bold)).padding(.vertical, 8).padding(.horizontal, 6)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.bordered).tint(.red)
                 }
             }
             .padding(20)
