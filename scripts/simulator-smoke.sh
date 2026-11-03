@@ -178,6 +178,9 @@ xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/sharing-settings.png"
 launch -uiTab 1 >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/week.png"
+launch -uiTab 1 -uiWeekSheetOpen >/dev/null
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/week-sheet.png"
 launch -uiTab 0 >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/all.png"

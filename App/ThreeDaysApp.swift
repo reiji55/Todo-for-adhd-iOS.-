@@ -161,10 +161,16 @@ struct RootView: View {
                 .floatingAdd { quickAdd = QuickAddRoute(day: nil, kind: $0) }
         case .week:
             // The grid fills the screen, so the button floats over it instead of taking a row.
-            WeekView(onOpen: open, onStart: start, onAdd: { quickAdd = QuickAddRoute(day: $0) })
-                .overlay(alignment: .bottomTrailing) {
-                    FloatingAddButton { quickAdd = QuickAddRoute(day: nil, kind: $0) }.padding(.trailing, 14).padding(.bottom, 10)
-                }
+            if isPhone {
+                // iPhone: the week as shelves, with two days hour by hour in a sheet pulled up from below.
+                WeekShelfView(onOpen: open, onStart: start, onAdd: { quickAdd = QuickAddRoute(day: $0) },
+                              onPick: { quickAdd = QuickAddRoute(day: $1, kind: $0) })
+            } else {
+                WeekView(onOpen: open, onStart: start, onAdd: { quickAdd = QuickAddRoute(day: $0) })
+                    .overlay(alignment: .bottomTrailing) {
+                        FloatingAddButton { quickAdd = QuickAddRoute(day: nil, kind: $0) }.padding(.trailing, 14).padding(.bottom, 10)
+                    }
+            }
         case .all:
             AllTasksView(onOpen: open, onStart: start, onEditRoutine: { routineEditor = $0 })
                 .floatingAdd { quickAdd = QuickAddRoute(day: nil, kind: $0) }
