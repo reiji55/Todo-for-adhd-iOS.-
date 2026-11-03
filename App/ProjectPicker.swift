@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// The project of a task or routine, picked with a tap: a board card, a name already in use, or a new
-/// name typed once. When the project has a board card, the book beside it opens the card's やり方 over
-/// the editor, so whatever was typed is still there when it closes.
+/// The project of a task, routine or card, picked with a tap: a project already there, or a new name typed
+/// once. When the project has cards, the book beside it opens them over the editor, so whatever was typed
+/// is still there when it closes.
 @MainActor
 struct ProjectPicker: View {
     @EnvironmentObject private var store: TaskStore
     @Binding var project: String
-    let onOpenCard: (BoardCard) -> Void
+    var onOpenCard: ((BoardCard) -> Void)? = nil
     @State private var typing = false
     @FocusState private var focused: Bool
 
@@ -15,8 +15,7 @@ struct ProjectPicker: View {
     private static let typeTag = "\u{1}type"
 
     var body: some View {
-        let cards = store.notebook.boardCards
-        let card = BoardLink.card(forProject: project, in: cards)
+        let card = store.linkedCard(forProject: project)
         HStack(spacing: 4) {
             if typing {
                 TextField("プロジェクト名", text: $project)
@@ -24,9 +23,9 @@ struct ProjectPicker: View {
                     .onSubmit { typing = false }
                     .task { focused = true }
             } else {
-                Picker("プロジェクト", selection: selection) { options(cards) }.pickerStyle(.menu)
+                Picker("プロジェクト", selection: selection) { options }.pickerStyle(.menu)
             }
-            if let card { GuideBookButton(card: card) { onOpenCard(card) } }
+            if let card, let onOpenCard { GuideBookButton(card: card) { onOpenCard(card) } }
         }
         // Back to the menu once the name is written; only after the field really had the keyboard.
         .onChange(of: focused) { was, now in if was && !now { typing = false } }
@@ -38,19 +37,15 @@ struct ProjectPicker: View {
         })
     }
 
-    @ViewBuilder private func options(_ cards: [BoardCard]) -> some View {
-        let loose = BoardLink.looseProjects(tasks: store.notebook.tasks, routines: store.notebook.routines, cards: cards)
-        let listed = Set(cards.map(\.title) + loose)
+    @ViewBuilder private var options: some View {
+        let names = store.projectEntries.map(\.name)
         Text("なし").tag("")
-        // A name typed here but not saved yet, or an older one that only partly matches a card.
-        if !project.isEmpty && !listed.contains(project) { Text(project).tag(project) }
-        if !cards.isEmpty {
-            Section("ボードのカード") { ForEach(cards) { Text($0.title).tag($0.title) } }
+        // A name typed here but not saved yet, or one spelled differently from its project.
+        if !project.isEmpty && !names.contains(project) { Text(project).tag(project) }
+        if !names.isEmpty {
+            Section("プロジェクト") { ForEach(names, id: \.self) { Text($0).tag($0) } }
         }
-        if !loose.isEmpty {
-            Section("ボードにないプロジェクト") { ForEach(loose, id: \.self) { Text($0).tag($0) } }
-        }
-        Section { Label("名前を入力する…", systemImage: "keyboard").tag(Self.typeTag) }
+        Section { Label("新しい名前を入力する…", systemImage: "keyboard").tag(Self.typeTag) }
     }
 }
 

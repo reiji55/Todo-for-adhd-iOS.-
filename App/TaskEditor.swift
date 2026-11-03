@@ -129,6 +129,7 @@ struct TaskEditor: View {
                 }
                 Section("任意の属性") {
                     ProjectPicker(project: $task.project) { guide = GuideRoute(id: $0.id) }
+                    if !task.isEvent { MilestonePicker(project: task.project, milestoneID: $task.milestoneID) }
                     if !task.isEvent {
                         Picker("取り組む負荷", selection: $task.effort) {
                             ForEach(Effort.allCases) { Text($0.label).tag($0) }
@@ -171,6 +172,10 @@ struct TaskEditor: View {
             // A swipe down must not silently drop what was typed.
             .interactiveDismissDisabled(changed)
             .sheet(item: $guide) { route in GuideSheet(cardID: route.id) }
+            // A checkpoint belongs to one project; moving the task to another one lets go of it.
+            .onChange(of: task.project) { _, project in
+                task.milestoneID = MilestonePicker.fitting(task.milestoneID, project: project, in: store.notebook)
+            }
         }
         .confirmationDialog("編集した内容を破棄しますか？", isPresented: $confirmDiscard, titleVisibility: .visible) {
             Button("破棄して閉じる", role: .destructive) { dismiss() }

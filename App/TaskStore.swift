@@ -67,6 +67,7 @@ final class TaskStore: ObservableObject {
         accountObserver = NotificationCenter.default.addObserver(forName: .CKAccountChanged, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor [weak self] in self?.requestSync() }
         }
+        moveCardsIntoProjectsOnce()
     }
 
     /// The saved data, even while demo mode shows samples. Notifications are planned from this.
@@ -384,35 +385,141 @@ final class TaskStore: ObservableObject {
 
     func card(_ id: UUID) -> BoardCard? { notebook.boardCards.first { $0.id == id } }
 
-    func linkedCard(for task: TaskItem) -> BoardCard? { BoardLink.card(for: task, in: notebook.boardCards) }
+    /// A task's or routine's cards are those of its project.
+    func linkedCard(for task: TaskItem) -> BoardCard? { linkedCard(forProject: task.project) }
 
-    func linkedCard(forProject project: String) -> BoardCard? { BoardLink.card(forProject: project, in: notebook.boardCards) }
+    func linkedCard(forProject project: String) -> BoardCard? { projectCards(ProjectBook.key(project)).first }
+
+    func projectCards(_ key: String) -> [BoardCard] { key.isEmpty ? [] : ProjectBook.cards(key, in: notebook) }
 
     func linkedRoutines(for card: BoardCard) -> [Routine] {
-        notebook.routines.filter { BoardLink.card(forProject: $0.project, in: notebook.boardCards)?.id == card.id }
+        let key = ProjectBook.key(card.project)
+        return key.isEmpty ? [] : ProjectBook.routines(key, in: notebook)
     }
 
     func linkedTasks(for card: BoardCard) -> [TaskItem] {
-        BoardLink.tasks(for: card, in: notebook.tasks, cards: notebook.boardCards)
+        let key = ProjectBook.key(card.project)
+        return key.isEmpty ? [] : ProjectBook.tasks(key, in: notebook)
     }
 
     /// New cards go on top, where the person just typed.
     @discardableResult
     func upsertCard(_ card: BoardCard) -> Bool {
         commit { book in
-            if let i = book.boardCards.firstIndex(where: { $0.id == card.id }) {
-                // Renaming a card would silently cut its link to tasks named after it, so carry them along.
-                if BoardLink.normalized(book.boardCards[i].title) != BoardLink.normalized(card.title) {
-                    let linkedTasks = Set(BoardLink.tasks(for: book.boardCards[i], in: book.tasks, cards: book.boardCards).map(\.id))
-                    for j in book.tasks.indices where linkedTasks.contains(book.tasks[j].id) { book.tasks[j].project = card.title }
-                    for j in book.routines.indices
-                    where BoardLink.card(forProject: book.routines[j].project, in: book.boardCards)?.id == card.id {
-                        book.routines[j].project = card.title
-                    }
-                }
-                book.boardCards[i] = card
-            } else { book.boardCards.insert(card, at: 0) }
+            if let i = book.boardCards.firstIndex(where: { $0.id == card.id }) { book.boardCards[i] = card }
+            else { book.boardCards.insert(card, at: 0) }
         }
+    }
+
+    // MARK: Projects
+
+    var projectEntries: [ProjectBook.Entry] { ProjectBook.entries(notebook) }
+
+    func projectEntry(_ key: String) -> ProjectBook.Entry? { ProjectBook.entry(key, in: notebook) }
+
+    func savedProject(_ key: String) -> Project? { notebook.projects.first { ProjectBook.key($0.name) == key } }
+
+    /// Saves the goal, deadline and name. A new name reaches every task, routine and card of the project.
+    @discardableResult
+    func saveProject(_ project: Project, renaming oldKey: String?) -> Bool {
+        commit { book in
+            if let oldKey, !oldKey.isEmpty, oldKey != ProjectBook.key(project.name) {
+                ProjectBook.rename(oldKey, to: project.name, in: &book)
+            }
+            if let i = book.projects.firstIndex(where: { $0.id == project.id }) {
+                var merged = project
+                // Checkpoints are edited on the page, possibly while this form was open.
+                merged.milestones = book.projects[i].milestones
+                book.projects[i] = merged
+            } else { book.projects.append(project) }
+        }
+    }
+
+    func deleteProject(_ key: String) {
+        let name = projectEntry(key)?.name ?? ""
+        if commit({ ProjectBook.remove(key, from: &$0) }) { offerUndo("プロジェクト「\(name)」を外しました") }
+    }
+
+    /// Changes a project's record, making one first for a project that was only a name.
+    private func editProject(_ key: String, _ update: (inout Project) -> Void) -> Bool {
+        commit { book in
+            if let i = book.projects.firstIndex(where: { ProjectBook.key($0.name) == key }) {
+                update(&book.projects[i])
+            } else {
+                let name = ProjectBook.entry(key, in: book)?.name ?? key
+                var project = Project(name: name)
+                update(&project)
+                book.projects.append(project)
+            }
+        }
+    }
+
+    @discardableResult
+    func saveMilestone(_ milestone: Milestone, in key: String) -> Bool {
+        editProject(key) { project in
+            if let i = project.milestones.firstIndex(where: { $0.id == milestone.id }) { project.milestones[i] = milestone }
+            else { project.milestones.append(milestone) }
+        }
+    }
+
+    func deleteMilestone(_ id: UUID, in key: String) {
+        let title = savedProject(key)?.milestones.first { $0.id == id }?.title ?? ""
+        let removed = commit { book in
+            for i in book.projects.indices where ProjectBook.key(book.projects[i].name) == key {
+                book.projects[i].milestones.removeAll { $0.id == id }
+            }
+            for i in book.tasks.indices where book.tasks[i].milestoneID == id { book.tasks[i].milestoneID = nil }
+            for i in book.routines.indices where book.routines[i].milestoneID == id { book.routines[i].milestoneID = nil }
+        }
+        if removed { offerUndo("通過点「\(title)」を消しました") }
+    }
+
+    func moveMilestone(_ id: UUID, in key: String, by offset: Int) {
+        _ = editProject(key) { project in
+            guard let i = project.milestones.firstIndex(where: { $0.id == id }) else { return }
+            let j = min(max(i + offset, 0), project.milestones.count - 1)
+            guard i != j else { return }
+            project.milestones.swapAt(i, j)
+        }
+    }
+
+    /// ＋1 on a count, or the check on a checkpoint.
+    func advanceMilestone(_ id: UUID, in key: String) {
+        _ = editProject(key) { project in
+            guard let i = project.milestones.firstIndex(where: { $0.id == id }) else { return }
+            switch project.milestones[i].kind {
+            case .count: project.milestones[i].current += 1
+            case .check: project.milestones[i].isDone.toggle()
+            case .number, .tasks: break
+            }
+        }
+    }
+
+    /// A project grown from an idea: the idea's words become its origin, and its notes an overview card if asked.
+    @discardableResult
+    func makeProject(_ project: Project, from idea: Idea, overviewCard: Bool, keepIdea: Bool) -> Bool {
+        commit { book in
+            let key = ProjectBook.key(project.name)
+            if let i = book.projects.firstIndex(where: { ProjectBook.key($0.name) == key }) {
+                // Same name as a project already there: the idea joins it instead of splitting it in two.
+                if book.projects[i].origin.isEmpty { book.projects[i].origin = project.origin }
+                if book.projects[i].goal.isEmpty { book.projects[i].goal = project.goal }
+                if book.projects[i].deadline == nil { book.projects[i].deadline = project.deadline }
+            } else { book.projects.append(project) }
+            if overviewCard {
+                let notes = idea.notes.map { "・\($0.text)" }.joined(separator: "\n")
+                let detail = notes.isEmpty ? idea.text : "\(idea.text)\n\n\(notes)"
+                book.boardCards.insert(BoardCard(title: "概要", goal: project.goal, detail: detail, project: project.name), at: 0)
+            }
+            if !keepIdea { book.ideas.removeAll { $0.id == idea.id } }
+        }
+    }
+
+    /// Once per device: cards that tasks reached by name join that project (see ProjectBook.moveCardsIntoProjects).
+    private func moveCardsIntoProjectsOnce() {
+        let key = "horme.projectsMigrated"
+        guard !loadFailed, !UserDefaults.standard.bool(forKey: key) else { return }
+        if commit({ ProjectBook.moveCardsIntoProjects(&$0) }) { UserDefaults.standard.set(true, forKey: key) }
     }
 
     func deleteCard(_ id: UUID) {
@@ -661,6 +768,7 @@ final class TaskStore: ObservableObject {
             copy.tasks.sort { $0.id.uuidString < $1.id.uuidString }
             copy.ideas.sort { $0.id.uuidString < $1.id.uuidString }
             copy.routines.sort { $0.id.uuidString < $1.id.uuidString }
+            copy.projects.sort { $0.id.uuidString < $1.id.uuidString }
             return try? NotebookCodec.encode(copy)
         }
         return normalized(left) == normalized(right)
@@ -693,7 +801,21 @@ extension Notebook {
         let calendar = Calendar.current
         func day(_ offset: Int) -> Date { calendar.date(byAdding: .day, value: offset, to: now) ?? now }
         let earlier = day(-30)
+        let test = Milestone(title: "予想問題を解く", kind: .count, target: 5, current: 2, unit: "回", createdAt: earlier)
+        let part7 = Milestone(title: "長文を時間内に解く", kind: .tasks, createdAt: earlier)
+        let english = Project(name: "英語の勉強", goal: "本番で500点", deadline: day(41), milestones: [
+            Milestone(title: "単語帳を1周する", kind: .check, isDone: true, createdAt: earlier),
+            test,
+            Milestone(title: "模試で450点", kind: .number, target: 450, current: 420, unit: "点", createdAt: earlier),
+            part7
+        ], createdAt: earlier)
         return Notebook(tasks: [
+            TaskItem(title: "予想問題 第4回を解く", plannedAt: now, scheduledTime: "20:30-21:30", effort: .heavy,
+                     project: "英語の勉強", milestoneID: test.id),
+            TaskItem(title: "長文 時間を計って10問", plannedAt: day(-1), effort: .medium, project: "英語の勉強",
+                     completedAt: day(-1), milestoneID: part7.id),
+            TaskItem(title: "長文を1本解き直す", plannedAt: day(1), effort: .medium, project: "英語の勉強", milestoneID: part7.id),
+            TaskItem(title: "本番", plannedAt: day(41), project: "英語の勉強", isEvent: true),
             TaskItem(title: "提出書類を送る", plannedAt: now, deadline: now, isMust: true, effort: .light,
                      memo: "これはサンプルです。", steps: [Step(title: "宛先を確認する"), Step(title: "メールに添付して送る")]),
             TaskItem(title: "予約の電話をする", plannedAt: now, scheduledTime: "14:00-14:15", effort: .light,
@@ -711,11 +833,15 @@ extension Notebook {
             BoardCard(title: "部屋のリセット", purpose: "散らかった机が目に入ると、始める前に気力が削られるため。",
                       goal: "机の上に、いま使う物しかない状態。",
                       detail: "これはサンプルです。\n\n1. タイマーを15分にする\n2. 床の物を1か所に集める\n3. 机の上を「戻す・捨てる・保留」に分ける\n4. 保留は箱に入れて、今日は考えない\n\n▸ 15分で止める。全部やろうとしない",
-                      createdAt: earlier)
+                      createdAt: earlier, project: "部屋のリセット"),
+            BoardCard(title: "単語のやり方", purpose: "単語は毎日少しずつが効く。", goal: "未チェックの単語をなくす。",
+                      detail: "これはサンプルです。\n\n1. 日本語側を隠す\n2. 英語を見て2秒で意味を言う\n3. 出なければ即×。粘らない",
+                      createdAt: earlier, project: "英語の勉強")
         ], routines: [
+            Routine(title: "単語を回す", project: "英語の勉強", weekdays: [2, 3, 4, 5, 6], time: "19:00-19:30", createdAt: earlier),
             Routine(title: "部屋をリセットする", project: "部屋のリセット", time: "21:00-21:15", createdAt: earlier),
             Routine(title: "仕事", weekdays: [2, 3, 4, 5, 6], time: "9:00-18:00", notify: false, isBlock: true, createdAt: earlier),
             Routine(title: "睡眠", time: "0:00-7:00", notify: false, isBlock: true, createdAt: earlier)
-        ])
+        ], projects: [english])
     }
 }

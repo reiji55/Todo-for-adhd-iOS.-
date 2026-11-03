@@ -219,10 +219,15 @@ struct RoutineEditor: View {
                 Section {
                     TextField("ルーティン名（例：TOEICの単語）", text: $routine.title, axis: .vertical).font(.headline).lineLimit(1...3)
                     ProjectPicker(project: $routine.project) { guide = GuideRoute(id: $0.id) }
+                    if !routine.isBlock { MilestonePicker(project: routine.project, milestoneID: $routine.milestoneID, kinds: [.count]) }
                 } footer: {
-                    Text(store.linkedCard(forProject: routine.project) == nil
-                         ? "ボードのカードを選ぶと、ここや今日の画面の本のマークから、やり方をすぐ開けます。"
-                         : "本のマークで、ボードのやり方を開けます。閉じると、この画面に戻ります。")
+                    if routine.milestoneID != nil {
+                        Text("済んだ日ごとに、その通過点の回数が1つ進みます。")
+                    } else {
+                        Text(store.linkedCard(forProject: routine.project) == nil
+                             ? "カードのあるプロジェクトを選ぶと、ここや今日の画面の本のマークから、やり方をすぐ開けます。"
+                             : "本のマークで、プロジェクトのカードを開けます。閉じると、この画面に戻ります。")
+                    }
                 }
                 Section("くり返す曜日") { WeekdayPicker(weekdays: $routine.weekdays) }
                 Section {
@@ -278,6 +283,9 @@ struct RoutineEditor: View {
             .interactiveDismissDisabled(changed)
             // Over the editor, so closing the card comes back to what was being written.
             .sheet(item: $guide) { route in GuideSheet(cardID: route.id) }
+            .onChange(of: routine.project) { _, project in
+                routine.milestoneID = MilestonePicker.fitting(routine.milestoneID, project: project, in: store.notebook)
+            }
         }
         .confirmationDialog("編集した内容を破棄しますか？", isPresented: $confirmDiscard, titleVisibility: .visible) {
             Button("破棄して閉じる", role: .destructive) { dismiss() }

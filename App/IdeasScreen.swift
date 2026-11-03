@@ -428,6 +428,7 @@ struct IdeaDetailSheet: View {
     @State private var note = ""
     @State private var editing: Idea?
     @State private var planning: IdeaPlan?
+    @State private var projecting: Idea?
     @State private var confirmDelete = false
     @FocusState private var noteFocused: Bool
 
@@ -450,6 +451,7 @@ struct IdeaDetailSheet: View {
         .sheet(item: $planning) { plan in
             IdeaToTasksSheet(idea: plan.idea, day: plan.day, slot: plan.slot, keepIdea: plan.slot != nil)
         }
+        .sheet(item: $projecting) { IdeaToProjectSheet(idea: $0) }
         .storeErrorAlert()
     }
 
@@ -521,6 +523,11 @@ struct IdeaDetailSheet: View {
                     }
                     .buttonStyle(.bordered).tint(.red)
                 }
+                Button { projecting = idea } label: {
+                    Label("プロジェクトにする", systemImage: "flag").font(.subheadline.weight(.bold))
+                        .frame(maxWidth: .infinity).padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
             }
             .padding(20)
         }

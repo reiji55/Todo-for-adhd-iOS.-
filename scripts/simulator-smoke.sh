@@ -89,6 +89,8 @@ def task(title, **changes):
                 memo='', handoff='', resumeNote='', steps=[], createdAt=date(now))
     item.update(changes)
     return item
+M_COUNT = str(uuid.uuid4()).upper()
+M_TASKS = str(uuid.uuid4()).upper()
 tasks = [
     task('提出書類を送る', isMust=True, deadline=date(now),
          steps=[dict(id=str(uuid.uuid4()), title='宛先を確認する', isDone=False)]),
@@ -101,9 +103,26 @@ tasks = [
     task('買い物に行く', plannedAt=date(now + timedelta(days=1)), isEvent=True),
     task('提案の下書き 見出し3つ', project='仕事', scheduledTime='10:00-11:30', plannedAt=date(now + timedelta(days=1))),
     task('歯医者の予約', scheduledTime='13:00-13:30', plannedAt=date(now + timedelta(days=2))),
+    task('予想問題 第4回を解く', project='TOEIC', scheduledTime='20:30-21:30', milestoneID=M_COUNT),
+    task('Part7 時間を計って10問', project='TOEIC', completedAt=date(now - timedelta(days=1)), milestoneID=M_TASKS),
+    task('長文を1本解き直す', project='TOEIC', plannedAt=date(now + timedelta(days=1)), milestoneID=M_TASKS),
+    task('公式問題集の音声を落とす', project='TOEIC', plannedAt=None, milestoneID=M_TASKS),
+    task('TOEIC 本番', project='TOEIC', plannedAt=date(now + timedelta(days=41)), isEvent=True),
 ]
+def milestone(title, kind, **changes):
+    item = dict(id=str(uuid.uuid4()).upper(), title=title, kind=kind, target=1, current=0, unit='', isDone=False,
+                createdAt=date(now - timedelta(days=20)))
+    item.update(changes)
+    return item
+count_ms = milestone('予想問題を解く', 'count', target=5, current=3, unit='回')
+tasks_ms = milestone('Part7を時間内に解く', 'tasks')
+count_ms['id'] = M_COUNT; tasks_ms['id'] = M_TASKS
+projects = [dict(id=str(uuid.uuid4()), name='TOEIC', goal='本番で500点', deadline=date(now + timedelta(days=41)), origin='',
+                 createdAt=date(now - timedelta(days=20)), milestones=[
+                     milestone('単語帳（金フレ）を1周する', 'check', isDone=True), count_ms,
+                     milestone('模試で450点', 'number', target=450, current=420, unit='点'), tasks_ms])]
 cards = [
-    dict(id=str(uuid.uuid4()), title='TOEIC対策', createdAt=date(now - timedelta(days=30)),
+    dict(id=str(uuid.uuid4()), title='TOEIC対策', project='TOEIC', createdAt=date(now - timedelta(days=30)),
          purpose='11月は実測を兼ねた本番。形式と時間配分を体に入れる。',
          goal='11月の試験で650点。',
          detail='━━━ 90分の使い方 ━━━\n\n■ 20分 ── 単語（金フレ）\n■ 40分 ── 隔日で交互に\n■ 30分 ── Part7 を時間を計って精読\n\n━━━ 単語のやり方 ━━━\n\n1. 日本語側を赤シートで隠す\n2. 英語を見て2秒で意味を言う\n3. 出なければ即×。粘らない'),
@@ -133,7 +152,7 @@ ideas = [
     idea('TOEICの単語、通勤中にアプリで回せないか', 4),
     idea('誕生日プレゼント、イヤホンケースはどうか', 16),
 ]
-path.write_text(json.dumps(dict(version=1, tasks=tasks, ideas=ideas, boardCards=cards, routines=routines), ensure_ascii=False))
+path.write_text(json.dumps(dict(version=1, tasks=tasks, ideas=ideas, boardCards=cards, routines=routines, projects=projects), ensure_ascii=False))
 PY
 launch -uiNoPrompt | tee "$RESULT_DIR/launch.txt"
 sleep 5
@@ -174,6 +193,12 @@ xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board.png"
 launch -uiTab 4 -uiOpenFirstCard >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board-card.png"
+launch -uiTab 4 -uiOpenFirstProject >/dev/null
+sleep 5
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/project.png"
+launch -uiTab 4 -uiOpenFirstProject -uiProjectWay >/dev/null
+sleep 5
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/project-way.png"
 launch -uiTab 2 -uiOpenRoutine >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/routine-edit.png"

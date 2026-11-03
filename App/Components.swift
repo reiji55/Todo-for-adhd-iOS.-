@@ -53,7 +53,7 @@ private extension UIColor {
 extension TaskStore {
     /// Tasks linked to a board card take the card's color, so "TOEIC" and "TOEIC対策" match.
     func colorName(forProject project: String) -> String {
-        BoardLink.card(forProject: project, in: notebook.boardCards)?.title ?? project
+        project
     }
 }
 

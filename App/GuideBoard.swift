@@ -51,16 +51,60 @@ struct GuideBoardView: View {
     @State private var search = ""
     @State private var newCard: BoardCard?
     @State private var opened: GuideRoute?
+    @State private var newProject: Project?
+    @State private var openedProject: ProjectRoute?
+    /// 0: projects, 1: cards. Remembered, so the board opens where the person left it.
+    @AppStorage("horme.boardMode") private var mode = 0
     let onEdit: (TaskItem) -> Void
     let onStart: (TaskItem) -> Void
 
     var body: some View {
         let cards = store.notebook.boardCards
         let shown = search.isEmpty ? cards : cards.filter { card in
-            [card.title, card.purpose, card.goal, card.detail].joined(separator: "\n").localizedCaseInsensitiveContains(search)
+            [card.title, card.purpose, card.goal, card.detail, card.project].joined(separator: "\n").localizedCaseInsensitiveContains(search)
         }
+        let entries = store.projectEntries
+        let shownEntries = search.isEmpty ? entries : entries.filter { $0.name.localizedCaseInsensitiveContains(search) }
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                Picker("表示", selection: $mode) {
+                    Text("プロジェクト \(entries.count)").tag(0)
+                    Text("カード \(cards.count)").tag(1)
+                }
+                .pickerStyle(.segmented)
+                if mode == 0 {
+                    ProjectFolderList(entries: shownEntries, searching: !search.isEmpty)
+                } else {
+                    cardList(cards: cards, shown: shown)
+                }
+            }
+            .padding(16).frame(maxWidth: 1100).frame(maxWidth: .infinity)
+        }
+        .background(Palette.paper)
+        .searchable(text: $search, prompt: "名前・中身を検索")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button("プロジェクトを作る", systemImage: "flag") { newProject = Project(name: "") }
+                    Button("カードを書く", systemImage: "square.and.pencil") { newCard = BoardCard(title: "") }
+                } label: { Image(systemName: "plus") }
+                .accessibilityLabel("プロジェクトかカードを作る")
+            }
+        }
+        .sheet(item: $newCard) { card in GuideCardEditor(card: card) }
+        .sheet(item: $newProject) { project in ProjectEditor(project: project, originalKey: nil) }
+        .navigationDestination(for: GuideRoute.self) { route in
+            GuidePager(startID: route.id, cardIDs: shown.map(\.id), onEdit: onEdit, onStart: onStart)
+        }
+        .navigationDestination(item: $opened) { route in
+            GuidePager(startID: route.id, cardIDs: shown.map(\.id), onEdit: onEdit, onStart: onStart)
+        }
+        .navigationDestination(for: ProjectRoute.self) { route in ProjectPage(key: route.key, onEdit: onEdit, onStart: onStart) }
+        .navigationDestination(item: $openedProject) { route in ProjectPage(key: route.key, onEdit: onEdit, onStart: onStart) }
+        .onAppear(perform: openForScreenshot)
+    }
+
+    @ViewBuilder private func cardList(cards: [BoardCard], shown: [BoardCard]) -> some View {
                 Button { newCard = BoardCard(title: "") } label: {
                     Label("新しいカードを書く", systemImage: "square.and.pencil")
                         .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 14)
@@ -68,7 +112,7 @@ struct GuideBoardView: View {
                         .background(Palette.accent, in: RoundedRectangle(cornerRadius: 14))
                 }
                 .buttonStyle(.plain)
-                Text("タスクは「いま何をするか」、ボードは「どうやるか」。タスクやルーティンのプロジェクト名とカードの見出しが同じなら（どちらかに含まれていても可）、そこからこのカードを開けます。")
+                Text("タスクは「いま何をするか」、カードは「どうやるか」。カードをプロジェクトに入れると、そのプロジェクトのタスクやルーティンの本のマークから開けます。")
                     .font(.caption).foregroundStyle(.secondary)
                 if cards.isEmpty {
                     ContentUnavailableView("まだカードはありません", systemImage: "book.closed",
@@ -88,19 +132,6 @@ struct GuideBoardView: View {
                         }
                     }.padding(.top, 8)
                 }
-            }
-            .padding(16).frame(maxWidth: 1100).frame(maxWidth: .infinity)
-        }
-        .background(Palette.paper)
-        .searchable(text: $search, prompt: "見出し・中身を検索")
-        .sheet(item: $newCard) { card in GuideCardEditor(card: card) }
-        .navigationDestination(for: GuideRoute.self) { route in
-            GuidePager(startID: route.id, cardIDs: shown.map(\.id), onEdit: onEdit, onStart: onStart)
-        }
-        .navigationDestination(item: $opened) { route in
-            GuidePager(startID: route.id, cardIDs: shown.map(\.id), onEdit: onEdit, onStart: onStart)
-        }
-        .onAppear(perform: openForScreenshot)
     }
 
     private func face(_ card: BoardCard, stacked: Bool, ids: [UUID]) -> some View {
@@ -123,9 +154,16 @@ struct GuideBoardView: View {
 
     private func openForScreenshot() {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-uiOpenFirstCard"), let first = store.notebook.boardCards.first {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-uiOpenFirstCard"), let first = store.notebook.boardCards.first {
+            mode = 1
             opened = GuideRoute(id: first.id)
         }
+        if arguments.contains("-uiOpenFirstProject"), let first = store.projectEntries.first(where: { $0.project != nil }) {
+            mode = 0
+            openedProject = ProjectRoute(key: first.key)
+        }
+        if arguments.contains("-uiBoardProjects") { mode = 0 }
         #endif
     }
 }
@@ -157,7 +195,7 @@ struct GuideCardFace: View {
         .foregroundStyle(.primary)
         .padding(.horizontal, 20).padding(.top, 17).padding(.bottom, stacked ? 30 : 22)
         .frame(maxWidth: .infinity, minHeight: stacked ? 0 : 150, alignment: .topLeading)
-        .background(ProjectColor.tint(for: card.title), in: RoundedRectangle(cornerRadius: 24))
+        .background(ProjectColor.tint(for: card.colorName), in: RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.2), radius: 6, y: -2)
         .contentShape(RoundedRectangle(cornerRadius: 24))
     }
@@ -211,7 +249,7 @@ struct GuidePager: View {
                 }
             }
         }
-        .background(ProjectColor.tint(for: store.card(current)?.title ?? "").ignoresSafeArea())
+        .background(ProjectColor.tint(for: store.card(current)?.colorName ?? "").ignoresSafeArea())
         .navigationTitle("").navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         // iPhone uses Horme's own tab bar; the system one must stay hidden on pushed pages too.
@@ -323,7 +361,7 @@ struct GuideCardView: View {
                 Text("やり方").font(.caption.weight(.bold)).tracking(2).foregroundStyle(.secondary)
                     .padding(.bottom, 2)
                     .overlay(alignment: .bottom) {
-                        Rectangle().fill(ProjectColor.color(for: card.title) ?? Palette.accent).frame(height: 2.5)
+                        Rectangle().fill(ProjectColor.color(for: card.colorName) ?? Palette.accent).frame(height: 2.5)
                     }
                 if card.detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text("手順やコツを書いておくと、タスクを始めるときにすぐ見返せます。")
@@ -334,7 +372,9 @@ struct GuideCardView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            if let onEdit, let onStart { tasksSection(card, onEdit: onEdit, onStart: onStart) }
+            if let onEdit, let onStart, !card.project.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                tasksSection(card, onEdit: onEdit, onStart: onStart)
+            }
         }
     }
 
@@ -344,7 +384,7 @@ struct GuideCardView: View {
         let open = tasks.filter { !$0.isComplete }
             .sorted { ($0.plannedAt ?? .distantFuture) < ($1.plannedAt ?? .distantFuture) }
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeading(title: "このカードのタスク", subtitle: "プロジェクト名が「\(card.title)」に当たる未完了のタスク")
+            SectionHeading(title: "プロジェクトのタスク", subtitle: "「\(card.project)」の未完了のタスク")
             if open.isEmpty {
                 Text("未完了のタスクはありません。").font(.subheadline).foregroundStyle(.secondary)
             }
@@ -359,11 +399,11 @@ struct GuideCardView: View {
             }
             let routines = store.linkedRoutines(for: card)
             if !routines.isEmpty {
-                Text("このカードのルーティン").font(.subheadline.weight(.semibold)).padding(.top, 6)
+                Text("プロジェクトのルーティン").font(.subheadline.weight(.semibold)).padding(.top, 6)
                 ForEach(routines) { routine in RoutineRow(routine: routine) { editingRoutine = $0 } }
             }
-            Button { onEdit(TaskItem(title: "", plannedAt: Date(), project: card.title)) } label: {
-                Label("このカードのタスクを今日に追加", systemImage: "plus")
+            Button { onEdit(TaskItem(title: "", plannedAt: Date(), project: card.project)) } label: {
+                Label("このプロジェクトのタスクを今日に追加", systemImage: "plus")
             }.frame(minHeight: 44)
         }
         // This card is already open, so its tasks and routines need no book back to it.
@@ -395,8 +435,12 @@ struct GuideCardEditor: View {
                 Section {
                     TextField("見出し（例：TOEIC対策）", text: $card.title, axis: .vertical).font(.headline).lineLimit(1...4)
                         .focused($titleFocused)
+                }
+                Section {
+                    ProjectPicker(project: $card.project)
                 } footer: {
-                    Text("タスクのプロジェクト名と同じ見出しにすると、そのタスクからこのカードを開けます。")
+                    Text(card.project.isEmpty ? "プロジェクトに入れると、そのプロジェクトのタスクやルーティンから開けます。入れなければ、ボードのカードとして残ります。"
+                         : "「\(card.project)」のページと、そのタスク・ルーティンの本のマークから開けます。")
                 }
                 Section("目的（なぜやるのか）") {
                     TextField("例：本番の形式と時間配分に慣れる", text: $card.purpose, axis: .vertical).lineLimit(2...8)

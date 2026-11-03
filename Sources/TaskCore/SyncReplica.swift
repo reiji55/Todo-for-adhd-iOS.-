@@ -36,7 +36,7 @@ public struct SyncRecord: Codable, Equatable {
     public static func decode(_ data: Data, expectedID: String) throws -> Self {
         let record = try JSONDecoder().decode(Self.self, from: data)
         guard record.id == expectedID, record.version == 1,
-              record.id == "session" || ["task_", "idea_", "card_", "routine_"].contains(where: record.id.hasPrefix) else {
+              record.id == "session" || ["task_", "idea_", "card_", "routine_", "project_"].contains(where: record.id.hasPrefix) else {
             throw NotebookError.unsupportedVersion
         }
         guard record.fields["alive"] != nil else { throw NotebookError.invalidData }
@@ -100,12 +100,13 @@ public struct SyncReplica: Codable, Equatable {
         var ideas: [Idea] = []
         var cards: [(rank: Int, card: BoardCard)] = []
         var routines: [Routine] = []
+        var projects: [Project] = []
         var session: Session?
         for record in records.values {
             guard try Self.object(record.fields["alive"]?.value) as? Bool == true else { continue }
             var object: [String: Any] = [:]
             for (key, field) in record.fields where key != "alive" && !key.hasPrefix("step.")
-                && !key.hasPrefix("done.") && !key.hasPrefix("move.") && !key.hasPrefix("time.") {
+                && !key.hasPrefix("done.") && !key.hasPrefix("move.") && !key.hasPrefix("time.") && !key.hasPrefix("ms.") {
                 object[key] = try Self.object(field.value)
             }
             if record.id.hasPrefix("task_") {
@@ -153,6 +154,20 @@ public struct SyncReplica: Codable, Equatable {
                 let routine: Routine = try Self.decodeObject(object)
                 guard record.id == "routine_\(routine.id.uuidString)" else { throw NotebookError.invalidData }
                 routines.append(routine)
+            } else if record.id.hasPrefix("project_") {
+                // Each checkpoint is its own field, so one ＋1 and another checkpoint's edit both survive.
+                var milestones: [(rank: Int, value: [String: Any])] = []
+                for (key, field) in record.fields where key.hasPrefix("ms.") {
+                    guard var value = try Self.object(field.value) as? [String: Any] else { continue }
+                    let rank = value.removeValue(forKey: "rank") as? Int ?? 0
+                    milestones.append((rank, value))
+                }
+                object["milestones"] = milestones.sorted {
+                    $0.rank == $1.rank ? "\($0.value["id"] ?? "")" < "\($1.value["id"] ?? "")" : $0.rank < $1.rank
+                }.map(\.value)
+                let project: Project = try Self.decodeObject(object)
+                guard record.id == "project_\(project.id.uuidString)" else { throw NotebookError.invalidData }
+                projects.append(project)
             } else if record.id == "session" {
                 // A session is one field to keep its task/step/time together.
                 if let data = record.fields["value"]?.value { session = try Self.decoder().decode(Session.self, from: data) }
@@ -164,7 +179,9 @@ public struct SyncReplica: Codable, Equatable {
         // Board order is the person's choice, so it travels as a rank like steps do.
         cards.sort { $0.rank == $1.rank ? $0.card.id.uuidString < $1.card.id.uuidString : $0.rank < $1.rank }
         routines.sort { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
-        let book = Notebook(tasks: tasks, ideas: ideas, boardCards: cards.map(\.card), routines: routines, activeSession: session)
+        projects.sort { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
+        let book = Notebook(tasks: tasks, ideas: ideas, boardCards: cards.map(\.card), routines: routines, activeSession: session,
+                            projects: projects)
         // Validate remote data before replacing a user's local view.
         _ = try NotebookCodec.decode(NotebookCodec.encode(book))
         return book
@@ -211,6 +228,18 @@ public struct SyncReplica: Codable, Equatable {
                 fields["move." + day] = try jsonData(["toDay": move.toDay, "time": move.time])
             }
             result["routine_\(routine.id.uuidString)"] = fields
+        }
+        for project in book.projects {
+            var fields = try fieldsFor(project)
+            fields.removeValue(forKey: "milestones")
+            for (index, milestone) in project.milestones.enumerated() {
+                guard var value = try JSONSerialization.jsonObject(with: encoder().encode(milestone)) as? [String: Any] else {
+                    throw NotebookError.invalidData
+                }
+                value["rank"] = index
+                fields["ms." + milestone.id.uuidString] = try jsonData(value)
+            }
+            result["project_\(project.id.uuidString)"] = fields
         }
         if let session = book.activeSession { result["session"] = ["value": try encoder().encode(session)] }
         return result
@@ -283,6 +312,13 @@ public struct ShareMergePreview {
                 routine.id = UUID(); conflictingRoutines += 1
             }
             combined.routines.append(routine)
+        }
+        for var project in local.projects {
+            if let existing = remote.projects.first(where: { $0.id == project.id }) {
+                if Self.samePersistedContents(Notebook(projects: [existing]), Notebook(projects: [project])) { continue }
+                project.id = UUID()
+            }
+            combined.projects.append(project)
         }
         if combined.activeSession == nil, var active = local.activeSession {
             active.taskID = remappedTasks[active.taskID] ?? active.taskID

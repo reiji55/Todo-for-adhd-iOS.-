@@ -356,11 +356,17 @@ struct SectionHeading: View {
 /// A board card opened from a task, over whatever screen the person was on.
 @MainActor
 struct GuideSheet: View {
+    @EnvironmentObject private var store: TaskStore
     @Environment(\.dismiss) private var dismiss
     let cardID: UUID
+    /// The other cards of the same project, to swipe through.
+    private var siblings: [UUID] {
+        guard let card = store.card(cardID), !ProjectBook.key(card.project).isEmpty else { return [cardID] }
+        return store.projectCards(ProjectBook.key(card.project)).map(\.id)
+    }
     var body: some View {
         NavigationStack {
-            GuidePager(startID: cardID, cardIDs: [cardID])
+            GuidePager(startID: cardID, cardIDs: siblings)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
         }
     }
