@@ -22,6 +22,15 @@ enum ProjectText {
         }
     }
 
+    /// For the camps on the mountain: "3/5", "420/450", "済".
+    static func short(_ milestone: Milestone, in book: Notebook) -> String {
+        switch milestone.kind {
+        case .check: return milestone.isDone ? "済" : ""
+        default:
+            return "\(number(ProjectBook.value(of: milestone, in: book)))/\(number(ProjectBook.target(of: milestone, in: book)))"
+        }
+    }
+
     /// "12/14"
     static func day(_ date: Date) -> String {
         let c = Calendar.current.dateComponents([.month, .day], from: date)
@@ -112,9 +121,10 @@ struct ProjectFolder: View {
                 }
                 .padding(.leading, 136)
                 .offset(y: 16)
-                Text(entry.name).font(.system(size: 15, weight: .heavy)).lineLimit(1)
+                Text(entry.name.count > 12 ? String(entry.name.prefix(11)) + "…" : entry.name)
+                    .font(.system(size: 15, weight: .heavy)).lineLimit(1).fixedSize()
                     .padding(.horizontal, 14).frame(height: 32)
-                    .frame(minWidth: 120, maxWidth: 220, alignment: .leading)
+                    .frame(minWidth: 120, alignment: .leading)
                     .background(face, in: UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12))
             }
             .frame(height: cards.isEmpty ? 32 : 48, alignment: .bottomLeading)
@@ -317,14 +327,14 @@ struct MountainScene: View {
                 SketchShape(points: [CGPoint(x: 0, y: 300), CGPoint(x: 60, y: 232), CGPoint(x: 120, y: 262), CGPoint(x: 190, y: 172),
                                      CGPoint(x: 260, y: 242), CGPoint(x: 330, y: 192), CGPoint(x: 390, y: 232), CGPoint(x: 390, y: 440),
                                      CGPoint(x: 0, y: 440)])
-                    .fill(Color(red: 0.08, green: 0.086, blue: 0.10))
+                    .fill(Self.farRange)
                 SketchShape(points: [CGPoint(x: 0, y: 440), CGPoint(x: 0, y: 392), CGPoint(x: 70, y: 332), CGPoint(x: 130, y: 302),
                                      CGPoint(x: 180, y: 232), CGPoint(x: 230, y: 150), CGPoint(x: 255, y: 110), CGPoint(x: 280, y: 150),
                                      CGPoint(x: 330, y: 232), CGPoint(x: 390, y: 292), CGPoint(x: 390, y: 440)])
-                    .fill(Color(red: 0.114, green: 0.125, blue: 0.149))
+                    .fill(Self.mountain)
                 SketchShape(points: [CGPoint(x: 230, y: 150), CGPoint(x: 255, y: 110), CGPoint(x: 280, y: 150), CGPoint(x: 268, y: 146),
                                      CGPoint(x: 256, y: 158), CGPoint(x: 244, y: 146)])
-                    .fill(Color(red: 0.19, green: 0.204, blue: 0.235))
+                    .fill(Self.snow)
                 SketchShape(points: [CGPoint(x: 0, y: 440), CGPoint(x: 0, y: 412), CGPoint(x: 90, y: 382), CGPoint(x: 200, y: 402),
                                      CGPoint(x: 300, y: 386), CGPoint(x: 390, y: 406), CGPoint(x: 390, y: 440)])
                     .fill(Self.ground)
@@ -337,14 +347,15 @@ struct MountainScene: View {
                 ForEach(Array(camps.enumerated()), id: \.element.id) { index, camp in
                     let point = place(MountainRoute.point(at: Double(index + 1) / Double(camps.count + 1)))
                     MilestoneDot(progress: camp.progress, color: color, size: 14)
-                        .background(Circle().fill(Color(red: 0.114, green: 0.125, blue: 0.149)))
+                        .background(Circle().fill(Self.mountain))
                         .position(point)
                     if camps.count <= 6 {
                         let right = index % 2 == 0
                         Text(camp.label).font(.system(size: 11, weight: .bold)).lineLimit(1)
-                            .foregroundStyle(camp.progress >= 1 ? Color.white.opacity(0.6) : color)
-                            .frame(width: 140, alignment: right ? .leading : .trailing)
-                            .position(x: point.x + (right ? 84 : -84), y: point.y)
+                            .minimumScaleFactor(0.8)
+                            .foregroundStyle(camp.progress >= 1 ? Color.secondary : color)
+                            .frame(width: 150, alignment: right ? .leading : .trailing)
+                            .position(x: point.x + (right ? 89 : -89), y: point.y)
                     }
                 }
                 Group {
@@ -370,8 +381,19 @@ struct MountainScene: View {
         .frame(width: 22, height: 30, alignment: .topLeading)
     }
 
-    static let sky = Color(red: 0.043, green: 0.047, blue: 0.063)
-    static let ground = Color(red: 0.149, green: 0.165, blue: 0.188)
+    static let sky = adaptive(light: 0xE4EAF0, dark: 0x0B0C10)
+    static let ground = adaptive(light: 0xD2DAE3, dark: 0x262A30)
+    static let farRange = adaptive(light: 0xC7D0DA, dark: 0x14161A)
+    static let mountain = adaptive(light: 0xADB8C5, dark: 0x1D2026)
+    static let snow = adaptive(light: 0xF7F9FB, dark: 0x30343C)
+
+    static func adaptive(light: UInt32, dark: UInt32) -> Color {
+        Color(UIColor { traits in
+            let rgb = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(red: CGFloat((rgb >> 16) & 0xff) / 255, green: CGFloat((rgb >> 8) & 0xff) / 255,
+                           blue: CGFloat(rgb & 0xff) / 255, alpha: 1)
+        })
+    }
 }
 
 struct FlagShape: Shape {
@@ -458,7 +480,6 @@ struct ProjectPage: View {
         .navigationTitle(pastHero ? (store.projectEntry(key)?.name ?? "") : "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(pastHero ? .automatic : .hidden, for: .navigationBar)
-        .toolbarColorScheme(pastHero ? nil : .dark, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -510,7 +531,7 @@ struct ProjectPage: View {
             }
             .coordinateSpace(name: "project")
             .onPreferenceChange(HeroBottomKey.self) { bottom in
-                let past = bottom < 90
+                let past = bottom < 150
                 if past != pastHero { pastHero = past }
             }
             .background((pastHero ? Palette.paper : MountainScene.sky).ignoresSafeArea())
@@ -542,7 +563,7 @@ struct ProjectPage: View {
     private func hero(_ entry: ProjectBook.Entry, color: Color, progress: Double?, onHint: @escaping () -> Void) -> some View {
         let book = store.notebook
         let milestones = entry.project?.milestones ?? []
-        let camps = milestones.map { MountainCamp(id: $0.id, label: "\($0.title) \(ProjectText.value($0, in: book))",
+        let camps = milestones.map { MountainCamp(id: $0.id, label: "\($0.title) \(ProjectText.short($0, in: book))",
                                                   progress: ProjectBook.progress(of: $0, in: book)) }
         let next = entry.project.flatMap { ProjectBook.next(of: $0, in: book) }
         return VStack(spacing: 0) {
@@ -597,7 +618,6 @@ struct ProjectPage: View {
             .background(MountainScene.ground)
         }
         .background(MountainScene.sky)
-        .environment(\.colorScheme, .dark)
     }
 
     private func summitLine(_ entry: ProjectBook.Entry) -> String {
