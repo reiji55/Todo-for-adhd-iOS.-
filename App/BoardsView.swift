@@ -122,7 +122,10 @@ struct AllTasksView: View {
         }
         Toggle("完了したタスクを表示（\(done.count)件）", isOn: $showDone).font(.subheadline).padding(.vertical)
         if showDone {
-            ForEach(done) { task in AgendaRow(item: AgendaItem(task: task), onOpen: onOpen) }
+            Text("横にスワイプすると、完全に削除できます。").font(.caption).foregroundStyle(.secondary)
+            ForEach(done) { task in
+                AgendaRow(item: AgendaItem(task: task), onOpen: onOpen).swipeToDelete { store.delete(task.id) }
+            }
         }
     }
 

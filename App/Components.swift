@@ -336,3 +336,58 @@ enum EnergyMemory {
         UserDefaults.standard.set(DayKey.of(now), forKey: "energyDay")
     }
 }
+
+/// A row that slides left to show a delete button behind it, for things that are finished and only
+/// in the way. A tap on the slid row slides it back.
+private struct SwipeToDelete: ViewModifier {
+    let onDelete: () -> Void
+    @State private var offset: CGFloat = 0
+    @State private var settled: CGFloat = 0
+    private let reveal: CGFloat = 80
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if settled < 0 {
+                    Color.clear.contentShape(Rectangle()).onTapGesture { close() }
+                }
+            }
+            .offset(x: offset)
+            .background(alignment: .trailing) {
+                Button(role: .destructive) {
+                    close()
+                    onDelete()
+                } label: {
+                    Image(systemName: "trash.fill").font(.title3).foregroundStyle(.white)
+                        .frame(width: reveal - 10).frame(maxHeight: .infinity)
+                        .background(Color.red, in: RoundedRectangle(cornerRadius: 14))
+                }
+                .buttonStyle(.plain)
+                .opacity(min(1, -offset / 30))
+                .accessibilityLabel("完全に削除")
+            }
+            // Alongside the scroll view's own drag, and only for sideways movement.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 18)
+                    .onChanged { value in
+                        guard abs(value.translation.width) > abs(value.translation.height) * 1.2 else { return }
+                        offset = min(0, max(-reveal * 1.5, settled + value.translation.width))
+                    }
+                    .onEnded { value in
+                        let end = settled + value.predictedEndTranslation.width
+                        withAnimation(.snappy(duration: 0.25)) { offset = end < -reveal / 2 ? -reveal : 0 }
+                        settled = offset
+                    }
+            )
+            .accessibilityAction(named: "完全に削除", onDelete)
+    }
+
+    private func close() {
+        withAnimation(.snappy(duration: 0.25)) { offset = 0 }
+        settled = 0
+    }
+}
+
+extension View {
+    func swipeToDelete(_ onDelete: @escaping () -> Void) -> some View { modifier(SwipeToDelete(onDelete: onDelete)) }
+}

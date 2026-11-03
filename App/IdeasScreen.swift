@@ -11,6 +11,8 @@ struct IdeasView: View {
     @State private var opened: UUID?
     @State private var writing = false
     @State private var planning: IdeaPlan?
+    /// After 入れる: the free time chosen, waiting for a note to be tapped.
+    @State private var placing: FreeSlotPick?
     let onEditTask: (TaskItem) -> Void
 
     var body: some View {
@@ -21,9 +23,10 @@ struct IdeasView: View {
         let cold = ideas.filter { $0.warmth(now: now) == 0 }.sorted { $0.lastTouched > $1.lastTouched }
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                if let hottest = warm.first {
-                    FreeTimeCard(idea: hottest, now: now) { day, slot in
-                        planning = IdeaPlan(idea: hottest, day: day, slot: slot)
+                if !ideas.isEmpty {
+                    FreeTimeCard(now: now, placing: $placing) { idea, day, slot in
+                        placing = nil
+                        planning = IdeaPlan(idea: idea, day: day, slot: slot)
                     }
                 }
                 if ideas.isEmpty {
@@ -35,7 +38,7 @@ struct IdeasView: View {
                         Button("付箋を書く") { writing = true }.buttonStyle(.borderedProminent)
                     }
                 }
-                StickyWall(ideas: warm, now: now, onOpen: { opened = $0.id }, onPlan: { planning = IdeaPlan(idea: $0) })
+                StickyWall(ideas: warm, now: now, selecting: placing != nil, onOpen: open, onPlan: { planning = IdeaPlan(idea: $0) })
                 if !cold.isEmpty {
                     HStack(spacing: 8) {
                         Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 1)
@@ -43,7 +46,7 @@ struct IdeasView: View {
                         Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 1)
                     }
                     .padding(.top, 8)
-                    StickyWall(ideas: cold, now: now, onOpen: { opened = $0.id }, onPlan: { planning = IdeaPlan(idea: $0) })
+                    StickyWall(ideas: cold, now: now, selecting: placing != nil, onOpen: open, onPlan: { planning = IdeaPlan(idea: $0) })
                 }
             }
             .padding(16).frame(maxWidth: 820).frame(maxWidth: .infinity)
@@ -77,6 +80,24 @@ struct IdeasView: View {
 }
 
 struct IdeaRoute: Identifiable { let id: UUID }
+
+/// A free stretch picked on the card, as the day and the time to work in it.
+struct FreeSlotPick: Equatable {
+    var day: Date
+    var slot: TimeSlot
+}
+
+extension IdeasView {
+    /// A tap on a note opens it, or, after 入れる, puts it in the chosen free time.
+    fileprivate func open(_ idea: Idea) {
+        if let pick = placing {
+            placing = nil
+            planning = IdeaPlan(idea: idea, day: pick.day, slot: pick.slot)
+        } else {
+            opened = idea.id
+        }
+    }
+}
 
 /// What the task sheet should start from: an idea, and maybe a free time for it.
 struct IdeaPlan: Identifiable {
@@ -134,6 +155,7 @@ struct WarmthBar: View {
 struct StickyWall: View {
     let ideas: [Idea]
     let now: Date
+    var selecting = false
     let onOpen: (Idea) -> Void
     let onPlan: (Idea) -> Void
 
@@ -149,7 +171,8 @@ struct StickyWall: View {
     private func column(_ items: [Idea], tilt: Double) -> some View {
         VStack(spacing: 16) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, idea in
-                PeelableSticky(idea: idea, now: now, tilt: index % 2 == 0 ? tilt : -tilt * 0.6, onOpen: onOpen, onPlan: onPlan)
+                PeelableSticky(idea: idea, now: now, tilt: index % 2 == 0 ? tilt : -tilt * 0.6, selecting: selecting,
+                               onOpen: onOpen, onPlan: onPlan)
             }
         }
         .frame(maxWidth: .infinity, alignment: .top)
@@ -165,6 +188,7 @@ struct PeelableSticky: View {
     let idea: Idea
     let now: Date
     let tilt: Double
+    var selecting = false
     let onOpen: (Idea) -> Void
     let onPlan: (Idea) -> Void
     @State private var pull: CGSize = .zero
@@ -176,6 +200,16 @@ struct PeelableSticky: View {
         let progress = min(1, hypot(pull.width, pull.height) / distance)
         Button { onOpen(idea) } label: { StickyNote(idea: idea, now: now, tilt: tilt, peel: progress) }
             .buttonStyle(.plain)
+            // Held and dragged up onto a free time on the card, it goes into that time.
+            .draggable(idea.id.uuidString) {
+                StickyNote(idea: idea, now: now).frame(width: 150).opacity(0.9)
+            }
+            .overlay {
+                if selecting {
+                    RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.accent, style: StrokeStyle(lineWidth: 2.5, dash: [7, 5]))
+                        .rotationEffect(.degrees(tilt)).padding(-4).allowsHitTesting(false)
+                }
+            }
             .contextMenu {
                 Button("タスクにする", systemImage: "arrow.up.right") { onPlan(idea) }
                 Button("はがす", systemImage: "trash", role: .destructive) { store.deleteIdea(idea.id) }
@@ -325,10 +359,12 @@ func freeDayLabel(_ day: Date) -> String {
 /// When there is more than one free stretch, each is a chip to pick from.
 struct FreeTimeCard: View {
     @EnvironmentObject private var store: TaskStore
-    let idea: Idea
     let now: Date
-    let onPlace: (Date, TimeSlot) -> Void
+    @Binding var placing: FreeSlotPick?
+    /// A note dropped on a free time, or tapped after 入れる.
+    let onPlace: (Idea, Date, TimeSlot) -> Void
     @State private var chosen = 0
+    @State private var targeted: Int?
 
     private let from = 8 * 60, to = 22 * 60
 
@@ -350,18 +386,41 @@ struct FreeTimeCard: View {
                 }
             }
             bar(options: options, index: index).frame(height: 14).accessibilityHidden(true)
-            if options.count > 1 { chips(options: options, index: index) }
-            HStack(alignment: .center, spacing: 10) {
-                (Text("\(freeDayLabel(pick.day)) \(pick.gap.label) が空き。").bold().foregroundColor(Palette.accent)
-                 + Text("「\(Self.firstLine(idea.text))」を入れる？"))
-                    .font(.subheadline).fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Button("入れる") { onPlace(pick.day, ideaWorkSlot(pick.gap)) }
-                    .font(.subheadline.weight(.bold)).buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+            HStack(spacing: 10) {
+                chips(options: options, index: index)
+                Button(placing == nil ? "入れる" : "やめる") {
+                    withAnimation(.snappy) {
+                        placing = placing == nil ? FreeSlotPick(day: pick.day, slot: ideaWorkSlot(pick.gap)) : nil
+                    }
+                }
+                .font(.subheadline.weight(.bold))
+                .buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+                .tint(placing == nil ? Palette.accent : .secondary)
+            }
+            if let placing {
+                Label("入れる付箋をタップ（\(freeDayLabel(placing.day)) \(placing.slot.label)）", systemImage: "hand.tap")
+                    .font(.footnote.weight(.semibold)).foregroundStyle(Palette.accent)
+                    .transition(.opacity)
             }
         }
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 18).fill(Color(uiColor: .secondarySystemGroupedBackground)))
+        .overlay {
+            if targeted != nil {
+                RoundedRectangle(cornerRadius: 18).strokeBorder(Palette.accent, lineWidth: 2).allowsHitTesting(false)
+            }
+        }
+        .onChange(of: chosen) { _, _ in
+            // A different time chosen while waiting for a note: wait for the note with the new time.
+            if placing != nil { placing = FreeSlotPick(day: options[min(chosen, options.count - 1)].day,
+                                                       slot: ideaWorkSlot(options[min(chosen, options.count - 1)].gap)) }
+        }
+    }
+
+    private func drop(_ items: [String], into option: (day: Date, gap: TimeSlot)) -> Bool {
+        guard let id = items.first.flatMap(UUID.init(uuidString:)), let idea = store.idea(id) else { return false }
+        onPlace(idea, option.day, ideaWorkSlot(option.gap))
+        return true
     }
 
     /// The chosen day's schedule: taken time gray, every free stretch that day tinted, the chosen one lit.
@@ -398,7 +457,7 @@ struct FreeTimeCard: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(options.indices, id: \.self) { option in
-                    let selected = option == index
+                    let selected = option == index || targeted == option
                     Button("\(freeDayLabel(options[option].day)) \(options[option].gap.label)") {
                         withAnimation(.snappy) { chosen = option }
                     }
@@ -406,10 +465,17 @@ struct FreeTimeCard: View {
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .foregroundStyle(selected ? Color.white : Color.primary)
                     .background(Capsule().fill(selected ? Palette.accent : Color(uiColor: .tertiarySystemFill)))
+                    .scaleEffect(targeted == option ? 1.08 : 1)
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(selected ? .isSelected : [])
+                    .dropDestination(for: String.self) { items, _ in drop(items, into: options[option]) } isTargeted: { over in
+                        withAnimation(.snappy) {
+                            if over { targeted = option; chosen = option } else if targeted == option { targeted = nil }
+                        }
+                    }
                 }
             }
+            .padding(.vertical, 4)
         }
     }
 
