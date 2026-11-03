@@ -354,8 +354,6 @@ struct GuideCardView: View {
                     AgendaRow(item: AgendaItem(task: task), onOpen: { _ in onEdit(task) }, onStart: onStart)
                 }
             }
-            // This card is already open, so its tasks do not need a link back to it.
-            .environment(\.openGuide, nil)
             if tasks.count > open.count {
                 Text("完了 \(tasks.count - open.count)件").font(.caption).foregroundStyle(.secondary)
             }
@@ -368,6 +366,8 @@ struct GuideCardView: View {
                 Label("このカードのタスクを今日に追加", systemImage: "plus")
             }.frame(minHeight: 44)
         }
+        // This card is already open, so its tasks and routines need no book back to it.
+        .environment(\.openGuide, nil)
     }
 }
 

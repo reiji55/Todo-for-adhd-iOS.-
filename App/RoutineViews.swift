@@ -98,37 +98,49 @@ struct RoutineList: View {
 @MainActor
 struct RoutineRow: View {
     @EnvironmentObject private var store: TaskStore
+    @Environment(\.openGuide) private var openGuide
     let routine: Routine
     var raised = false
     let onEdit: (Routine) -> Void
     var body: some View {
-        Button { onEdit(routine) } label: {
-            HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(ProjectColor.color(for: store.colorName(forProject: routine.project)) ?? Color.secondary.opacity(0.4))
-                    .frame(width: 3, height: 36)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(routine.title).font(.body.weight(.medium)).foregroundStyle(.primary)
-                    HStack(spacing: 8) {
-                        Text(routine.weekdayLabel)
-                        if let slot = routine.slot { Text(slot.label).font(.clock) } else { Text("時間なし") }
-                        if routine.isBlock { Text("押さえるだけ") }
-                        if !routine.project.isEmpty { ProjectTag(name: routine.project) }
-                    }.font(.caption).foregroundStyle(.secondary)
+        HStack(spacing: 0) {
+            Button { onEdit(routine) } label: {
+                HStack(spacing: 12) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(ProjectColor.color(for: store.colorName(forProject: routine.project)) ?? Color.secondary.opacity(0.4))
+                        .frame(width: 3, height: 36)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(routine.title).font(.body.weight(.medium)).foregroundStyle(.primary)
+                        HStack(spacing: 8) {
+                            Text(routine.weekdayLabel)
+                            if let slot = routine.slot { Text(slot.label).font(.clock) } else { Text("時間なし") }
+                            if routine.isBlock { Text("押さえるだけ") }
+                            if !routine.project.isEmpty { ProjectTag(name: routine.project) }
+                        }.font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if routine.notify && !routine.isBlock && routine.slot != nil {
+                        Image(systemName: "bell.fill").font(.caption).foregroundStyle(.secondary).accessibilityLabel("通知あり")
+                    }
                 }
-                Spacer()
-                if routine.notify && !routine.isBlock && routine.slot != nil {
-                    Image(systemName: "bell.fill").font(.caption).foregroundStyle(.secondary).accessibilityLabel("通知あり")
-                }
+                .padding(.vertical, 12).padding(.leading, 12)
+                .contentShape(Rectangle())
+            }.buttonStyle(.plain)
+            if let card = store.linkedCard(forProject: routine.project), let openGuide {
+                GuideBookButton(card: card) { openGuide(card.id) }
+            }
+            // The chevron opens the editor too; the row's own button already says so to VoiceOver.
+            Button { onEdit(routine) } label: {
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-            }
-            .padding(12)
-            .background {
-                if raised { RaisedCardBackground() }
-                else { RoundedRectangle(cornerRadius: 14).fill(Color(uiColor: .secondarySystemGroupedBackground)) }
-            }
-            .opacity(routine.isPaused ? 0.55 : 1)
-        }.buttonStyle(.plain)
+                    .frame(width: 22, height: 44).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityHidden(true)
+        }
+        .padding(.trailing, 8)
+        .background {
+            if raised { RaisedCardBackground() }
+            else { RoundedRectangle(cornerRadius: 14).fill(Color(uiColor: .secondarySystemGroupedBackground)) }
+        }
+        .opacity(routine.isPaused ? 0.55 : 1)
     }
 }
 
@@ -136,6 +148,7 @@ struct RoutineRow: View {
 @MainActor
 struct RoutineSettingsView: View {
     @State private var editing: Routine?
+    @State private var guide: GuideRoute?
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 10) { RoutineList(onEdit: { editing = $0 }) }.padding(16)
@@ -143,6 +156,9 @@ struct RoutineSettingsView: View {
         .background(Palette.paper)
         .navigationTitle("ルーティン").navigationBarTitleDisplayMode(.inline)
         .sheet(item: $editing) { RoutineEditor(routine: $0) }
+        // Settings is itself a sheet, so a row's book opens the card from here rather than from the root.
+        .sheet(item: $guide) { GuideSheet(cardID: $0.id) }
+        .environment(\.openGuide, OpenGuideAction { guide = GuideRoute(id: $0) })
     }
 }
 
@@ -186,6 +202,7 @@ struct RoutineEditor: View {
     @State private var routine: Routine
     @State private var showDelete = false
     @State private var confirmDiscard = false
+    @State private var guide: GuideRoute?
 
     init(routine: Routine) {
         initial = routine
@@ -201,16 +218,12 @@ struct RoutineEditor: View {
             Form {
                 Section {
                     TextField("ルーティン名（例：TOEICの単語）", text: $routine.title, axis: .vertical).font(.headline).lineLimit(1...3)
-                    HStack {
-                        TextField("プロジェクト", text: $routine.project)
-                        if !store.notebook.boardCards.isEmpty {
-                            Menu {
-                                ForEach(store.notebook.boardCards) { card in Button(card.title) { routine.project = card.title } }
-                            } label: { Image(systemName: "book").frame(width: 44, height: 44) }
-                                .accessibilityLabel("ボードのカードから選ぶ")
-                        }
-                    }
-                } footer: { Text("ボードのカードと同じプロジェクトにすると、やり方をすぐ開けます。") }
+                    ProjectPicker(project: $routine.project) { guide = GuideRoute(id: $0.id) }
+                } footer: {
+                    Text(store.linkedCard(forProject: routine.project) == nil
+                         ? "ボードのカードを選ぶと、ここや今日の画面の本のマークから、やり方をすぐ開けます。"
+                         : "本のマークで、ボードのやり方を開けます。閉じると、この画面に戻ります。")
+                }
                 Section("くり返す曜日") { WeekdayPicker(weekdays: $routine.weekdays) }
                 Section {
                     TimeSlotFields(slot: $routine.slot)
@@ -263,6 +276,8 @@ struct RoutineEditor: View {
                 }
             }
             .interactiveDismissDisabled(changed)
+            // Over the editor, so closing the card comes back to what was being written.
+            .sheet(item: $guide) { route in GuideSheet(cardID: route.id) }
         }
         .confirmationDialog("編集した内容を破棄しますか？", isPresented: $confirmDiscard, titleVisibility: .visible) {
             Button("破棄して閉じる", role: .destructive) { dismiss() }

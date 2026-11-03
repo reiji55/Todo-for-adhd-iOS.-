@@ -107,7 +107,7 @@ struct TaskEditor: View {
                     TextField(task.isEvent ? "場所や持ち物など" : "このタスクについて覚えておきたいこと", text: $task.memo, axis: .vertical).lineLimit(3...12)
                     if let card = store.linkedCard(for: task) {
                         Button { guide = GuideRoute(id: card.id) } label: {
-                            Label("ボードのやり方：\(card.title)", systemImage: "book")
+                            Label("ボードのやり方：\(card.title)", systemImage: "book.closed")
                         }
                     }
                 } header: { Text("メモ") }
@@ -128,17 +128,7 @@ struct TaskEditor: View {
                 footer: { Text("内容を保存して共有できます。AIへの自動送信はありません。") }
                 }
                 Section("任意の属性") {
-                    HStack {
-                        TextField("プロジェクト", text: $task.project)
-                        if !store.notebook.boardCards.isEmpty {
-                            Menu {
-                                ForEach(store.notebook.boardCards) { card in
-                                    Button(card.title) { task.project = card.title }
-                                }
-                            } label: { Image(systemName: "book").frame(width: 44, height: 44) }
-                                .accessibilityLabel("ボードのカードから選ぶ")
-                        }
-                    }
+                    ProjectPicker(project: $task.project) { guide = GuideRoute(id: $0.id) }
                     if !task.isEvent {
                         Picker("取り組む負荷", selection: $task.effort) {
                             ForEach(Effort.allCases) { Text($0.label).tag($0) }
@@ -240,7 +230,7 @@ struct FocusView: View {
                                     if !card.detail.isEmpty { Text(card.detail).textSelection(.enabled) }
                                     if card.isBlank { Text("このカードにはまだ何も書いていません。").foregroundStyle(.secondary) }
                                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
-                            } label: { Label("やり方：\(card.title)", systemImage: "book") }
+                            } label: { Label("やり方：\(card.title)", systemImage: "book.closed") }
                         }
                         if !task.memo.isEmpty {
                             DisclosureGroup("メモ") { Text(task.memo).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8) }

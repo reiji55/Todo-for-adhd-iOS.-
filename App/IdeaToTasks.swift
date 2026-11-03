@@ -20,6 +20,9 @@ struct IdeaToTasksSheet: View {
     let idea: Idea
     @State private var drafts: [Draft]
     @State private var keepIdea: Bool
+    /// The project every task made here goes into: an idea often becomes a step of something bigger.
+    @State private var project = ""
+    @State private var guide: GuideRoute?
     /// A draft opened in the full editor, and how many were saved from there.
     @State private var detailed: TaskItem?
     @State private var detailedDraft: UUID?
@@ -78,6 +81,12 @@ struct IdeaToTasksSheet: View {
                          : "大きければ分けて、すぐ始められる大きさに。")
                 }
                 Section {
+                    ProjectPicker(project: $project) { guide = GuideRoute(id: $0.id) }
+                } footer: {
+                    Text(project.isEmpty ? "どこかのプロジェクトの一歩なら、ここで選ぶと作るタスクすべてに付きます。"
+                         : "作るタスクすべてが「\(project)」に入ります。")
+                }
+                Section {
                     Toggle("アイデアを残す", isOn: $keepIdea)
                 } footer: {
                     Text(keepIdea ? "残しておくと、あとでここから続きのタスクを作れます。" : "タスクを作ると、このアイデアは一覧から消えます。")
@@ -92,6 +101,7 @@ struct IdeaToTasksSheet: View {
                 }
             }
             .sheet(item: $detailed, onDismiss: afterEditor) { task in TaskEditor(task: task, original: nil) }
+            .sheet(item: $guide) { route in GuideSheet(cardID: route.id) }
         }
         .storeErrorAlert()
     }
@@ -190,6 +200,7 @@ struct IdeaToTasksSheet: View {
         if !idea.notes.isEmpty { memo += (memo.isEmpty ? "" : "\n") + idea.notes.map { "・\($0.text)" }.joined(separator: "\n") }
         var task = TaskItem(title: title, plannedAt: day, memo: memo)
         if day != nil { task.slot = draft.slot }
+        task.project = project.trimmingCharacters(in: .whitespacesAndNewlines)
         return task
     }
 

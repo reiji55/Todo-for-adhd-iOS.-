@@ -115,6 +115,9 @@ struct AgendaRow: View {
         return nil
     }
 
+    /// The board card for the item's project, when there is a way to open it from here.
+    private var guide: BoardCard? { openGuide == nil ? nil : store.linkedCard(forProject: item.project) }
+
     var body: some View {
         let done = item.isDone
         let task = self.task
@@ -155,8 +158,11 @@ struct AgendaRow: View {
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain)
+            // The method of a routine (or a task) one tap away, at the end of its row.
+            if let card = guide, let openGuide { GuideBookButton(card: card) { openGuide(card.id) } }
         }
-        .padding(.vertical, 9).padding(.leading, style == .timeline ? 0 : 6).padding(.trailing, style == .timeline ? 4 : 10)
+        .padding(.vertical, 9).padding(.leading, style == .timeline ? 0 : 6)
+        .padding(.trailing, style == .timeline || guide != nil ? 4 : 10)
         .background { surface }
         .overlay(alignment: .leading) {
             if style != .timeline, let color = ProjectColor.color(for: store.colorName(forProject: item.project)) {
@@ -233,6 +239,9 @@ struct AgendaRow: View {
 
     @ViewBuilder private func menu(_ task: TaskItem?) -> some View {
         Button(item.isRoutine ? "ルーティンを編集" : item.isEvent ? "イベントを編集" : "編集", systemImage: "pencil") { onOpen(item) }
+        if let card = guide, let openGuide {
+            Button("やり方を見る（\(card.title)）", systemImage: "book.closed") { openGuide(card.id) }
+        }
         if item.isRoutine && !item.isBlock {
             if store.isTiming(item) {
                 Button("計測をやめる（完了にしない）", systemImage: "stop") { store.cancelRoutineTimer() }
@@ -252,9 +261,6 @@ struct AgendaRow: View {
             }
             Button("削除", systemImage: "trash", role: .destructive) { store.delete(task.id) }
         } else if let task {
-            if let card = store.linkedCard(for: task), let openGuide {
-                Button("やり方を見る（\(card.title)）", systemImage: "book") { openGuide(card.id) }
-            }
             Button(task.isMust ? "必須を外す" : "必須にする", systemImage: "star") { store.change(task.id) { $0.isMust.toggle() } }
             Button("今日に移す", systemImage: "sun.max") { store.change(task.id) { $0.plannedAt = Date() } }
             Button("明日に移す", systemImage: "arrow.right") {

@@ -13,6 +13,14 @@ final class BoardCardTests: XCTestCase {
         XCTAssertNil(BoardLink.card(for: TaskItem(title: "一文字", project: "T"), in: cards))
     }
 
+    func testLooseProjectsLeaveOutCardNamesAndPutTheMostUsedFirst() {
+        let cards = [BoardCard(title: "TOEIC対策")]
+        let tasks = [TaskItem(title: "a", project: "家"), TaskItem(title: "b", project: "仕事"),
+                     TaskItem(title: "c", project: " 仕事 "), TaskItem(title: "d", project: "TOEIC"), TaskItem(title: "e")]
+        let routines = [Routine(title: "r", project: "家計", time: "9:00-10:00")]
+        XCTAssertEqual(BoardLink.looseProjects(tasks: tasks, routines: routines, cards: cards), ["仕事", "家", "家計"])
+    }
+
     func testExactTitleWinsOverEarlierPartialMatch() {
         let broad = BoardCard(title: "仕事の段取り")
         let exact = BoardCard(title: "仕事")

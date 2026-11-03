@@ -28,6 +28,19 @@ public enum BoardLink {
     public static func tasks(for card: BoardCard, in tasks: [TaskItem], cards: [BoardCard]) -> [TaskItem] {
         tasks.filter { self.card(for: $0, in: cards)?.id == card.id }
     }
+
+    /// Project names in use that no card stands for, the most used first, so they can be picked
+    /// again without retyping. Names that differ only in case or spaces count as one.
+    public static func looseProjects(tasks: [TaskItem], routines: [Routine], cards: [BoardCard]) -> [String] {
+        var seen: [String: (name: String, count: Int)] = [:]
+        for raw in tasks.map(\.project) + routines.map(\.project) {
+            let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = normalized(name)
+            guard !key.isEmpty, card(forProject: name, in: cards) == nil else { continue }
+            seen[key, default: (name, 0)].count += 1
+        }
+        return seen.values.sorted { $0.count != $1.count ? $0.count > $1.count : $0.name < $1.name }.map(\.name)
+    }
 }
 
 public struct BoardImport {

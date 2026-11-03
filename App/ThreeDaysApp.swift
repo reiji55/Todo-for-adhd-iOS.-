@@ -305,6 +305,10 @@ struct RootView: View {
         if let i = arguments.firstIndex(of: "-uiTab"), arguments.indices.contains(i + 1), let tab = Int(arguments[i + 1]) {
             selectedTab = tab
         }
+        // The editor of a routine that has a project, to capture the project picker and its book.
+        if arguments.contains("-uiOpenRoutine") {
+            routineEditor = store.notebook.routines.first { !$0.project.isEmpty && !$0.isBlock }
+        }
         #endif
     }
 

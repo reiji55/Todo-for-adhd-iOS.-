@@ -174,4 +174,7 @@ xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board.png"
 launch -uiTab 4 -uiOpenFirstCard >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board-card.png"
+launch -uiTab 2 -uiOpenRoutine >/dev/null
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/routine-edit.png"
 # Screenshots and launch logs verify startup and layout, not every interaction.
