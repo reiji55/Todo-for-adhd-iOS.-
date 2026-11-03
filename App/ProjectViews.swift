@@ -411,11 +411,6 @@ struct FlagShape: Shape {
 
 // MARK: - The project page
 
-private struct HeroBottomKey: PreferenceKey {
-    static var defaultValue: CGFloat = .infinity
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
-
 /// Fades a section in from a little below as it scrolls into view. Only on the way in, and not at all
 /// when the person has asked for less motion.
 private struct RevealOnScroll: ViewModifier {
@@ -512,9 +507,10 @@ struct ProjectPage: View {
                         withAnimation(.easeInOut(duration: 0.6)) { proxy.scrollTo("content", anchor: .top) }
                     }
                     .containerRelativeFrame(.vertical)
-                    .background(GeometryReader { geometry in
-                        Color.clear.preference(key: HeroBottomKey.self, value: geometry.frame(in: .named("project")).maxY)
-                    })
+                    // The scroll view runs under the bar, so the mountain is past once its foot is above the bar.
+                    .onGeometryChange(for: Bool.self) { $0.frame(in: .global).maxY < 150 } action: { past in
+                        if past != pastHero { pastHero = past }
+                    }
                     VStack(alignment: .leading, spacing: 26) {
                         header(entry, color: color, progress: progress).id("content").revealOnScroll()
                         way(entry, color: color).revealOnScroll()
@@ -528,11 +524,6 @@ struct ProjectPage: View {
                     // Rows link back to the project's cards; here the cards are already on the page.
                     .environment(\.openGuide, nil)
                 }
-            }
-            .coordinateSpace(name: "project")
-            .onPreferenceChange(HeroBottomKey.self) { bottom in
-                let past = bottom < 150
-                if past != pastHero { pastHero = past }
             }
             .background((pastHero ? Palette.paper : MountainScene.sky).ignoresSafeArea())
             .onAppear {
