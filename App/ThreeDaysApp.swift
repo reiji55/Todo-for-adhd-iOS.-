@@ -113,6 +113,9 @@ struct RootView: View {
             }
             else { store.clearRecentlyDone() }
         }
+        .onChange(of: store.projectToOpen) { _, key in
+            if key != nil { selectedTab = Tab.board.rawValue; compactColumn = .detail }
+        }
         // Rows checked off stay visible on the screen they were checked on, and go once the person moves on.
         .onChange(of: selectedTab) { _, _ in store.clearRecentlyDone() }
         // Planned from the saved data, so demo mode never replaces real reminders.

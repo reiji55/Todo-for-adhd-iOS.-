@@ -26,6 +26,8 @@ final class TaskStore: ObservableObject {
     @Published private(set) var isDemo = false
     /// A short "取り消す" offer after an action that is hard to redo by hand (deleting, moving, bulk changes).
     @Published private(set) var undoOffer: UndoOffer?
+    /// A project to show on the board as soon as the screen in front of it closes (one just made from an idea).
+    @Published var projectToOpen: String?
     /// Recent states in memory, only to serve the undo offer. Never written to disk or synced.
     private var history: [Notebook] = []
     private let repository: SharedStoreRepository

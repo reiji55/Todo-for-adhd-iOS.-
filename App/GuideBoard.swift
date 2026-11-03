@@ -44,6 +44,8 @@ enum GuideSummary {
     }
 }
 
+struct ProjectCardRoute: Hashable, Identifiable { let id: UUID }
+
 @MainActor
 struct GuideBoardView: View {
     @EnvironmentObject private var store: TaskStore
@@ -53,6 +55,9 @@ struct GuideBoardView: View {
     @State private var opened: GuideRoute?
     @State private var newProject: Project?
     @State private var openedProject: ProjectRoute?
+    @State private var openedProjectCard: ProjectCardRoute?
+    /// A project asked for elsewhere, about to be opened.
+    @State private var pendingOpen: String?
     /// 0: projects, 1: cards. Remembered, so the board opens where the person left it.
     @AppStorage("horme.boardMode") private var mode = 0
     let onEdit: (TaskItem) -> Void
@@ -73,7 +78,7 @@ struct GuideBoardView: View {
                 }
                 .pickerStyle(.segmented)
                 if mode == 0 {
-                    ProjectFolderList(entries: shownEntries, searching: !search.isEmpty)
+                    ProjectFolderList(entries: shownEntries, searching: !search.isEmpty) { openedProjectCard = ProjectCardRoute(id: $0.id) }
                 } else {
                     cardList(cards: cards, shown: shown)
                 }
@@ -101,7 +106,15 @@ struct GuideBoardView: View {
         }
         .navigationDestination(for: ProjectRoute.self) { route in ProjectPage(key: route.key, onEdit: onEdit, onStart: onStart) }
         .navigationDestination(item: $openedProject) { route in ProjectPage(key: route.key, onEdit: onEdit, onStart: onStart) }
-        .onAppear(perform: openForScreenshot)
+        // A card tapped on a folder pages through the cards of that project.
+        .navigationDestination(item: $openedProjectCard) { route in
+            GuidePager(startID: route.id, cardIDs: projectSiblings(of: route.id), onEdit: onEdit, onStart: onStart)
+        }
+        .onAppear {
+            openForScreenshot()
+            openRequestedProject()
+        }
+        .onChange(of: store.projectToOpen) { _, _ in openRequestedProject() }
     }
 
     @ViewBuilder private func cardList(cards: [BoardCard], shown: [BoardCard]) -> some View {
@@ -132,6 +145,23 @@ struct GuideBoardView: View {
                         }
                     }.padding(.top, 8)
                 }
+    }
+
+    private func projectSiblings(of id: UUID) -> [UUID] {
+        guard let card = store.card(id), !ProjectBook.key(card.project).isEmpty else { return [id] }
+        return store.projectCards(ProjectBook.key(card.project)).map(\.id)
+    }
+
+    /// Opens a project asked for elsewhere (one just made from an idea), once the sheets over it have gone.
+    private func openRequestedProject() {
+        guard let key = store.projectToOpen, pendingOpen == nil else { return }
+        pendingOpen = key
+        mode = 0
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            openedProject = ProjectRoute(key: key)
+            pendingOpen = nil
+            if store.projectToOpen == key { store.projectToOpen = nil }
+        }
     }
 
     private func face(_ card: BoardCard, stacked: Bool, ids: [UUID]) -> some View {

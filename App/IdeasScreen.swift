@@ -451,7 +451,8 @@ struct IdeaDetailSheet: View {
         .sheet(item: $planning) { plan in
             IdeaToTasksSheet(idea: plan.idea, day: plan.day, slot: plan.slot, keepIdea: plan.slot != nil)
         }
-        .sheet(item: $projecting) { IdeaToProjectSheet(idea: $0) }
+        // Made into a project: this note steps aside so the project can open on the board.
+        .sheet(item: $projecting, onDismiss: { if store.projectToOpen != nil { dismiss() } }) { IdeaToProjectSheet(idea: $0) }
         .storeErrorAlert()
     }
 
