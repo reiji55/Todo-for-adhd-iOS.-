@@ -74,6 +74,8 @@ struct RootView: View {
             }
         }
         .overlay(alignment: .bottom) { undoToast }
+        // ▶ on a routine row starts its timer and opens its focus screen.
+        .environment(\.startRoutine, StartRoutineAction { startRoutine($0) })
         .animation(.snappy, value: store.undoOffer)
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardShown = true }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardShown = false }
@@ -87,7 +89,7 @@ struct RootView: View {
             case .idea: IdeaQuickSheet()
             }
         }
-        .sheet(isPresented: $focusOpen) { FocusView() }
+        .sheet(isPresented: $focusOpen) { RoutineFocusView() }
         .sheet(isPresented: $settingsOpen) { SettingsView() }
         .sheet(item: $guide) { route in GuideSheet(cardID: route.id) }
         .alert("保存・読み込みのお知らせ", isPresented: Binding(
@@ -157,28 +159,28 @@ struct RootView: View {
     @ViewBuilder private func screen(_ tab: Tab) -> some View {
         switch tab {
         case .today:
-            TodayView(onOpen: open, onStart: start, onWeek: { selectedTab = Tab.week.rawValue })
+            TodayView(onOpen: open, onWeek: { selectedTab = Tab.week.rawValue })
                 .floatingAdd { quickAdd = QuickAddRoute(day: nil, kind: $0) }
         case .week:
             // The grid fills the screen, so the button floats over it instead of taking a row.
             if isPhone {
                 // iPhone: the week as shelves, with two days hour by hour in a sheet pulled up from below.
-                WeekShelfView(onOpen: open, onStart: start, onAdd: { quickAdd = QuickAddRoute(day: $0) },
+                WeekShelfView(onOpen: open, onAdd: { quickAdd = QuickAddRoute(day: $0) },
                               onPick: { quickAdd = QuickAddRoute(day: $1, kind: $0) })
             } else {
-                WeekView(onOpen: open, onStart: start, onAdd: { quickAdd = QuickAddRoute(day: $0) })
+                WeekView(onOpen: open, onAdd: { quickAdd = QuickAddRoute(day: $0) })
                     .overlay(alignment: .bottomTrailing) {
                         FloatingAddButton { quickAdd = QuickAddRoute(day: nil, kind: $0) }.padding(.trailing, 14).padding(.bottom, 10)
                     }
             }
         case .all:
-            AllTasksView(onOpen: open, onStart: start, onEditRoutine: { routineEditor = $0 })
+            AllTasksView(onOpen: open, onEditRoutine: { routineEditor = $0 })
                 .floatingAdd { quickAdd = QuickAddRoute(day: nil, kind: $0) }
         case .ideas:
             // Ideas and the board have their own way to add, so the ⊕ would only confuse there.
             IdeasView(onEditTask: edit)
         case .board:
-            GuideBoardView(onEdit: edit, onStart: start)
+            GuideBoardView(onEdit: edit)
         }
     }
 
@@ -222,7 +224,7 @@ struct RootView: View {
                         // The demo notice sits under the title bar, inside the screen, so no button is covered.
                         .safeAreaInset(edge: .top, spacing: 0) { demoBar }
                         .safeAreaInset(edge: .bottom, spacing: 0) {
-                            Color.clear.frame(height: HormeTabBar.height + (store.notebook.activeSession != nil ? Self.activeBarHeight : 0))
+                            Color.clear.frame(height: HormeTabBar.height + (store.routineRun != nil ? Self.activeBarHeight : 0))
                         }
                 }
                 .toolbar(.hidden, for: .tabBar)
@@ -233,21 +235,22 @@ struct RootView: View {
 
     static let activeBarHeight: CGFloat = 56
 
+    /// The routine being timed, above the tab bar; a tap reopens its focus screen.
     @ViewBuilder private var activeTaskBar: some View {
-        if let session = store.notebook.activeSession, let task = store.task(session.taskID) {
+        if let run = store.routineRun, let routine = store.routine(run.routineID) {
             Button { focusOpen = true } label: {
                 HStack(spacing: 12) {
-                    ElapsedTimer(start: session.startedAt, minutes: plannedMinutes(task.slot), size: 28, tint: .white)
+                    ElapsedTimer(start: run.startedAt, minutes: plannedMinutes(routine.slot), size: 28, tint: .white)
                     VStack(alignment: .leading) {
                         Text("取り組み中").font(.caption)
-                        Text(task.actionTitle).font(.subheadline.weight(.medium)).lineLimit(1)
+                        Text(routine.title).font(.subheadline.weight(.medium)).lineLimit(1)
                     }
                     Spacer()
                     Image(systemName: "chevron.up")
                 }
                 .padding(.horizontal, 20).frame(height: Self.activeBarHeight)
                 .foregroundStyle(.white).background(Palette.accent)
-            }.accessibilityLabel("取り組み中：\(task.actionTitle)。集中画面を開く")
+            }.accessibilityLabel("取り組み中：\(routine.title)。集中画面を開く")
         }
     }
 
@@ -319,20 +322,25 @@ struct RootView: View {
             routineEditor = store.notebook.routines.first { !$0.project.isEmpty && !$0.isBlock }
         }
         if arguments.contains("-uiQuickAdd") { quickAdd = QuickAddRoute(day: nil, kind: .task) }
+        // A task in pieces, to capture its editor.
         if arguments.contains("-uiOpenTask") {
-            if let task = store.notebook.tasks.first(where: { !$0.isComplete && !$0.isEvent && $0.plannedAt != nil }) {
+            let tasks = store.notebook.tasks.filter { !$0.isComplete && !$0.isEvent }
+            if let task = tasks.filter({ store.hasChildren($0.id) }).max(by: { store.children(of: $0.id).count < store.children(of: $1.id).count })
+                ?? tasks.first(where: { $0.plannedAt != nil }) {
                 edit(task)
             }
         }
-        if arguments.contains("-uiFocus"), let task = store.notebook.tasks.first(where: { !$0.isComplete && !$0.isEvent }) {
-            start(task)
+        if arguments.contains("-uiFocus"),
+           let item = Agenda.items(on: Date(), tasks: [], routines: store.notebook.routines).first(where: { !$0.isBlock && !$0.isDone }) {
+            startRoutine(item)
         }
         #endif
     }
 
-    private func start(_ task: TaskItem) {
-        store.start(task)
-        if store.notebook.activeSession?.taskID == task.id { focusOpen = true }
+    /// Starts a routine's timer (unless it is already running) and opens its focus screen.
+    private func startRoutine(_ item: AgendaItem) {
+        if !store.isTiming(item) { store.startRoutineTimer(item) }
+        focusOpen = true
     }
 }
 

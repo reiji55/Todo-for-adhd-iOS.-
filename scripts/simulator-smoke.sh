@@ -109,6 +109,15 @@ tasks = [
     task('公式問題集の音声を落とす', project='TOEIC', plannedAt=None, milestoneID=M_TASKS),
     task('TOEIC 本番', project='TOEIC', plannedAt=date(now + timedelta(days=41)), isEvent=True),
 ]
+# A task in pieces: the pieces carry the days, the task its deadline.
+P_PROPOSAL = str(uuid.uuid4()).upper()
+tasks += [
+    task('提案書をつくる', id=P_PROPOSAL, plannedAt=None, project='仕事', deadline=date(now + timedelta(days=2)), effort='heavy'),
+    task('構成を決める', parentID=P_PROPOSAL, rank=0, project='仕事', plannedAt=date(now - timedelta(days=1)),
+         completedAt=date(now - timedelta(days=1))),
+    task('見出しを3つ書く', parentID=P_PROPOSAL, rank=1, project='仕事', scheduledTime='15:00-16:00'),
+    task('本文を書く', parentID=P_PROPOSAL, rank=2, project='仕事', plannedAt=date(now + timedelta(days=1))),
+]
 def milestone(title, kind, **changes):
     item = dict(id=str(uuid.uuid4()).upper(), title=title, kind=kind, target=1, current=0, unit='', isDone=False,
                 createdAt=date(now - timedelta(days=20)))

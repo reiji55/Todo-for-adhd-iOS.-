@@ -156,3 +156,36 @@ test("events are scheduled but never to-dos", async () => {
   const refused: any = await call(store, "update_task", { id: anytime, kind: "event" });
   assert.equal(refused.result.isError, true);
 });
+
+test("pieces: the first takes the parent's day, the parent finishes with the last, and removing the parent takes them all", async () => {
+  const store = memoryStore();
+  const add = await call(store, "add_tasks", { tasks: [{ title: "提案書", date: "2026-10-31", time: "14:00-15:00", must: true }] });
+  const parent = JSON.parse(add.result.content[0].text).added[0];
+  const pieces = await call(store, "add_tasks", { tasks: [{ title: "見出し", parent }, { title: "本文", parent }] });
+  const [first, second] = JSON.parse(pieces.result.content[0].text).added;
+  let book = materialize(store.records);
+  const top = book.tasks.find((t) => t.id === parent)!;
+  assert.equal(top.plannedAt ?? null, null);
+  assert.equal(top.isMust, true);
+  const head = book.tasks.find((t) => t.id === first)!;
+  assert.equal(head.plannedAt, "2026-10-31T03:00:00Z");
+  assert.equal(head.scheduledTime, "14:00-15:00");
+  assert.equal(book.tasks.find((t) => t.id === second)!.plannedAt ?? null, null);
+
+  const read = await call(store, "get_task", { id: parent });
+  assert.deepEqual(JSON.parse(read.result.content[0].text).pieces.map((p: any) => p.title), ["見出し", "本文"]);
+
+  await call(store, "set_done", { ids: [first], done: true });
+  assert.equal(materialize(store.records).tasks.find((t) => t.id === parent)!.completedAt ?? null, null);
+  await call(store, "set_done", { ids: [second], done: true });
+  assert.ok(materialize(store.records).tasks.find((t) => t.id === parent)!.completedAt);
+  await call(store, "set_done", { ids: [second], done: false });
+  assert.equal(materialize(store.records).tasks.find((t) => t.id === parent)!.completedAt ?? null, null);
+
+  const dated = await call(store, "update_task", { id: parent, date: "2026-11-01" });
+  assert.equal(dated.result.isError, true);
+
+  await call(store, "remove_tasks", { ids: [parent] });
+  book = materialize(store.records);
+  assert.equal(book.tasks.length, 0);
+});

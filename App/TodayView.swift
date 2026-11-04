@@ -11,7 +11,6 @@ struct TodayView: View {
     /// -1 yesterday, 0 today, 1 tomorrow. Yesterday and tomorrow are for a look; coming back is always today.
     @State private var dayOffset = 0
     let onOpen: (AgendaItem) -> Void
-    let onStart: (TaskItem) -> Void
     let onWeek: () -> Void
 
     var body: some View {
@@ -23,7 +22,7 @@ struct TodayView: View {
                         ScrollView { main(now: now).padding(20) }.frame(maxWidth: .infinity)
                         Divider()
                         // Wide screens have room to keep suggestions in view.
-                        ScrollView { CandidatePanel(energy: $energy, now: now, onOpen: onOpen, onStart: onStart).padding(20) }
+                        ScrollView { CandidatePanel(energy: $energy, now: now, onOpen: onOpen).padding(20) }
                             .frame(width: min(400, geometry.size.width * 0.38))
                     }
                 } else {
@@ -31,7 +30,7 @@ struct TodayView: View {
                         .overlay(alignment: .trailing) {
                             if dayOffset == 0 {
                                 CandidateDrawer(isOpen: $drawerOpen) {
-                                    CandidatePanel(energy: $energy, now: now, onOpen: onOpen, onStart: onStart)
+                                    CandidatePanel(energy: $energy, now: now, onOpen: onOpen)
                                 }
                             }
                         }
@@ -64,11 +63,11 @@ struct TodayView: View {
                     .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 6)
             }
             if !timed.isEmpty {
-                TimelinePanel(items: timed, now: now, showsNow: false, onOpen: onOpen, onStart: onStart).padding(.bottom, 6)
+                TimelinePanel(items: timed, now: now, showsNow: false, onOpen: onOpen).padding(.bottom, 6)
             }
             if !untimed.isEmpty {
                 Text("時間を決めていない").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, timed.isEmpty ? 0 : 8)
-                ForEach(untimed) { item in AgendaRow(item: item, style: .loose, onOpen: onOpen, onStart: onStart) }
+                ForEach(untimed) { item in AgendaRow(item: item, style: .loose, onOpen: onOpen) }
             }
             if dayOffset < 0 {
                 Text("やり残したものは、今日の画面の「前の日から残っているタスク」から振り分けられます。")
@@ -93,8 +92,10 @@ struct TodayView: View {
         // Finished things stay where they were, struck through, so a look back at the day shows what it held.
         let visible = agenda
         // Today's planned work is already in the timetable; this list is what would otherwise be missed.
+        // A task in pieces is left out when one of its pieces is in today's timetable.
         let required = board.obligations(placement, now: now).filter { task in
             task.plannedAt.map { calendar.isDate($0, inSameDayAs: now) } != true
+                && !store.children(of: task.id).contains { !$0.isComplete && $0.plannedAt.map { calendar.isDate($0, inSameDayAs: now) } == true }
         }
         let leftovers = board.pastPlanned(tasks, now: now)
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
@@ -121,8 +122,12 @@ struct TodayView: View {
             if !required.isEmpty {
                 SectionHeading(title: "今日中に必要なもの", color: Palette.must)
                 ForEach(required) { task in
-                    let item = AgendaItem(task: store.task(task.id) ?? task)
-                    AgendaRow(item: item, reason: board.obligationReason(task, now: now), onOpen: onOpen, onStart: onStart)
+                    let current = store.task(task.id) ?? task
+                    if store.hasChildren(task.id) {
+                        ParentTaskCard(parent: current, reason: board.obligationReason(task, now: now)) { onOpen(AgendaItem(task: $0)) }
+                    } else {
+                        AgendaRow(item: AgendaItem(task: current), reason: board.obligationReason(task, now: now), onOpen: onOpen)
+                    }
                 }
             }
             SectionHeading(title: "今日の時間割")
@@ -134,11 +139,11 @@ struct TodayView: View {
             let timed = visible.filter { $0.slot != nil }
             let untimed = visible.filter { $0.slot == nil }
             if !timed.isEmpty {
-                TimelinePanel(items: timed, now: now, onOpen: onOpen, onStart: onStart).padding(.bottom, 6)
+                TimelinePanel(items: timed, now: now, onOpen: onOpen).padding(.bottom, 6)
             }
             if !untimed.isEmpty {
                 Text("時間を決めていない").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, timed.isEmpty ? 0 : 8)
-                ForEach(untimed) { item in AgendaRow(item: item, style: .loose, onOpen: onOpen, onStart: onStart) }
+                ForEach(untimed) { item in AgendaRow(item: item, style: .loose, onOpen: onOpen) }
             }
             UpcomingDeadlines(now: now, onOpen: onOpen)
         }
@@ -157,7 +162,6 @@ struct TimelinePanel: View {
     /// The red line for now; off for days other than today.
     var showsNow = true
     let onOpen: (AgendaItem) -> Void
-    let onStart: (TaskItem) -> Void
 
     private let timeWidth: CGFloat = 46
     private let railWidth: CGFloat = 20
@@ -208,7 +212,7 @@ struct TimelinePanel: View {
             }
             .frame(width: 11, height: 11).frame(width: railWidth)
             .accessibilityHidden(true)
-            AgendaRow(item: item, showsTime: false, style: .timeline, onOpen: onOpen, onStart: onStart)
+            AgendaRow(item: item, showsTime: false, style: .timeline, onOpen: onOpen)
         }
         .padding(.leading, 8)
     }
@@ -280,7 +284,6 @@ struct CandidatePanel: View {
     @Binding var energy: Energy
     let now: Date
     let onOpen: (AgendaItem) -> Void
-    let onStart: (TaskItem) -> Void
 
     var body: some View {
         let placement = store.notebook.tasks.map { task -> TaskItem in
@@ -291,7 +294,7 @@ struct CandidatePanel: View {
         let candidates = TaskBoard().candidates(placement, energy: energy, now: now)
         VStack(alignment: .leading, spacing: 10) {
             Text("今できそうなもの").font(.title3.weight(.bold))
-            Text("気になるものから。途中で切り替えても、続きは残ります。").font(.caption).foregroundStyle(.secondary)
+            Text("気になるものから。大きなタスクは、その中の一つずつが出ます。").font(.caption).foregroundStyle(.secondary)
             Picker(selection: $energy) {
                 ForEach(Energy.allCases) { Text($0.label).tag($0) }
             } label: { Text("今の調子") }
@@ -305,7 +308,7 @@ struct CandidatePanel: View {
             }
             ForEach(candidates) { candidate in
                 AgendaRow(item: AgendaItem(task: store.task(candidate.task.id) ?? candidate.task), reason: candidate.reason,
-                          onOpen: onOpen, onStart: onStart)
+                          onOpen: onOpen)
             }
         }
     }

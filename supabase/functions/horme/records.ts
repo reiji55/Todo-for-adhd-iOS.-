@@ -13,6 +13,11 @@ export type Task = {
   steps: Step[]; createdAt: string; completedAt?: string | null; notify?: boolean;
   /** Something happening that day, not a to-do (TaskItem.isEvent in the app). */
   isEvent?: boolean;
+  /** The task this one is a piece of (one level only). A parent keeps only its deadline and must;
+   *  days belong to its pieces, and it is done exactly when they all are. */
+  parentID?: string | null;
+  /** Order among the pieces of one parent. */
+  rank?: number;
 };
 export type Idea = { id: string; text: string; createdAt: string };
 export type Card = { id: string; title: string; purpose: string; goal: string; detail: string; createdAt: string; rank: number };
@@ -123,18 +128,32 @@ export function startMinute(time: string): number {
   return m ? Number(m[1]) * 60 + Number(m[2]) : Number.MAX_SAFE_INTEGER;
 }
 
+export type Piece = { id: string; title: string; done: boolean; date: string; time?: string };
+
 export type AgendaItem = {
   id: string; kind: "task" | "event" | "routine"; title: string; time: string; done: boolean; must: boolean;
   project: string; held?: boolean; originalDay?: string; deadline?: string; nextStep?: string;
   resumeNote?: string; memo?: string; handoff?: string;
+  /** For a piece of a bigger task: that task. */
+  parent?: { id: string; title: string };
+  /** For a task in pieces: its pieces, in order. */
+  pieces?: Piece[];
 };
+
+const same = (a: string | null | undefined, b: string) => !!a && a.toUpperCase() === b.toUpperCase();
+
+/** The pieces of a task, in order. */
+export function piecesOf(book: Book, id: string): Task[] {
+  return book.tasks.filter((t) => same(t.parentID, id))
+    .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+}
 
 /** Mirrors Agenda.items in Schedule.swift. */
 export function agenda(book: Book, key: string): AgendaItem[] {
   const items: AgendaItem[] = [];
   for (const t of book.tasks) {
     if (!t.plannedAt || dayKey(t.plannedAt) !== key) continue;
-    items.push(taskItem(t));
+    items.push(taskItem(t, book));
   }
   for (const r of book.routines) {
     if (r.isPaused) continue;
@@ -153,11 +172,18 @@ export function agenda(book: Book, key: string): AgendaItem[] {
   return items.sort((a, b) => startMinute(a.time) - startMinute(b.time) || Number(b.must) - Number(a.must));
 }
 
-export function taskItem(t: Task): AgendaItem {
-  const next = t.steps.find((s) => !s.isDone);
+export function taskItem(t: Task, book?: Book): AgendaItem {
+  const pieces = book ? piecesOf(book, t.id) : [];
+  const parent = book && t.parentID ? book.tasks.find((p) => same(t.parentID, p.id)) : undefined;
+  const next = pieces.find((p) => !p.completedAt)?.title ?? t.steps.find((s) => !s.isDone)?.title;
   return {
     id: t.id, kind: t.isEvent ? "event" : "task", title: t.title, time: t.scheduledTime ?? "", done: !!t.completedAt, must: !!t.isMust,
-    project: t.project ?? "", deadline: t.deadline ? dayKey(t.deadline) : undefined, nextStep: next?.title,
+    project: t.project ?? "", deadline: t.deadline ? dayKey(t.deadline) : undefined, nextStep: next,
     resumeNote: t.resumeNote || undefined, memo: t.memo || undefined, handoff: t.handoff || undefined,
+    parent: parent ? { id: parent.id, title: parent.title } : undefined,
+    pieces: pieces.length ? pieces.map((p) => ({
+      id: p.id, title: p.title, done: !!p.completedAt, date: p.plannedAt ? dayKey(p.plannedAt) : "anytime",
+      time: p.scheduledTime || undefined,
+    })) : undefined,
   };
 }

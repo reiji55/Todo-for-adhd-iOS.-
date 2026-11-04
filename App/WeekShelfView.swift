@@ -47,7 +47,6 @@ struct WeekShelfView: View {
     @State private var carry: Carry?
     @State private var rowFrames: [Date: CGRect] = [:]
     let onOpen: (AgendaItem) -> Void
-    let onStart: (TaskItem) -> Void
     let onAdd: (Date) -> Void
     /// The ⊕ menu; with the sheet up, what is added goes on the chosen day.
     let onPick: (AddKind, Date?) -> Void

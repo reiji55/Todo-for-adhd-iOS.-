@@ -455,7 +455,6 @@ struct ProjectPage: View {
     @Environment(\.colorScheme) private var scheme
     @State private var key: String
     let onEdit: (TaskItem) -> Void
-    let onStart: (TaskItem) -> Void
     @State private var editingProject: Project?
     @State private var editingMilestone: MilestoneRoute?
     @State private var editingRoutine: Routine?
@@ -473,9 +472,9 @@ struct ProjectPage: View {
         var id: UUID { milestone.id }
     }
 
-    init(key: String, onEdit: @escaping (TaskItem) -> Void, onStart: @escaping (TaskItem) -> Void) {
+    init(key: String, onEdit: @escaping (TaskItem) -> Void) {
         _key = State(initialValue: key)
-        self.onEdit = onEdit; self.onStart = onStart
+        self.onEdit = onEdit
     }
 
     var body: some View {
@@ -722,9 +721,14 @@ struct ProjectPage: View {
                 Text("まだタスクはありません。").font(.subheadline).foregroundStyle(.secondary).padding(.horizontal, 4)
             }
             ForEach(open.prefix(6)) { task in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(GuideSummary.place(task)).font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(.leading, 6)
-                    AgendaRow(item: AgendaItem(task: task), style: .raised, onOpen: { _ in onEdit(task) }, onStart: onStart)
+                if store.hasChildren(task.id) {
+                    // A task in pieces counts once for its checkpoint, when all its pieces are done.
+                    ParentTaskCard(parent: task, raised: true, onOpen: onEdit)
+                } else {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(GuideSummary.place(task)).font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(.leading, 6)
+                        AgendaRow(item: AgendaItem(task: task), style: .raised, onOpen: { _ in onEdit(task) })
+                    }
                 }
             }
             if open.count > 6 {
@@ -894,12 +898,21 @@ struct MilestoneStation: View {
                      : "タスクで数える ・ \(ProjectText.number(value))/\(ProjectText.number(target))")
                     .font(.caption).foregroundStyle(.secondary)
                 ForEach(linked.prefix(3)) { task in
-                    Button { store.toggle(AgendaItem(task: task)) } label: {
+                    let pieces = store.children(of: task.id)
+                    // A task in pieces is checked off through its pieces; here it shows how far it has come.
+                    Button { if pieces.isEmpty { store.toggle(AgendaItem(task: task)) } } label: {
                         HStack(spacing: 8) {
-                            Image(systemName: task.isComplete ? "checkmark.circle.fill" : "circle").foregroundStyle(Palette.accent)
+                            if pieces.isEmpty {
+                                Image(systemName: task.isComplete ? "checkmark.circle.fill" : "circle").foregroundStyle(Palette.accent)
+                            } else {
+                                ProgressRing(done: pieces.filter(\.isComplete).count, total: pieces.count, size: 20)
+                            }
                             Text(task.title).font(.subheadline).strikethrough(task.isComplete)
                                 .foregroundStyle(task.isComplete ? Color.secondary : Color.primary).lineLimit(1)
                             Spacer(minLength: 0)
+                            if !pieces.isEmpty && !task.isComplete {
+                                Text("子タスク \(pieces.filter(\.isComplete).count)/\(pieces.count)").font(.caption).foregroundStyle(.secondary)
+                            }
                         }
                         .frame(minHeight: 32).contentShape(Rectangle())
                     }

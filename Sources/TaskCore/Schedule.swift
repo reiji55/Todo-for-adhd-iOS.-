@@ -90,15 +90,17 @@ public struct Routine: Codable, Identifiable, Equatable {
     public var durations: [String: Int]
     /// A checkpoint of its project that each day done counts toward.
     public var milestoneID: UUID?
+    /// Where the last time left off, shown the next time it is started.
+    public var resumeNote: String
 
     public init(id: UUID = UUID(), title: String, project: String = "", memo: String = "",
                 weekdays: [Int] = Array(1...7), time: String = "", notify: Bool = true, isBlock: Bool = false,
                 isPaused: Bool = false, createdAt: Date = Date(), doneDays: [String] = [], moves: [String: RoutineMove] = [:],
-                durations: [String: Int] = [:], milestoneID: UUID? = nil) {
+                durations: [String: Int] = [:], milestoneID: UUID? = nil, resumeNote: String = "") {
         self.id = id; self.title = title; self.project = project; self.memo = memo
         self.weekdays = weekdays; self.time = time; self.notify = notify; self.isBlock = isBlock
         self.isPaused = isPaused; self.createdAt = createdAt; self.doneDays = doneDays; self.moves = moves
-        self.durations = durations; self.milestoneID = milestoneID
+        self.durations = durations; self.milestoneID = milestoneID; self.resumeNote = resumeNote
     }
 
     public var slot: TimeSlot? {
@@ -120,6 +122,7 @@ public struct Routine: Codable, Identifiable, Equatable {
 extension Routine {
     enum CodingKeys: String, CodingKey {
         case id, title, project, memo, weekdays, time, notify, isBlock, isPaused, createdAt, doneDays, moves, durations, milestoneID
+        case resumeNote
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -134,7 +137,8 @@ extension Routine {
                   doneDays: try c.decodeIfPresent([String].self, forKey: .doneDays) ?? [],
                   moves: try c.decodeIfPresent([String: RoutineMove].self, forKey: .moves) ?? [:],
                   durations: try c.decodeIfPresent([String: Int].self, forKey: .durations) ?? [:],
-                  milestoneID: try c.decodeIfPresent(UUID.self, forKey: .milestoneID))
+                  milestoneID: try c.decodeIfPresent(UUID.self, forKey: .milestoneID),
+                  resumeNote: try text(.resumeNote))
     }
 }
 

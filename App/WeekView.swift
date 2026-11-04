@@ -13,7 +13,6 @@ struct WeekView: View {
     /// The block last tapped in the grid; its row in the list below is emphasized.
     @State private var focusedItem: String?
     let onOpen: (AgendaItem) -> Void
-    let onStart: (TaskItem) -> Void
     let onAdd: (Date) -> Void
 
     static func monday(of date: Date) -> Date {
@@ -72,7 +71,7 @@ struct WeekView: View {
             ScrollView {
                 Color.clear.frame(height: 0).id(Self.dayListTop)
                 // A new day replaces the list (it fades over), so a change of day is plain to see.
-                DayList(day: selectedDay, highlighted: focusedItem, onOpen: onOpen, onStart: onStart, onAdd: onAdd)
+                DayList(day: selectedDay, highlighted: focusedItem, onOpen: onOpen, onAdd: onAdd)
                     .padding(.horizontal, 16).padding(.vertical, 12)
                     .frame(maxWidth: 760).frame(maxWidth: .infinity)
                     .id(selectedDay)
@@ -762,7 +761,6 @@ struct DayList: View {
     let day: Date
     var highlighted: String? = nil
     let onOpen: (AgendaItem) -> Void
-    let onStart: (TaskItem) -> Void
     let onAdd: (Date) -> Void
 
     var body: some View {
@@ -778,7 +776,7 @@ struct DayList: View {
             }
             ForEach(items) { item in
                 let picked = item.id == highlighted
-                AgendaRow(item: item, onOpen: onOpen, onStart: onStart)
+                AgendaRow(item: item, onOpen: onOpen)
                     .overlay { if picked { RoundedRectangle(cornerRadius: 14).strokeBorder(Palette.accent, lineWidth: 2.5) } }
                     .shadow(color: picked ? Palette.accent.opacity(0.3) : .clear, radius: 8, y: 3)
                     .scaleEffect(picked ? 1.02 : 1)

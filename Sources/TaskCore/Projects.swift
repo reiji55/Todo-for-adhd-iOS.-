@@ -145,7 +145,10 @@ public enum ProjectBook {
         return book.projects.first { key($0.name) == k }
     }
 
-    public static func tasks(_ key: String, in book: Notebook) -> [TaskItem] { book.tasks.filter { self.key($0.project) == key } }
+    /// The project's tasks, a parent standing for its children (it counts once, when they are all done).
+    public static func tasks(_ key: String, in book: Notebook) -> [TaskItem] {
+        book.tasks.filter { $0.parentID == nil && self.key($0.project) == key }
+    }
     public static func routines(_ key: String, in book: Notebook) -> [Routine] { book.routines.filter { self.key($0.project) == key } }
     public static func cards(_ key: String, in book: Notebook) -> [BoardCard] { book.boardCards.filter { self.key($0.project) == key } }
 

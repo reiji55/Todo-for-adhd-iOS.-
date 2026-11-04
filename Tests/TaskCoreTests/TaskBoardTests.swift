@@ -46,14 +46,16 @@ final class TaskBoardTests: XCTestCase {
     }
 
     func testSuggestionOrderExplainsPriorityAndExcludesFuturePlan() {
-        let continuation = TaskItem(title: "続き", resumeNote: "3行目まで", createdAt: day(-5))
+        let whole = TaskItem(title: "資料づくり", createdAt: day(-6))
+        let finished = TaskItem(title: "構成", createdAt: day(-6), completedAt: day(-1), parentID: whole.id)
+        let continuation = TaskItem(title: "続き", createdAt: day(-5), parentID: whole.id, rank: 1)
         let plan = TaskItem(title: "今日", plannedAt: now)
         let due = TaskItem(title: "明日締切", deadline: day(1), effort: .heavy)
         let future = TaskItem(title: "来週", plannedAt: day(7))
         let casual = TaskItem(title: "日付なし", effort: .light, createdAt: day(-30))
-        let candidates = board.candidates([casual, future, continuation, plan, due], energy: .low, now: now)
+        let candidates = board.candidates([casual, future, whole, finished, continuation, plan, due], energy: .low, now: now)
         XCTAssertEqual(candidates.map(\.id), [due.id, plan.id, continuation.id])
-        XCTAssertEqual(candidates.map(\.reason), ["明日が締切", "今日やる予定", "続きのメモがあります"])
+        XCTAssertEqual(candidates.map(\.reason), ["明日が締切", "今日やる予定", "途中まで進んでいるタスクの続き"])
     }
 
     func testEnergyOnlyReordersWithinSamePriority() {

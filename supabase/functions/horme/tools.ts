@@ -1,7 +1,7 @@
 // Horme's MCP tools. Each call reads the records, writes only the fields it changes (stamped as "claude"),
 // and lets the database merge them, so the app's own edits made at the same time survive.
 
-import { addDays, agenda, dayKey, dayToISO, isAlive, materialize, newID, nowISO, taskItem, todayKey, Writer } from "./records.ts";
+import { addDays, agenda, dayKey, dayToISO, isAlive, materialize, newID, nowISO, piecesOf, taskItem, todayKey, Writer } from "./records.ts";
 import type { Book, SyncRecord, Task } from "./records.ts";
 
 export interface RecordStore {
@@ -37,23 +37,47 @@ function validTime(value: string) {
   throw new Error(`時間帯は "19:00-20:30" か "9:00" の形で渡してください: ${value}`);
 }
 
+const sameID = (a: string | null | undefined, b: string) => !!a && a.toUpperCase() === b.toUpperCase();
+const hasPieces = (book: Book, t: Task) => book.tasks.some((k) => sameID(k.parentID, t.id));
+
+/** A parent counts for "must" from the first day of its open pieces. */
+function firstPieceDay(book: Book, t: Task): string | undefined {
+  const days = piecesOf(book, t.id).filter((p) => !p.completedAt && p.plannedAt).map((p) => dayKey(p.plannedAt!));
+  return days.sort()[0];
+}
+
+/** After pieces change, a parent is done exactly when all its (remaining) pieces are. */
+function settle(writer: Writer, book: Book, parentID: string, done: Map<string, boolean>, removed: Set<string>, now: Date) {
+  const parent = book.tasks.find((t) => sameID(t.id, parentID));
+  if (!parent || removed.has(parent.id.toUpperCase())) return;
+  const kids = piecesOf(book, parent.id).filter((k) => !removed.has(k.id.toUpperCase()));
+  if (!kids.length) return;
+  const all = kids.every((k) => done.get(k.id.toUpperCase()) ?? !!k.completedAt);
+  const was = done.get(parent.id.toUpperCase()) ?? !!parent.completedAt;
+  if (all && !was) writer.set(`task_${parent.id}`, { completedAt: nowISO(now) });
+  if (!all && was) writer.set(`task_${parent.id}`, { completedAt: null });
+}
+
 function day(book: Book, key: string) {
   return { date: key, items: agenda(book, key) };
 }
 
 function leftovers(book: Book, today: string) {
   return book.tasks.filter((t) => !t.completedAt && !t.isEvent && t.plannedAt && dayKey(t.plannedAt) < today)
-    .map((t) => ({ ...taskItem(t), plannedDay: dayKey(t.plannedAt!) }));
+    .map((t) => ({ ...taskItem(t, book), plannedDay: dayKey(t.plannedAt!) }));
 }
 
 /** Overdue deadlines and must tasks that are not planned for today (those are already in today's list). */
 function required(book: Book, today: string) {
   return book.tasks.filter((t) => {
     if (t.completedAt || t.isEvent || (t.plannedAt && dayKey(t.plannedAt) === today)) return false;
+    const planned = hasPieces(book, t) ? firstPieceDay(book, t) : t.plannedAt ? dayKey(t.plannedAt) : undefined;
+    // A task in pieces with a piece today is already in today's list.
+    if (hasPieces(book, t) && planned === today) return false;
     const due = t.deadline ? dayKey(t.deadline) <= today : false;
-    const must = t.isMust && (!t.plannedAt || dayKey(t.plannedAt) <= today);
+    const must = t.isMust && (!planned || planned <= today);
     return due || must;
-  }).map(taskItem);
+  }).map((t) => taskItem(t, book));
 }
 
 export const tools: Tool[] = [
@@ -89,16 +113,26 @@ export const tools: Tool[] = [
   {
     name: "get_anytime",
     title: "日付なしのタスクを読む",
-    description: "日付を決めていない未完了のタスク（「いつでも」）を返す。",
+    description: "日付を決めていない未完了のタスク（「いつでも」）を返す。子タスクは parent に親が入る（親タスク自体は日付を持たないので、get_task で読む）。",
     inputSchema: { type: "object", properties: {} },
-    run: (_, { book }) => ({ result: book.tasks.filter((t) => !t.completedAt && !t.isEvent && !t.plannedAt).map(taskItem) }),
+    run: (_, { book }) => ({
+      result: book.tasks.filter((t) => !t.completedAt && !t.isEvent && !t.plannedAt && !hasPieces(book, t)).map((t) => taskItem(t, book)),
+    }),
+  },
+  {
+    name: "get_task",
+    title: "タスクを1つ詳しく読む",
+    description: "1つのタスクを読む。子タスクに分かれたタスク（親）なら pieces に子タスクが順に入る。子タスクなら parent に親が入る。",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+    run: ({ id }, { book }) => ({ result: taskItem(find(book, id), book) }),
   },
   {
     name: "add_tasks",
     title: "タスク・イベントを足す",
     description:
       "タスクかイベントを追加する。date を省くと今日、\"anytime\" で日付なし（タスクのみ）。同じものを二重に足さないよう、先に get_today / get_days で確認する。" +
-      "kind=\"event\" はその日にある予定（買い物、人に会う）で、必須や締切はなく、やり残しにもならない。くり返すものはルーティンなので、本人に確認してから。",
+      "kind=\"event\" はその日にある予定（買い物、人に会う）で、必須や締切はなく、やり残しにもならない。くり返すものはルーティンなので、本人に確認してから。" +
+      "parent にタスクの id を渡すと、そのタスクの子タスクとして足す（子タスクの date を省くと日付なし。ただし最初の子タスクは親の日付と時間を引き継ぎ、親は締切と必須だけを持つ形になる）。",
     inputSchema: {
       type: "object",
       properties: {
@@ -113,6 +147,7 @@ export const tools: Tool[] = [
               deadline: { type: "string", description: "締切 YYYY-MM-DD" },
               memo: { type: "string", description: "本人用のメモ" },
               handoff: { type: "string", description: "Claude への引き継ぎ" },
+              parent: { type: "string", description: "子タスクにするときの親タスクの id" },
             },
             required: ["title"],
           },
@@ -120,25 +155,46 @@ export const tools: Tool[] = [
       },
       required: ["tasks"],
     },
-    run: ({ tasks }, { records, now }) => {
+    run: ({ tasks }, { records, book, now }) => {
       const writer = new Writer(records, "claude", now.getTime());
       const added: string[] = [];
+      const newPieces = new Map<string, number>();
       for (const input of tasks as Args[]) {
         const title = String(input.title ?? "").trim();
         if (!title) throw new Error("title が空のタスクがあります。");
-        const date = input.date ?? todayKey(now);
+        const parent = input.parent ? find(book, input.parent) : undefined;
         const isEvent = input.kind === "event";
-        validDate(date); validTime(input.time ?? "");
+        if (parent) {
+          if (parent.parentID) throw new Error("子タスクの下に子タスクは作れません。親タスクの id を渡してください。");
+          if (parent.isEvent || isEvent) throw new Error("イベントには子タスクを作れません。");
+        }
+        const earlier = parent ? piecesOf(book, parent.id) : [];
+        const count = parent ? (newPieces.get(parent.id) ?? 0) : 0;
+        const first = !!parent && earlier.length === 0 && count === 0;
+        // A piece without a date has none, except the first, which takes over its parent's day and time.
+        let date = input.date ?? (parent ? (first && parent.plannedAt ? dayKey(parent.plannedAt) : "anytime") : todayKey(now));
+        let time = input.time ?? (first && parent && input.date === undefined ? parent.scheduledTime ?? "" : "");
+        validDate(date); validTime(time);
         if (isEvent && date === "anytime") throw new Error("イベントには日付が必要です。");
         if (input.deadline) validDate(input.deadline);
         const id = newID();
         const values: Args = {
-          alive: true, id, title, scheduledTime: date === "anytime" ? "" : String(input.time ?? "").trim(),
-          isMust: isEvent ? false : !!input.must, isEvent, effort: "medium", project: input.project ?? "", memo: input.memo ?? "",
+          alive: true, id, title, scheduledTime: date === "anytime" ? "" : String(time).trim(),
+          isMust: isEvent || parent ? false : !!input.must, isEvent, effort: "medium",
+          project: parent ? parent.project ?? "" : input.project ?? "", memo: input.memo ?? "",
           handoff: input.handoff ?? "", resumeNote: "", createdAt: nowISO(now), notify: true,
         };
         if (date !== "anytime") values.plannedAt = dayToISO(date);
-        if (!isEvent && input.deadline && input.deadline !== "anytime") values.deadline = dayToISO(input.deadline);
+        if (!isEvent && !parent && input.deadline && input.deadline !== "anytime") values.deadline = dayToISO(input.deadline);
+        if (parent) {
+          values.parentID = parent.id;
+          values.rank = Math.max(-1, ...earlier.map((p) => p.rank ?? 0)) + 1 + count;
+          newPieces.set(parent.id, count + 1);
+          const parentValues: Args = {};
+          if (first) Object.assign(parentValues, { plannedAt: null, scheduledTime: "" });
+          if (parent.completedAt) parentValues.completedAt = null;
+          if (Object.keys(parentValues).length) writer.set(`task_${parent.id}`, parentValues);
+        }
         writer.set(`task_${id}`, values);
         added.push(id);
       }
@@ -163,6 +219,12 @@ export const tools: Tool[] = [
     },
     run: (args, { records, book, now }) => {
       const task = find(book, args.id);
+      if (hasPieces(book, task) && (args.date !== undefined || args.time !== undefined || args.kind === "event")) {
+        throw new Error("子タスクに分かれたタスクには日付がありません。子タスクの日付を変えてください（get_task で子タスクの id がわかります）。");
+      }
+      if (task.parentID && (args.must !== undefined || args.deadline !== undefined || args.project !== undefined || args.kind === "event")) {
+        throw new Error("子タスクには必須・締切・プロジェクトはありません（親タスクのものを使います）。");
+      }
       const writer = new Writer(records, "claude", now.getTime());
       const values: Args = {};
       if (args.title !== undefined) {
@@ -196,22 +258,52 @@ export const tools: Tool[] = [
   {
     name: "set_done",
     title: "完了・未完了にする",
-    description: "タスクを完了（done=true）または未完了に戻す。イベントには「済んだ」印として付く。複数まとめて渡せる。",
+    description:
+      "タスクを完了（done=true）または未完了に戻す。イベントには「済んだ」印として付く。複数まとめて渡せる。" +
+      "子タスクがすべて済むと親タスクも完了になる。親タスクを完了にすると残りの子タスクもまとめて完了になる。",
     inputSchema: { type: "object", properties: { ids: IDS, done: { type: "boolean" } }, required: ["ids", "done"] },
     run: ({ ids, done }, { records, book, now }) => {
       const writer = new Writer(records, "claude", now.getTime());
-      for (const id of ids as string[]) writer.set(`task_${find(book, id).id}`, { completedAt: done ? nowISO(now) : null });
+      const state = new Map<string, boolean>();
+      const parents = new Set<string>();
+      for (const id of ids as string[]) {
+        const task = find(book, id);
+        const pieces = piecesOf(book, task.id);
+        if (pieces.length) {
+          if (done) {
+            for (const p of pieces) if (!p.completedAt) { writer.set(`task_${p.id}`, { completedAt: nowISO(now) }); state.set(p.id.toUpperCase(), true); }
+          } else if (task.completedAt) {
+            // Reopen the pieces finished together with it, or else the last one finished.
+            const together = pieces.filter((p) => p.completedAt === task.completedAt);
+            const last = [...pieces].filter((p) => p.completedAt).sort((a, b) => b.completedAt!.localeCompare(a.completedAt!))[0];
+            for (const p of together.length ? together : last ? [last] : []) {
+              writer.set(`task_${p.id}`, { completedAt: null }); state.set(p.id.toUpperCase(), false);
+            }
+          }
+        }
+        writer.set(`task_${task.id}`, { completedAt: done ? nowISO(now) : null });
+        state.set(task.id.toUpperCase(), !!done);
+        if (task.parentID) parents.add(task.parentID);
+      }
+      for (const parent of parents) settle(writer, book, parent, state, new Set(), now);
       return { result: { updated: ids.length }, changes: writer.changes };
     },
   },
   {
     name: "remove_tasks",
     title: "タスクを消す",
-    description: "タスクを削除する。終わったものは消さずに set_done。消すのは間違えて入れたときだけ。先に本人に確認する。",
+    description: "タスクを削除する。親タスクを消すと子タスクも消える。終わったものは消さずに set_done。消すのは間違えて入れたときだけ。先に本人に確認する。",
     inputSchema: { type: "object", properties: { ids: IDS }, required: ["ids"] },
     run: ({ ids }, { records, book, now }) => {
       const writer = new Writer(records, "claude", now.getTime());
-      for (const id of ids as string[]) writer.set(`task_${find(book, id).id}`, { alive: false });
+      const removed = new Set<string>();
+      const parents = new Set<string>();
+      for (const id of ids as string[]) {
+        const task = find(book, id);
+        for (const t of [task, ...piecesOf(book, task.id)]) { writer.set(`task_${t.id}`, { alive: false }); removed.add(t.id.toUpperCase()); }
+        if (task.parentID) parents.add(task.parentID);
+      }
+      for (const parent of parents) settle(writer, book, parent, new Map(), removed, now);
       return { result: { removed: ids.length }, changes: writer.changes };
     },
   },
@@ -301,6 +393,7 @@ export const tools: Tool[] = [
 export const instructions =
   "Horme（本人のタスク管理アプリ）の中身を読み書きする。種類はタスク（その日にやる・単発で終わる）、イベント（その日にある予定。済んだら印を付けられるが、やり残しにはならない）、" +
   "ルーティン（くり返し）、アイデア（まだ決めていない思いつき）。ほかにボード（やり方の書き置き）がある。" +
+  "大きなタスクは子タスクに分かれていることがある（pieces / parent）。日付と時間は子タスクが持ち、親タスクは締切と必須だけを持つ。子タスクがすべて済むと親も完了になる。" +
   "日付は日本時間。書き換える前に get_today / get_days で id と現状を確かめる。" +
   "handoff は本人が「Claude にやってほしい」と残した依頼で、対応したら memo に結果を書いて handoff を空にする。" +
   "変更はアプリと iCloud に数十秒以内に反映される。本人が決めること（必須にする・消す・ルーティンを作る）は勝手にしない。";

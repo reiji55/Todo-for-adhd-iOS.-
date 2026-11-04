@@ -61,7 +61,6 @@ struct GuideBoardView: View {
     /// 0: projects, 1: cards. Remembered, so the board opens where the person left it.
     @AppStorage("horme.boardMode") private var mode = 0
     let onEdit: (TaskItem) -> Void
-    let onStart: (TaskItem) -> Void
 
     var body: some View {
         let cards = store.notebook.boardCards
@@ -99,16 +98,16 @@ struct GuideBoardView: View {
         .sheet(item: $newCard) { card in GuideCardEditor(card: card) }
         .sheet(item: $newProject) { project in ProjectEditor(project: project, originalKey: nil) }
         .navigationDestination(for: GuideRoute.self) { route in
-            GuidePager(startID: route.id, cardIDs: shown.map(\.id), onEdit: onEdit, onStart: onStart)
+            GuidePager(startID: route.id, cardIDs: shown.map(\.id), onEdit: onEdit)
         }
         .navigationDestination(item: $opened) { route in
-            GuidePager(startID: route.id, cardIDs: shown.map(\.id), onEdit: onEdit, onStart: onStart)
+            GuidePager(startID: route.id, cardIDs: shown.map(\.id), onEdit: onEdit)
         }
-        .navigationDestination(for: ProjectRoute.self) { route in ProjectPage(key: route.key, onEdit: onEdit, onStart: onStart) }
-        .navigationDestination(item: $openedProject) { route in ProjectPage(key: route.key, onEdit: onEdit, onStart: onStart) }
+        .navigationDestination(for: ProjectRoute.self) { route in ProjectPage(key: route.key, onEdit: onEdit) }
+        .navigationDestination(item: $openedProject) { route in ProjectPage(key: route.key, onEdit: onEdit) }
         // A card tapped on a folder pages through the cards of that project.
         .navigationDestination(item: $openedProjectCard) { route in
-            GuidePager(startID: route.id, cardIDs: projectSiblings(of: route.id), onEdit: onEdit, onStart: onStart)
+            GuidePager(startID: route.id, cardIDs: projectSiblings(of: route.id), onEdit: onEdit)
         }
         .onAppear {
             openForScreenshot()
@@ -240,12 +239,11 @@ struct GuidePager: View {
     @State private var editing: BoardCard?
     let cardIDs: [UUID]
     var onEdit: ((TaskItem) -> Void)? = nil
-    var onStart: ((TaskItem) -> Void)? = nil
 
-    init(startID: UUID, cardIDs: [UUID], onEdit: ((TaskItem) -> Void)? = nil, onStart: ((TaskItem) -> Void)? = nil) {
+    init(startID: UUID, cardIDs: [UUID], onEdit: ((TaskItem) -> Void)? = nil) {
         _current = State(initialValue: startID)
         self.cardIDs = cardIDs.contains(startID) ? cardIDs : [startID]
-        self.onEdit = onEdit; self.onStart = onStart
+        self.onEdit = onEdit
     }
 
     var body: some View {
@@ -263,7 +261,7 @@ struct GuidePager: View {
             } else {
                 TabView(selection: $current) {
                     ForEach(ids, id: \.self) { id in
-                        GuideCardView(cardID: id, onEdit: onEdit, onStart: onStart) { editing = store.card(id) }.tag(id)
+                        GuideCardView(cardID: id, onEdit: onEdit) { editing = store.card(id) }.tag(id)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
@@ -321,7 +319,6 @@ struct GuideCardView: View {
     let cardID: UUID
     /// Nil when shown over a task (editor, focus): the task list and adding tasks belong to the board tab.
     var onEdit: ((TaskItem) -> Void)? = nil
-    var onStart: ((TaskItem) -> Void)? = nil
     var onWrite: () -> Void = {}
 
     var body: some View {
@@ -402,14 +399,13 @@ struct GuideCardView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            if let onEdit, let onStart, !card.project.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                tasksSection(card, onEdit: onEdit, onStart: onStart)
+            if let onEdit, !card.project.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                tasksSection(card, onEdit: onEdit)
             }
         }
     }
 
-    @ViewBuilder private func tasksSection(_ card: BoardCard, onEdit: @escaping (TaskItem) -> Void,
-                                           onStart: @escaping (TaskItem) -> Void) -> some View {
+    @ViewBuilder private func tasksSection(_ card: BoardCard, onEdit: @escaping (TaskItem) -> Void) -> some View {
         let tasks = store.linkedTasks(for: card)
         let open = tasks.filter { !$0.isComplete || store.recentlyDone.contains(AgendaItem(task: $0).id) }
             .sorted { ($0.plannedAt ?? .distantFuture) < ($1.plannedAt ?? .distantFuture) }
@@ -419,9 +415,13 @@ struct GuideCardView: View {
                 Text("未完了のタスクはありません。").font(.subheadline).foregroundStyle(.secondary)
             }
             ForEach(open) { task in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(GuideSummary.place(task)).font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                    AgendaRow(item: AgendaItem(task: task), onOpen: { _ in onEdit(task) }, onStart: onStart)
+                if store.hasChildren(task.id) {
+                    ParentTaskCard(parent: task, onOpen: onEdit)
+                } else {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(GuideSummary.place(task)).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                        AgendaRow(item: AgendaItem(task: task), onOpen: { _ in onEdit(task) })
+                    }
                 }
             }
             if tasks.count > open.count {

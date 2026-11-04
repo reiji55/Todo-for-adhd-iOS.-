@@ -22,8 +22,17 @@ public struct TaskBoard {
         return due || must
     }
 
+    /// A parent has no day of its own: for ★ it counts from the first day of its open children.
+    public func isObligation(_ task: TaskItem, among tasks: [TaskItem], now: Date) -> Bool {
+        let kids = tasks.filter { $0.parentID == task.id }
+        guard !kids.isEmpty else { return isObligation(task, now: now) }
+        var probe = task
+        probe.plannedAt = kids.filter { !$0.isComplete }.compactMap(\.plannedAt).min()
+        return isObligation(probe, now: now)
+    }
+
     public func obligations(_ tasks: [TaskItem], now: Date) -> [TaskItem] {
-        tasks.filter { isObligation($0, now: now) }.sorted { a, b in
+        tasks.filter { isObligation($0, among: tasks, now: now) }.sorted { a, b in
             let ad = a.deadline ?? .distantFuture, bd = b.deadline ?? .distantFuture
             if ad != bd { return ad < bd }
             return stableOrder(a, b)
@@ -58,8 +67,12 @@ public struct TaskBoard {
     /// Fixed tiers make the result explainable; no hidden probabilistic score or cooldown.
     public func candidates(_ tasks: [TaskItem], energy: Energy, now: Date, limit: Int = 3) -> [Candidate] {
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))!
+        // A parent is done through its pieces, so the pieces are what is suggested.
+        let parents = Set(tasks.compactMap(\.parentID))
+        // Tasks in pieces already under way: their next pieces come before untouched ones.
+        let underway = Set(tasks.filter { $0.isComplete }.compactMap(\.parentID))
         let pool = tasks.filter { task in
-            guard !task.isComplete, !task.isEvent, !isObligation(task, now: now) else { return false }
+            guard !task.isComplete, !task.isEvent, !parents.contains(task.id), !isObligation(task, now: now) else { return false }
             if let deferUntil = task.suggestionDeferredUntil, deferUntil > now { return false }
             if let planned = task.plannedAt, !isOnOrBeforeToday(planned, now: now) { return false }
             return true
@@ -67,7 +80,7 @@ public struct TaskBoard {
         func tier(_ task: TaskItem) -> Int {
             if let due = task.deadline, calendar.startOfDay(for: due) <= tomorrow { return 0 }
             if task.plannedAt.map({ calendar.isDate($0, inSameDayAs: now) }) == true { return 1 }
-            if !task.resumeNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return 2 }
+            if let parent = task.parentID, underway.contains(parent) { return 2 }
             return 3
         }
         func fit(_ task: TaskItem) -> Int {
@@ -85,7 +98,7 @@ public struct TaskBoard {
             switch tier(task) {
             case 0: reason = "明日が締切"
             case 1: reason = "今日やる予定"
-            case 2: reason = "続きのメモがあります"
+            case 2: reason = "途中まで進んでいるタスクの続き"
             default:
                 reason = energy.preferred == task.effort ? "今の調子に合う負荷" : "しばらく手をつけていないもの"
             }

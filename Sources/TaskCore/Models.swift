@@ -63,20 +63,26 @@ public struct TaskItem: Codable, Identifiable, Equatable {
     public var isEvent: Bool
     /// The checkpoint of its project this task counts toward.
     public var milestoneID: UUID?
+    /// The task this one is a piece of. One level only: a child never has children of its own.
+    /// A parent keeps only its deadline and ★; days and times belong to its children.
+    public var parentID: UUID?
+    /// Order among the children of one parent.
+    public var rank: Int
 
     public init(id: UUID = UUID(), title: String, plannedAt: Date? = nil,
                 scheduledTime: String = "", deadline: Date? = nil, isMust: Bool = false,
                 effort: Effort = .medium, project: String = "", memo: String = "",
                 handoff: String = "", resumeNote: String = "", steps: [Step] = [],
                 createdAt: Date = Date(), lastStartedAt: Date? = nil, completedAt: Date? = nil,
-                suggestionDeferredUntil: Date? = nil, notify: Bool = true, isEvent: Bool = false, milestoneID: UUID? = nil) {
+                suggestionDeferredUntil: Date? = nil, notify: Bool = true, isEvent: Bool = false, milestoneID: UUID? = nil,
+                parentID: UUID? = nil, rank: Int = 0) {
         self.id = id; self.title = title; self.plannedAt = plannedAt
         self.scheduledTime = scheduledTime; self.deadline = deadline; self.isMust = isMust
         self.effort = effort; self.project = project; self.memo = memo; self.handoff = handoff
         self.resumeNote = resumeNote; self.steps = steps; self.createdAt = createdAt
         self.lastStartedAt = lastStartedAt; self.completedAt = completedAt
         self.suggestionDeferredUntil = suggestionDeferredUntil; self.notify = notify; self.isEvent = isEvent
-        self.milestoneID = milestoneID
+        self.milestoneID = milestoneID; self.parentID = parentID; self.rank = rank
     }
     public var isComplete: Bool { completedAt != nil }
     public var nextStep: Step? { steps.first { !$0.isDone } }
@@ -211,6 +217,7 @@ extension TaskItem {
     enum CodingKeys: String, CodingKey {
         case id, title, plannedAt, scheduledTime, deadline, isMust, effort, project, memo, handoff
         case resumeNote, steps, createdAt, lastStartedAt, completedAt, suggestionDeferredUntil, notify, isEvent, milestoneID
+        case parentID, rank
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -230,7 +237,9 @@ extension TaskItem {
                   suggestionDeferredUntil: try c.decodeIfPresent(Date.self, forKey: .suggestionDeferredUntil),
                   notify: try c.decodeIfPresent(Bool.self, forKey: .notify) ?? true,
                   isEvent: try c.decodeIfPresent(Bool.self, forKey: .isEvent) ?? false,
-                  milestoneID: try c.decodeIfPresent(UUID.self, forKey: .milestoneID))
+                  milestoneID: try c.decodeIfPresent(UUID.self, forKey: .milestoneID),
+                  parentID: try c.decodeIfPresent(UUID.self, forKey: .parentID),
+                  rank: try c.decodeIfPresent(Int.self, forKey: .rank) ?? 0)
     }
 }
 

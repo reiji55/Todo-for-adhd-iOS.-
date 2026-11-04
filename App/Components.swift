@@ -103,12 +103,12 @@ struct AgendaRow: View {
     enum Style { case card, timeline, loose, raised }
     @EnvironmentObject private var store: TaskStore
     @Environment(\.openGuide) private var openGuide
+    @Environment(\.startRoutine) private var startRoutine
     let item: AgendaItem
     var reason: String? = nil
     var showsTime = true
     var style: Style = .card
     let onOpen: (AgendaItem) -> Void
-    var onStart: ((TaskItem) -> Void)? = nil
 
     private var task: TaskItem? {
         if case .task(let id) = item.source { return store.task(id) }
@@ -147,14 +147,18 @@ struct AgendaRow: View {
                         }
                         if !item.project.isEmpty { ProjectTag(name: item.project) }
                     }
+                    // A piece of a bigger task says which, and how far that task has come.
+                    if let parent = task?.parentID.flatMap({ store.task($0) }) {
+                        let pieces = store.children(of: parent.id)
+                        Label("\(parent.title) \(pieces.filter(\.isComplete).count)/\(pieces.count)", systemImage: "arrow.turn.down.right")
+                            .font(.caption2.weight(.semibold)).lineLimit(1)
+                            .foregroundStyle(ProjectColor.color(for: store.colorName(forProject: parent.project)) ?? Palette.accent)
+                    }
                     Text(item.title).font(.body.weight(.medium))
                         .strikethrough(done).foregroundStyle(done ? .secondary : .primary)
                         .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
-                    if !done, let next = task?.nextStep {
+                    if !done, let task, let next = store.notebook.nextChild(of: task.id) {
                         Text("次：\(next.title)").font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                    }
-                    if !done, let note = task?.resumeNote, !note.isEmpty {
-                        Label(note, systemImage: "bookmark").font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain)
@@ -201,31 +205,23 @@ struct AgendaRow: View {
                 .frame(width: 20, height: 20).clipShape(RoundedRectangle(cornerRadius: 5))
                 .frame(width: 44, height: 44).accessibilityLabel("時間を押さえているだけの予定")
         } else if item.isRoutine && !item.isDone {
-            // A routine is timed right here: ▶ starts the dial, a tap on the dial finishes it.
+            // ▶ starts the routine's timer and opens its focus screen; while it runs, the dial reopens it.
             if store.isTiming(item), let run = store.routineRun {
-                Button { store.finishRoutineTimer() } label: {
+                RowButton { if let startRoutine { startRoutine(item) } else { store.finishRoutineTimer() } } label: {
                     ElapsedTimer(start: run.startedAt, minutes: plannedMinutes(item.slot), size: 30).frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(item.title)を計測中。タップで完了")
+                .accessibilityLabel("\(item.title)を計測中。集中画面を開く")
             } else {
-                Button { store.startRoutineTimer(item) } label: { playMark }
+                RowButton { if let startRoutine { startRoutine(item) } else { store.startRoutineTimer(item) } } label: { playMark }
                     .buttonStyle(.plain)
                     .accessibilityLabel("\(item.title)を始める")
             }
-        } else if let task, !item.isDone, !task.isEvent, let onStart {
-            // A task starts from here; it is checked off when its steps are done in the focus screen.
-            if let session = store.notebook.activeSession, session.taskID == task.id {
-                RowButton { onStart(task) } label: {
-                    ElapsedTimer(start: session.startedAt, minutes: plannedMinutes(task.slot), size: 30).frame(width: 44, height: 44)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(task.title)に取り組み中。集中画面を開く")
-            } else {
-                RowButton { onStart(task) } label: { playMark }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(task.title)を今やる")
-            }
+        } else if let task, store.hasChildren(task.id) {
+            // A task in pieces is finished through its pieces; here it only shows how far it has come.
+            let pieces = store.children(of: task.id)
+            ProgressRing(done: pieces.filter(\.isComplete).count, total: pieces.count, size: 28)
+                .frame(width: 44, height: 44)
         } else {
             RowButton { store.toggle(item) } label: {
                 Image(systemName: item.isDone ? "checkmark.circle.fill" : "circle").font(.title2).frame(width: 44, height: 44)
@@ -253,8 +249,22 @@ struct AgendaRow: View {
     }
 }
 
+/// Starting a routine from a row: its timer starts and its focus screen opens.
+struct StartRoutineAction {
+    let handler: (AgendaItem) -> Void
+    func callAsFunction(_ item: AgendaItem) { handler(item) }
+}
+
+private struct StartRoutineKey: EnvironmentKey { static let defaultValue: StartRoutineAction? = nil }
+extension EnvironmentValues {
+    var startRoutine: StartRoutineAction? {
+        get { self[StartRoutineKey.self] }
+        set { self[StartRoutineKey.self] = newValue }
+    }
+}
+
 /// A button in a row that can be slid aside: the finger lifting after a slide must not press it.
-private struct RowButton<Label: View>: View {
+struct RowButton<Label: View>: View {
     @Environment(\.rowSwiping) private var swiping
     let action: () -> Void
     @ViewBuilder let label: () -> Label
