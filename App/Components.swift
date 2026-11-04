@@ -260,7 +260,7 @@ private struct RowButton<Label: View>: View {
     @ViewBuilder let label: () -> Label
 
     var body: some View {
-        Button { if !swiping { action() } } label: label
+        Button(action: { if !swiping { action() } }, label: label)
     }
 }
 
