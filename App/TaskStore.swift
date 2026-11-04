@@ -224,6 +224,7 @@ final class TaskStore: ObservableObject {
         guard let run = routineRun else { return }
         let seconds = Int(Date().timeIntervalSince(run.startedAt))
         if commit({ $0.finishRoutine(run.routineID, originalDay: run.day, seconds: seconds) }) {
+            recentlyDone.insert("routine-\(run.routineID.uuidString)-\(run.day)")
             routineRun = nil
             saveRoutineRun()
         }
@@ -321,7 +322,11 @@ final class TaskStore: ObservableObject {
     }
 
     func finishAction() -> Bool {
-        commit { $0.finishAction() }
+        let id = notebook.activeSession?.taskID
+        let saved = commit { $0.finishAction() }
+        // Finished from the focus screen, it stays struck through where it was, like a checked row.
+        if saved, let id, task(id)?.isComplete == true { recentlyDone.insert("task-\(id.uuidString)") }
+        return saved
     }
 
     func convert(_ idea: Idea, plannedAt: Date?) -> Bool {

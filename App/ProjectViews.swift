@@ -712,7 +712,9 @@ struct ProjectPage: View {
     }
 
     private func tasks(_ entry: ProjectBook.Entry) -> some View {
-        let open = ProjectBook.tasks(entry.key, in: store.notebook).filter { !$0.isComplete }
+        // Checked off here a moment ago: kept in place, struck through, until the person moves on.
+        let open = ProjectBook.tasks(entry.key, in: store.notebook)
+            .filter { !$0.isComplete || store.recentlyDone.contains(AgendaItem(task: $0).id) }
             .sorted { ($0.plannedAt ?? .distantFuture, $0.createdAt) < ($1.plannedAt ?? .distantFuture, $1.createdAt) }
         return VStack(alignment: .leading, spacing: 10) {
             sectionTitle("近いうちにやること", add: "タスク") { onEdit(TaskItem(title: "", project: entry.name)) }

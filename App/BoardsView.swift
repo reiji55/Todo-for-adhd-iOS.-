@@ -96,7 +96,7 @@ struct AllTasksView: View {
         let done = matches.filter { $0.isComplete && !open.contains($0) }
             .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
 
-        Text("未完了 \(open.filter { !$0.isComplete }.count)件。予定日や調子にかかわらず、すべてここにあります。")
+        Text("未完了 \(open.filter { !$0.isComplete }.count)件。予定日や調子にかかわらず、すべてここにあります。横にスワイプすると削除できます。")
             .font(.caption).foregroundStyle(.secondary)
         if open.isEmpty {
             ContentUnavailableView(search.isEmpty ? "タスクはありません" : "見つかりませんでした", systemImage: "checklist",
@@ -122,10 +122,7 @@ struct AllTasksView: View {
         }
         Toggle("完了したタスクを表示（\(done.count)件）", isOn: $showDone).font(.subheadline).padding(.vertical)
         if showDone {
-            Text("横にスワイプすると、完全に削除できます。").font(.caption).foregroundStyle(.secondary)
-            ForEach(done) { task in
-                AgendaRow(item: AgendaItem(task: task), onOpen: onOpen).swipeToDelete { store.delete(task.id) }
-            }
+            ForEach(done) { task in AgendaRow(item: AgendaItem(task: task), onOpen: onOpen) }
         }
     }
 

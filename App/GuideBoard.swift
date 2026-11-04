@@ -411,7 +411,7 @@ struct GuideCardView: View {
     @ViewBuilder private func tasksSection(_ card: BoardCard, onEdit: @escaping (TaskItem) -> Void,
                                            onStart: @escaping (TaskItem) -> Void) -> some View {
         let tasks = store.linkedTasks(for: card)
-        let open = tasks.filter { !$0.isComplete }
+        let open = tasks.filter { !$0.isComplete || store.recentlyDone.contains(AgendaItem(task: $0).id) }
             .sorted { ($0.plannedAt ?? .distantFuture) < ($1.plannedAt ?? .distantFuture) }
         VStack(alignment: .leading, spacing: 8) {
             SectionHeading(title: "プロジェクトのタスク", subtitle: "「\(card.project)」の未完了のタスク")

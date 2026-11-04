@@ -103,8 +103,6 @@ struct AgendaRow: View {
     enum Style { case card, timeline, loose, raised }
     @EnvironmentObject private var store: TaskStore
     @Environment(\.openGuide) private var openGuide
-    /// While the row is being slid aside to delete, letting go must not also open it or uncheck it.
-    @Environment(\.rowSwiping) private var swiping
     let item: AgendaItem
     var reason: String? = nil
     var showsTime = true
@@ -125,7 +123,7 @@ struct AgendaRow: View {
         let task = self.task
         HStack(alignment: .center, spacing: 8) {
             check
-            Button { if !swiping { onOpen(item) } } label: {
+            RowButton { onOpen(item) } label: {
                 VStack(alignment: .leading, spacing: 3) {
                     if let reason {
                         Text(reason).font(.caption2.weight(.semibold)).foregroundStyle(Palette.accent)
@@ -174,7 +172,10 @@ struct AgendaRow: View {
         .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 14))
         .opacity(done ? 0.5 : 1)
         .animation(.easeOut(duration: 0.2), value: done)
-        .contextMenu { menu(task) }
+        .contextMenu { menu }
+        // Any task or event, done or not, slides aside to delete (with 取り消す after).
+        // A routine row is one day of something that repeats, so it does not.
+        .swipeToDelete(enabled: task != nil) { if let task { store.delete(task.id) } }
     }
 
     @ViewBuilder private var surface: some View {
@@ -191,7 +192,7 @@ struct AgendaRow: View {
     @ViewBuilder private var check: some View {
         if item.isEvent {
             // A square box tells an event from a task; checking it only records that it happened.
-            Button { store.toggle(item) } label: {
+            RowButton { store.toggle(item) } label: {
                 Image(systemName: item.isDone ? "checkmark.square.fill" : "square").font(.title2).frame(width: 44, height: 44)
             }.buttonStyle(.plain).foregroundStyle(Palette.accent)
                 .accessibilityLabel(item.isDone ? "\(item.title)の済んだ印を外す" : "\(item.title)に済んだ印を付ける")
@@ -215,18 +216,18 @@ struct AgendaRow: View {
         } else if let task, !item.isDone, !task.isEvent, let onStart {
             // A task starts from here; it is checked off when its steps are done in the focus screen.
             if let session = store.notebook.activeSession, session.taskID == task.id {
-                Button { onStart(task) } label: {
+                RowButton { onStart(task) } label: {
                     ElapsedTimer(start: session.startedAt, minutes: plannedMinutes(task.slot), size: 30).frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(task.title)に取り組み中。集中画面を開く")
             } else {
-                Button { onStart(task) } label: { playMark }
+                RowButton { onStart(task) } label: { playMark }
                     .buttonStyle(.plain)
                     .accessibilityLabel("\(task.title)を今やる")
             }
         } else {
-            Button { if !swiping { store.toggle(item) } } label: {
+            RowButton { store.toggle(item) } label: {
                 Image(systemName: item.isDone ? "checkmark.circle.fill" : "circle").font(.title2).frame(width: 44, height: 44)
             }.buttonStyle(.plain).foregroundStyle(Palette.accent)
                 .accessibilityLabel(item.isDone ? "\(item.title)を未完了に戻す" : "\(item.title)を完了")
@@ -239,43 +240,27 @@ struct AgendaRow: View {
             .frame(width: 44, height: 44).contentShape(Rectangle())
     }
 
-    @ViewBuilder private func menu(_ task: TaskItem?) -> some View {
-        Button(item.isRoutine ? "ルーティンを編集" : item.isEvent ? "イベントを編集" : "編集", systemImage: "pencil") { onOpen(item) }
-        if let card = guide, let openGuide {
-            Button("やり方を見る（\(card.title)）", systemImage: "book.closed") { openGuide(card.id) }
+    /// A long press offers only checking off (or undoing it); opening is a tap, deleting a slide.
+    @ViewBuilder private var menu: some View {
+        if item.isRoutine && store.isTiming(item) {
+            Button("計測をやめる（完了にしない）", systemImage: "stop") { store.cancelRoutineTimer() }
         }
-        if item.isRoutine && !item.isBlock {
-            if store.isTiming(item) {
-                Button("計測をやめる（完了にしない）", systemImage: "stop") { store.cancelRoutineTimer() }
-            }
-            Button(item.isDone ? "未完了に戻す" : "計らずに完了にする", systemImage: item.isDone ? "arrow.uturn.backward" : "checkmark") {
-                store.toggle(item)
-            }
-        }
-        if let task, !task.isEvent {
+        if !item.isBlock {
             Button(item.isDone ? "未完了に戻す" : "完了にする", systemImage: item.isDone ? "arrow.uturn.backward" : "checkmark") {
                 store.toggle(item)
             }
         }
-        if let task, task.isEvent {
-            Button("明日に移す", systemImage: "arrow.right") {
-                store.change(task.id) { $0.plannedAt = Calendar.current.date(byAdding: .day, value: 1, to: $0.plannedAt ?? Date()) }
-            }
-            Button("削除", systemImage: "trash", role: .destructive) { store.delete(task.id) }
-        } else if let task {
-            Button(task.isMust ? "必須を外す" : "必須にする", systemImage: "star") { store.change(task.id) { $0.isMust.toggle() } }
-            Button("今日に移す", systemImage: "sun.max") { store.change(task.id) { $0.plannedAt = Date() } }
-            Button("明日に移す", systemImage: "arrow.right") {
-                store.change(task.id) { $0.plannedAt = Calendar.current.date(byAdding: .day, value: 1, to: Date()) }
-            }
-            Button("日付を外す（いつでも）", systemImage: "tray") { store.change(task.id) { $0.plannedAt = nil; $0.slot = nil } }
-            if reason != nil {
-                Button("候補から1時間外す", systemImage: "clock") {
-                    store.change(task.id) { $0.suggestionDeferredUntil = Date().addingTimeInterval(3600) }
-                }
-            }
-            Button("削除", systemImage: "trash", role: .destructive) { store.delete(task.id) }
-        }
+    }
+}
+
+/// A button in a row that can be slid aside: the finger lifting after a slide must not press it.
+private struct RowButton<Label: View>: View {
+    @Environment(\.rowSwiping) private var swiping
+    let action: () -> Void
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        Button { if !swiping { action() } } label: label
     }
 }
 
@@ -350,13 +335,18 @@ extension EnvironmentValues {
 }
 
 private struct SwipeToDelete: ViewModifier {
+    var enabled = true
     let onDelete: () -> Void
     @State private var offset: CGFloat = 0
     @State private var settled: CGFloat = 0
     @State private var swiping = false
     private let reveal: CGFloat = 80
 
-    func body(content: Content) -> some View {
+    @ViewBuilder func body(content: Content) -> some View {
+        if enabled { slidable(content) } else { content }
+    }
+
+    private func slidable(_ content: Content) -> some View {
         content
             .environment(\.rowSwiping, swiping || settled < 0)
             .overlay {
@@ -404,5 +394,7 @@ private struct SwipeToDelete: ViewModifier {
 }
 
 extension View {
-    func swipeToDelete(_ onDelete: @escaping () -> Void) -> some View { modifier(SwipeToDelete(onDelete: onDelete)) }
+    func swipeToDelete(enabled: Bool = true, _ onDelete: @escaping () -> Void) -> some View {
+        modifier(SwipeToDelete(enabled: enabled, onDelete: onDelete))
+    }
 }
