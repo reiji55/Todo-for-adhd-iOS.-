@@ -16,7 +16,7 @@ final class ProjectTests: XCTestCase {
             Milestone(title: "単語帳を1周", kind: .check, isDone: true, createdAt: created),
             Milestone(title: "予想問題を解く", kind: .count, target: 5, current: 3, unit: "回", createdAt: created),
             Milestone(title: "模試", kind: .number, target: 450, current: 420, unit: "点", createdAt: created)
-        ], origin: "TOEICやる", createdAt: created)
+        ], origin: "TOEICやる", createdAt: created, overview: "転職の条件。単語は毎日、長文は時間を計って")
         let book = Notebook(boardCards: [BoardCard(title: "単語のやり方", createdAt: created, project: "TOEIC")], projects: [project])
         let restored = try seeded(book).materialize()
         XCTAssertEqual(restored.projects, [project])

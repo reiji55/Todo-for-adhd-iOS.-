@@ -127,6 +127,7 @@ count_ms = milestone('予想問題を解く', 'count', target=5, current=3, unit
 tasks_ms = milestone('Part7を時間内に解く', 'tasks')
 count_ms['id'] = M_COUNT; tasks_ms['id'] = M_TASKS
 projects = [dict(id=str(uuid.uuid4()), name='TOEIC', goal='本番で500点', deadline=date(now + timedelta(days=41)), origin='',
+                 overview='11月は実測を兼ねた本番。単語は毎日少しずつ、長文は時間を計って解く。',
                  createdAt=date(now - timedelta(days=20)), milestones=[
                      milestone('単語帳（金フレ）を1周する', 'check', isDone=True), count_ms,
                      milestone('模試で450点', 'number', target=450, current=420, unit='点'), tasks_ms])]

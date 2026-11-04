@@ -80,14 +80,16 @@ public struct Project: Codable, Identifiable, Equatable {
     /// The idea it grew from, as it was written.
     public var origin: String
     public var createdAt: Date
+    /// What the project is for and how it goes, in the person's words; shown at the top of its page.
+    public var overview: String
 
     public init(id: UUID = UUID(), name: String, goal: String = "", deadline: Date? = nil, milestones: [Milestone] = [],
-                origin: String = "", createdAt: Date = Date()) {
+                origin: String = "", createdAt: Date = Date(), overview: String = "") {
         self.id = id; self.name = name; self.goal = goal; self.deadline = deadline; self.milestones = milestones
-        self.origin = origin; self.createdAt = createdAt
+        self.origin = origin; self.createdAt = createdAt; self.overview = overview
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, goal, deadline, milestones, origin, createdAt }
+    enum CodingKeys: String, CodingKey { case id, name, goal, deadline, milestones, origin, createdAt, overview }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -98,6 +100,7 @@ public struct Project: Codable, Identifiable, Equatable {
         milestones = try c.decodeIfPresent([Milestone].self, forKey: .milestones) ?? []
         origin = try c.decodeIfPresent(String.self, forKey: .origin) ?? ""
         createdAt = try c.decode(Date.self, forKey: .createdAt)
+        overview = try c.decodeIfPresent(String.self, forKey: .overview) ?? ""
     }
 }
 

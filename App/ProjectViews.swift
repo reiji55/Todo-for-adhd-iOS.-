@@ -526,7 +526,7 @@ struct ProjectPage: View {
                         if past != pastHero { pastHero = past }
                     }
                     VStack(alignment: .leading, spacing: 26) {
-                        header(entry, color: color, progress: progress).id("content").revealOnScroll()
+                        header(entry, color: color).id("content").revealOnScroll()
                         way(entry, color: color).revealOnScroll()
                         tasks(entry).revealOnScroll()
                         cards(entry).revealOnScroll()
@@ -634,7 +634,7 @@ struct ProjectPage: View {
 
     // MARK: Sections
 
-    private func header(_ entry: ProjectBook.Entry, color: Color, progress: Double?) -> some View {
+    private func header(_ entry: ProjectBook.Entry, color: Color) -> some View {
         let book = store.notebook
         let milestones = entry.project?.milestones ?? []
         return VStack(alignment: .leading, spacing: 10) {
@@ -662,14 +662,43 @@ struct ProjectPage: View {
                         .background(Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
                 }
             }
-            if let progress {
-                HStack(spacing: 10) {
-                    ProgressView(value: progress).tint(color)
-                    Text("\(Int((progress * 100).rounded()))%").font(.footnote.weight(.bold)).foregroundStyle(color).monospacedDigit()
-                }
-            }
+            overviewBox(entry)
         }
         .padding(.horizontal, 4)
+    }
+
+    /// What the project is for and how it goes, in the person's own words. A tap opens the editor.
+    private func overviewBox(_ entry: ProjectBook.Entry) -> some View {
+        let overview = entry.project?.overview.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return Button { editingProject = entry.project ?? Project(name: entry.name) } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("概要").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                    Spacer()
+                    Image(systemName: "pencil").font(.caption).foregroundStyle(.secondary)
+                }
+                if overview.isEmpty {
+                    Text("何のためのプロジェクトか、どう進めるかを書いておけます").foregroundStyle(.secondary)
+                } else {
+                    Text(overview).foregroundStyle(.primary).multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .font(.subheadline)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                if overview.isEmpty {
+                    RoundedRectangle(cornerRadius: 14).strokeBorder(Color.secondary.opacity(0.35), style: StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
+                } else {
+                    RoundedRectangle(cornerRadius: 14).fill(Color(uiColor: .secondarySystemGroupedBackground))
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(overview.isEmpty ? "概要を書く" : "概要：\(overview)")
+        .accessibilityHint("プロジェクトの編集画面を開きます")
     }
 
     private func sectionTitle(_ title: String, add: String? = nil, action: @escaping () -> Void = {}) -> some View {
@@ -986,6 +1015,9 @@ struct ProjectEditor: View {
                 Section {
                     TextField("例：本番で500点", text: $project.goal, axis: .vertical).lineLimit(1...4)
                 } header: { Text("到達点") } footer: { Text("山の頂上に出ます。") }
+                Section {
+                    TextField("何のためのプロジェクトか、どう進めるか", text: $project.overview, axis: .vertical).lineLimit(3...12)
+                } header: { Text("概要") } footer: { Text("プロジェクトのページの上に出ます。") }
                 Section {
                     Toggle("期限を決める", isOn: $hasDeadline.animation())
                     if hasDeadline {

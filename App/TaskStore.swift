@@ -586,6 +586,7 @@ final class TaskStore: ObservableObject {
                 // Same name as a project already there: the idea joins it instead of splitting it in two.
                 if book.projects[i].origin.isEmpty { book.projects[i].origin = project.origin }
                 if book.projects[i].goal.isEmpty { book.projects[i].goal = project.goal }
+                if book.projects[i].overview.isEmpty { book.projects[i].overview = project.overview }
                 if book.projects[i].deadline == nil { book.projects[i].deadline = project.deadline }
             } else { book.projects.append(project) }
             if overviewCard {
@@ -890,7 +891,7 @@ extension Notebook {
             test,
             Milestone(title: "模試で450点", kind: .number, target: 450, current: 420, unit: "点", createdAt: earlier),
             part7
-        ], createdAt: earlier)
+        ], createdAt: earlier, overview: "これはサンプルです。転職の条件に英語があるので、本番までに形式に慣れる。単語は毎日少しずつ、長文は時間を計って解く。")
         // Tasks in pieces: the pieces carry the days; the whole keeps its deadline and ★.
         let papers = TaskItem(title: "提出書類を送る", deadline: now, isMust: true, effort: .light, memo: "これはサンプルです。",
                               createdAt: earlier)
