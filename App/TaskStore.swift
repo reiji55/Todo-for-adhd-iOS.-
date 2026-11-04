@@ -74,6 +74,8 @@ final class TaskStore: ObservableObject {
             Task { @MainActor [weak self] in self?.requestSync() }
         }
         moveCardsIntoProjectsOnce()
+        // Property observers do not run during init, so data loaded here is converted explicitly.
+        if notebook.needsStepConversion { scheduleStepConversion() }
     }
 
     /// The saved data, even while demo mode shows samples. Notifications are planned from this.

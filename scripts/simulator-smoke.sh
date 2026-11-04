@@ -172,9 +172,17 @@ import json, sys
 directory = Path(sys.argv[1]) / 'Library/Application Support/ThreeDays'
 legacy = json.loads((directory / 'notebook.json').read_text())
 state = json.loads((directory / 'horme-state.json').read_text())
-assert [t['id'].lower() for t in state['notebook']['tasks']] == [t['id'].lower() for t in legacy['tasks']], 'Task identities must survive UUID normalization'
-assert [t['title'] for t in state['notebook']['tasks']] == [t['title'] for t in legacy['tasks']], 'Task text must survive migration'
-assert len(state['notebook']['tasks']) == len(legacy['tasks']), 'Existing sample tasks must survive migration'
+tasks = state['notebook']['tasks']
+by_id = {t['id'].lower(): t for t in tasks}
+legacy_ids = {t['id'].lower() for t in legacy['tasks']}
+assert legacy_ids <= set(by_id), 'Task identities must survive UUID normalization'
+assert all(by_id[t['id'].lower()]['title'] == t['title'] for t in legacy['tasks']), 'Task text must survive migration'
+# Steps from before parent and child tasks become child tasks, keeping their IDs; nothing else is added.
+step_ids = {s['id'].lower() for t in legacy['tasks'] for s in t.get('steps', [])}
+added = [t for t in tasks if t['id'].lower() not in legacy_ids]
+assert {t['id'].lower() for t in added} == step_ids, 'Steps must become child tasks, and only they'
+assert all(t.get('parentID') for t in added), 'Child tasks must point to their task'
+assert not any(t.get('steps') for t in tasks), 'No steps may remain'
 assert [c['title'] for c in state['notebook']['boardCards']] == [c['title'] for c in legacy['boardCards']], 'Board cards must survive migration'
 assert len(state['notebook']['routines']) == len(legacy['routines']), 'Routines must survive migration'
 assert state.get('connection') is None, 'Sharing must require user setup'
