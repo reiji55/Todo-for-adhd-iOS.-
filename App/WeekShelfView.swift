@@ -107,7 +107,7 @@ struct WeekShelfView: View {
                         .onTapGesture { withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) { detent = .peek } }
                         .accessibilityHidden(true)
                 }
-                sheet(now: now, width: geometry.size.width)
+                sheet(now: now, width: geometry.size.width, full: full)
                     .frame(height: top, alignment: .top)
                     .offset(y: full - visible)
             }
@@ -320,7 +320,7 @@ struct WeekShelfView: View {
 
     // MARK: The sheet
 
-    private func sheet(now: Date, width: CGFloat) -> some View {
+    private func sheet(now: Date, width: CGFloat, full: CGFloat) -> some View {
         let calendar = Calendar.current
         let second = calendar.date(byAdding: .day, value: 1, to: selectedDay) ?? selectedDay
         return VStack(spacing: 0) {
@@ -329,7 +329,7 @@ struct WeekShelfView: View {
                 dateStrip(width: width, now: now).padding(.top, 6)
             }
             .contentShape(Rectangle())
-            .gesture(sheetGesture)
+            .gesture(sheetGesture(full: full))
             .onTapGesture {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { detent = detent == .peek ? .half : .peek }
             }
@@ -352,7 +352,7 @@ struct WeekShelfView: View {
     }
 
     /// Up and down moves the sheet between its three stops; sideways moves the days.
-    private var sheetGesture: some Gesture {
+    private func sheetGesture(full: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 6)
             .onChanged { value in
                 if dragAxis == nil {
@@ -366,13 +366,9 @@ struct WeekShelfView: View {
             }
             .onEnded { value in
                 if dragAxis == .vertical {
-                    // Where the throw would carry the sheet, measured against a typical screen; the nearest stop wins.
-                    let stops: [(Detent, CGFloat)] = [(.peek, 0), (.half, 1), (.full, 2)]
-                    let current = stops.first { $0.0 == detent }?.1 ?? 0
-                    let landing = current - value.predictedEndTranslation.height / 260
-                    let nearest = stops.min { abs($0.1 - landing) < abs($1.1 - landing) }?.0 ?? detent
+                    let target = Self.stop(after: value, from: detent, heights: { height($0, full: full) })
                     withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
-                        detent = nearest
+                        detent = target
                         sheetDrag = 0
                     }
                 } else {
@@ -384,6 +380,21 @@ struct WeekShelfView: View {
                 }
                 dragAxis = nil
             }
+    }
+
+    /// Where the sheet settles when let go, by how hard it was thrown: a strong flick goes all the way
+    /// (up to the top, or down to the dates), a light one goes one stop on from where it is, and a
+    /// slow drag stays at the stop nearest to where it was left.
+    static func stop(after value: DragGesture.Value, from detent: Detent, heights: (Detent) -> CGFloat) -> Detent {
+        let stops: [Detent] = [.peek, .half, .full]
+        let lowest = heights(.peek), highest = heights(.full)
+        let position = min(highest, max(lowest, heights(detent) - value.translation.height))
+        let speed = value.velocity.height
+        if speed < -1600 { return .full }
+        if speed > 1600 { return .peek }
+        if speed < -250 { return stops.first { heights($0) > position + 1 } ?? .full }
+        if speed > 250 { return stops.last { heights($0) < position - 1 } ?? .peek }
+        return stops.min { abs(heights($0) - position) < abs(heights($1) - position) } ?? detent
     }
 
     /// The two dates over their columns, large; the days either side peek in faintly at the edges,

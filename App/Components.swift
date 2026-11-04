@@ -173,9 +173,9 @@ struct AgendaRow: View {
         .opacity(done ? 0.5 : 1)
         .animation(.easeOut(duration: 0.2), value: done)
         .contextMenu { menu }
-        // Any task or event, done or not, slides aside to delete (with 取り消す after).
-        // A routine row is one day of something that repeats, so it does not.
-        .swipeToDelete(enabled: task != nil) { if let task { store.delete(task.id) } }
+        // Any task or event, done or not, slides aside to delete (with 取り消す after). Not a routine row
+        // (one day of something that repeats), and not in a day's timetable, where the day is laid out.
+        .swipeToDelete(enabled: task != nil && style != .timeline && style != .loose) { if let task { store.delete(task.id) } }
     }
 
     @ViewBuilder private var surface: some View {
