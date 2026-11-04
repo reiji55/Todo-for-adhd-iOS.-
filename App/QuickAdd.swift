@@ -30,30 +30,26 @@ enum AddKind: String, CaseIterable, Identifiable {
     }
 }
 
-/// Capture first, details later: a title is enough, and the sheet stays open for the next one.
-/// Used for tasks and events; events always have a day and no checkbox.
+/// Capture first, details later: a title is enough. Task or event is switched at the top; the day
+/// starts open (いつでも) and, once one is picked, a time can be dialed in. 追加 saves and closes,
+/// leaving a note with 取り消す on the screen underneath.
 @MainActor
 struct QuickAddSheet: View {
-    enum When: Hashable { case today, tomorrow, other, anytime }
     @EnvironmentObject private var store: TaskStore
     @Environment(\.dismiss) private var dismiss
-    let isEvent: Bool
+    @State private var isEvent: Bool
     @State private var title = ""
-    @State private var when: When
-    @State private var otherDay: Date
+    @State private var day: Date?
     @State private var slot: TimeSlot?
-    @State private var added: [String] = []
     @State private var details: TaskItem?
     @State private var pendingID: UUID?
+    @State private var detent: PresentationDetent = .medium
     @FocusState private var focused: Bool
 
     init(day: Date? = nil, isEvent: Bool = false) {
-        self.isEvent = isEvent
-        let calendar = Calendar.current
-        _otherDay = State(initialValue: day ?? Date())
-        if let day, !calendar.isDateInToday(day) {
-            _when = State(initialValue: calendar.isDateInTomorrow(day) ? .tomorrow : .other)
-        } else { _when = State(initialValue: .today) }
+        _isEvent = State(initialValue: isEvent)
+        // An event always happens on some day; a task can wait without one.
+        _day = State(initialValue: day.map { Calendar.current.startOfDay(for: $0) } ?? (isEvent ? Calendar.current.startOfDay(for: Date()) : nil))
     }
 
     private var trimmed: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -65,52 +61,46 @@ struct QuickAddSheet: View {
                     TextField(isEvent ? "予定（例：友達に会う）" : "やること", text: $title, axis: .vertical)
                         .font(.title3).lineLimit(1...4).focused($focused)
                         .submitLabel(.done).onSubmit(add)
-                    Picker("いつ", selection: $when) {
-                        Text("今日").tag(When.today)
-                        Text("明日").tag(When.tomorrow)
-                        Text("別の日").tag(When.other)
-                        if !isEvent { Text("いつでも").tag(When.anytime) }
-                    }.pickerStyle(.segmented)
-                    if when == .other {
-                        DatePicker("日付", selection: $otherDay, displayedComponents: .date)
-                    }
-                    if when != .anytime { TimeSlotFields(slot: $slot) }
-                } footer: {
-                    if !added.isEmpty {
-                        Text("追加しました：\(added.suffix(3).joined(separator: "、"))").foregroundStyle(Palette.accent)
-                    } else if isEvent {
-                        Text("時間を決めなければ終日の予定になります。")
+                }
+                Section {
+                    OptionalDateRow(title: "日付", date: $day, placeholder: "未定（いつでも）", clearable: !isEvent,
+                                    onExpand: { detent = .large })
+                    if day != nil {
+                        TimeDialRow(slot: $slot, placeholder: isEvent ? "終日" : "未定", onExpand: { detent = .large })
                     }
                 }
                 Section {
-                    Button(isEvent ? "場所やメモも書く" : "必須・締切・工程も書く", systemImage: "square.and.pencil") { details = makeTask() }
+                    Button("くわしく書く", systemImage: "square.and.pencil") { details = makeTask() }
+                        .font(.subheadline)
                 }
             }
-            .navigationTitle(isEvent ? "イベントを追加" : "タスクを追加").keyboardDismissable().navigationBarTitleDisplayMode(.inline)
+            .keyboardDismissable().navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } }
+                ToolbarItem(placement: .principal) {
+                    Picker("種類", selection: $isEvent) {
+                        Text("タスク").tag(false)
+                        Text("イベント").tag(true)
+                    }
+                    .pickerStyle(.segmented).frame(width: 170)
+                }
                 ToolbarItem(placement: .confirmationAction) { Button("追加", action: add).disabled(trimmed.isEmpty) }
             }
+            .onChange(of: isEvent) { _, event in
+                if event && day == nil { day = Calendar.current.startOfDay(for: Date()) }
+            }
+            .onChange(of: day) { _, day in if day == nil { slot = nil } }
             .onAppear { focused = true }
-            // Once saved from the full editor, clear the line so it is not added twice.
+            // Saved from the full editor: that was the adding, so this sheet closes too.
             .sheet(item: $details, onDismiss: {
-                if let id = pendingID, store.task(id) != nil { added.append(trimmed); title = ""; slot = nil }
+                if let id = pendingID, store.task(id) != nil { dismiss() }
                 pendingID = nil
             }) { task in
                 TaskEditor(task: task, original: nil).onAppear { pendingID = task.id }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.medium, .large], selection: $detent)
         .storeErrorAlert()
-    }
-
-    private var day: Date? {
-        switch when {
-        case .today: return Date()
-        case .tomorrow: return Calendar.current.date(byAdding: .day, value: 1, to: Date())
-        case .other: return otherDay
-        case .anytime: return nil
-        }
     }
 
     private func makeTask() -> TaskItem {
@@ -121,10 +111,10 @@ struct QuickAddSheet: View {
 
     private func add() {
         guard !trimmed.isEmpty else { return }
+        let added = trimmed
         if store.upsert(makeTask()) {
-            added.append(trimmed)
-            title = ""
-            focused = true
+            store.offerUndo("「\(added)」を追加しました")
+            dismiss()
         }
     }
 }

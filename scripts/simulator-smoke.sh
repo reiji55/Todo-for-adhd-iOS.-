@@ -181,6 +181,9 @@ xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/week.png"
 launch -uiTab 1 -uiWeekSheetOpen >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/week-sheet.png"
+launch -uiTab 1 -uiWeekSheetFull >/dev/null
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/week-sheet-full.png"
 launch -uiTab 0 >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/all.png"
@@ -205,4 +208,14 @@ xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/project-way.png"
 launch -uiTab 2 -uiOpenRoutine >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/routine-edit.png"
+launch -uiTab 2 -uiQuickAdd >/dev/null
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/quick-add.png"
+launch -uiTab 2 -uiOpenTask >/dev/null
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/task-edit.png"
+# Last: starting a task leaves it running in the saved sample data.
+launch -uiTab 2 -uiFocus >/dev/null
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/focus.png"
 # Screenshots and launch logs verify startup and layout, not every interaction.

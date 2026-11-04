@@ -318,6 +318,15 @@ struct RootView: View {
         if arguments.contains("-uiOpenRoutine") {
             routineEditor = store.notebook.routines.first { !$0.project.isEmpty && !$0.isBlock }
         }
+        if arguments.contains("-uiQuickAdd") { quickAdd = QuickAddRoute(day: nil, kind: .task) }
+        if arguments.contains("-uiOpenTask") {
+            if let task = store.notebook.tasks.first(where: { !$0.isComplete && !$0.isEvent && $0.plannedAt != nil }) {
+                edit(task)
+            }
+        }
+        if arguments.contains("-uiFocus"), let task = store.notebook.tasks.first(where: { !$0.isComplete && !$0.isEvent }) {
+            start(task)
+        }
         #endif
     }
 

@@ -103,6 +103,8 @@ struct AgendaRow: View {
     enum Style { case card, timeline, loose, raised }
     @EnvironmentObject private var store: TaskStore
     @Environment(\.openGuide) private var openGuide
+    /// While the row is being slid aside to delete, letting go must not also open it or uncheck it.
+    @Environment(\.rowSwiping) private var swiping
     let item: AgendaItem
     var reason: String? = nil
     var showsTime = true
@@ -123,7 +125,7 @@ struct AgendaRow: View {
         let task = self.task
         HStack(alignment: .center, spacing: 8) {
             check
-            Button { onOpen(item) } label: {
+            Button { if !swiping { onOpen(item) } } label: {
                 VStack(alignment: .leading, spacing: 3) {
                     if let reason {
                         Text(reason).font(.caption2.weight(.semibold)).foregroundStyle(Palette.accent)
@@ -224,7 +226,7 @@ struct AgendaRow: View {
                     .accessibilityLabel("\(task.title)を今やる")
             }
         } else {
-            Button { store.toggle(item) } label: {
+            Button { if !swiping { store.toggle(item) } } label: {
                 Image(systemName: item.isDone ? "checkmark.circle.fill" : "circle").font(.title2).frame(width: 44, height: 44)
             }.buttonStyle(.plain).foregroundStyle(Palette.accent)
                 .accessibilityLabel(item.isDone ? "\(item.title)を未完了に戻す" : "\(item.title)を完了")
@@ -339,14 +341,24 @@ enum EnergyMemory {
 
 /// A row that slides left to show a delete button behind it, for things that are finished and only
 /// in the way. A tap on the slid row slides it back.
+private struct RowSwipingKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var rowSwiping: Bool {
+        get { self[RowSwipingKey.self] }
+        set { self[RowSwipingKey.self] = newValue }
+    }
+}
+
 private struct SwipeToDelete: ViewModifier {
     let onDelete: () -> Void
     @State private var offset: CGFloat = 0
     @State private var settled: CGFloat = 0
+    @State private var swiping = false
     private let reveal: CGFloat = 80
 
     func body(content: Content) -> some View {
         content
+            .environment(\.rowSwiping, swiping || settled < 0)
             .overlay {
                 if settled < 0 {
                     Color.clear.contentShape(Rectangle()).onTapGesture { close() }
@@ -371,12 +383,15 @@ private struct SwipeToDelete: ViewModifier {
                 DragGesture(minimumDistance: 18)
                     .onChanged { value in
                         guard abs(value.translation.width) > abs(value.translation.height) * 1.2 else { return }
+                        swiping = true
                         offset = min(0, max(-reveal * 1.5, settled + value.translation.width))
                     }
                     .onEnded { value in
                         let end = settled + value.predictedEndTranslation.width
                         withAnimation(.snappy(duration: 0.25)) { offset = end < -reveal / 2 ? -reveal : 0 }
                         settled = offset
+                        // The row's own tap lands as the finger lifts; keep it held off until then.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { swiping = false }
                     }
             )
             .accessibilityAction(named: "完全に削除", onDelete)

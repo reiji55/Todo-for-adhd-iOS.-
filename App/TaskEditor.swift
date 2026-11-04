@@ -24,52 +24,41 @@ struct TaskEditor: View {
         NavigationStack {
             Form {
                 Section {
-                    Picker("種類", selection: Binding(
-                        get: { task.isEvent },
-                        set: { task.isEvent = $0; if $0 && task.plannedAt == nil { task.plannedAt = Date() } }
-                    )) {
-                        Text("タスク").tag(false)
-                        Text("イベント").tag(true)
-                    }.pickerStyle(.segmented)
-                    TextField(task.isEvent ? "予定（例：友達に会う）" : "タスク名", text: $task.title, axis: .vertical)
-                        .font(.headline).lineLimit(1...5)
-                    if !task.isEvent { Toggle("必須にする", isOn: $task.isMust).tint(Palette.must) }
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        TextField(task.isEvent ? "予定（例：友達に会う）" : "タスク名", text: $task.title, axis: .vertical)
+                            .font(.headline).lineLimit(1...5)
+                        if !task.isEvent {
+                            // Must-do is a mark on the name, not a setting further down.
+                            Button { withAnimation(.snappy) { task.isMust.toggle() } } label: {
+                                Image(systemName: task.isMust ? "star.fill" : "star")
+                                    .font(.title3).foregroundStyle(task.isMust ? Palette.must : Color.secondary)
+                                    .frame(width: 36, height: 36).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("必須")
+                            .accessibilityAddTraits(task.isMust ? .isSelected : [])
+                            .accessibilityHint("必須のものは予定日が来たら上段に出ます")
+                        }
+                    }
                 } footer: {
-                    Text(task.isEvent
-                         ? "イベントはその日にある予定です。チェックはなく、候補や残りのタスクには入りません。"
-                         : "必須は予定日が来たら上段に表示。日付なしなら今日から表示します。")
+                    if task.isMust { Text("★必須：予定日が来たら上段に表示。日付なしなら今日から表示します。") }
                 }
-                Section(task.isEvent ? "いつ" : "いつやるか") {
-                    if !task.isEvent {
-                        Toggle("予定日を決める", isOn: Binding(
-                            get: { task.plannedAt != nil }, set: { task.plannedAt = $0 ? (task.plannedAt ?? Date()) : nil }
-                        ))
-                    }
-                    if task.plannedAt != nil {
-                        DatePicker("予定日", selection: Binding(
-                            get: { task.plannedAt ?? Date() }, set: { task.plannedAt = $0 }
-                        ), displayedComponents: .date)
-                        HStack {
-                            Button("今日") { task.plannedAt = Date() }
-                            Spacer()
-                            Button("明日") { task.plannedAt = Calendar.current.date(byAdding: .day, value: 1, to: Date()) }
-                        }.buttonStyle(.borderless)
-                    }
-                    if task.plannedAt != nil {
-                        TimeSlotFields(slot: $task.slot, legacyLabel: task.scheduledTime) { task.scheduledTime = "" }
-                    }
-                }
-                if !task.isEvent {
                 Section {
-                    Toggle("締切がある", isOn: Binding(
-                        get: { task.deadline != nil }, set: { task.deadline = $0 ? (task.deadline ?? Date()) : nil }
-                    ))
-                    if task.deadline != nil {
-                        DatePicker("締切日", selection: Binding(
-                            get: { task.deadline ?? Date() }, set: { task.deadline = $0 }
-                        ), displayedComponents: .date)
+                    OptionalDateRow(title: "予定日", date: $task.plannedAt, placeholder: task.isEvent ? "今日" : "未定（いつでも）",
+                                    clearable: !task.isEvent)
+                    if task.plannedAt != nil {
+                        TimeDialRow(slot: $task.slot, placeholder: task.isEvent ? "終日" : "未定")
+                        if task.slot == nil && !task.scheduledTime.isEmpty {
+                            HStack {
+                                Text("以前の時間帯：\(task.scheduledTime)").foregroundStyle(.secondary)
+                                Spacer()
+                                Button("消す") { task.scheduledTime = "" }.buttonStyle(.borderless)
+                            }
+                        }
                     }
-                } footer: { Text("予定日を変えても締切は変わりません。締切日になったら必ず上段に表示します。") }
+                    if !task.isEvent {
+                        OptionalDateRow(title: "締切", date: $task.deadline)
+                    }
                 }
                 if (task.plannedAt != nil && task.slot != nil) || (!task.isEvent && task.deadline != nil) {
                     Section {
@@ -208,7 +197,8 @@ struct FocusView: View {
                         Text(actionTitle(task, session: session)).font(.largeTitle.weight(.semibold))
                             .fixedSize(horizontal: false, vertical: true)
                         // A pomodoro-style dial: time spent against the task's planned length (one pomodoro if none).
-                        HStack(spacing: 20) {
+                        // Finishing and stopping sit right beside it, where the eyes already are.
+                        HStack(spacing: 12) {
                             ElapsedTimer(start: session.startedAt, minutes: plannedMinutes(task.slot), size: 60)
                             TimelineView(.periodic(from: .now, by: 1)) { context in
                                 let elapsed = context.date.timeIntervalSince(session.startedAt)
@@ -220,13 +210,22 @@ struct FocusView: View {
                                         Text("予定の\(planned)分を\(Int(elapsed / 60) - planned)分こえています")
                                             .font(.caption.weight(.semibold)).foregroundStyle(.red)
                                     } else {
-                                        Text(task.slot == nil ? "目安 \(planned)分（1ポモドーロ）" : "予定 \(planned)分")
+                                        Text(task.slot == nil ? "目安 \(planned)分" : "予定 \(planned)分")
                                             .font(.caption).foregroundStyle(.secondary)
                                     }
                                 }
                             }
+                            .accessibilityElement(children: .combine)
+                            Spacer(minLength: 0)
+                            FocusRoundButton(title: "中断", systemImage: "pause.fill", prominent: false) {
+                                if store.pause(note: note) { dismiss() }
+                            }
+                            .accessibilityHint("ここで手を止めて一覧へ戻ります。続きのメモは残ります")
+                            FocusRoundButton(title: "完了", systemImage: "checkmark", prominent: true) {
+                                finish(task, session: session)
+                            }
+                            .accessibilityLabel(session.stepID == nil ? "タスクを完了" : "この一手を完了")
                         }
-                        .accessibilityElement(children: .combine)
                         if let card = store.linkedCard(for: task) {
                             // The method is what people forget mid-task; keep it one tap away.
                             DisclosureGroup {
@@ -240,21 +239,13 @@ struct FocusView: View {
                         if !task.memo.isEmpty {
                             DisclosureGroup("メモ") { Text(task.memo).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8) }
                         }
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("続きのメモ（任意）").font(.headline)
+                        // Last, and quiet: only needed when stopping partway.
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("続きのメモ（任意）").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                             TextField("どこまで進んだ？ 次はどこから？", text: $note, axis: .vertical)
-                                .lineLimit(3...8).padding().background(Palette.paper, in: RoundedRectangle(cornerRadius: 12))
-                            Text("別のタスクに移っても、このメモは残ります。")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .lineLimit(2...8).padding(12).background(Palette.paper, in: RoundedRectangle(cornerRadius: 12))
                         }
-                        Button { finish(task, session: session) } label: {
-                            Label(session.stepID == nil ? "タスクを完了" : "この一手を完了", systemImage: "checkmark")
-                                .frame(maxWidth: .infinity).padding(.vertical, 8)
-                        }.buttonStyle(.borderedProminent).controlSize(.large)
-                        Button {
-                            if store.pause(note: note) { dismiss() }
-                        } label: { Text("ここで中断する").frame(maxWidth: .infinity).padding(.vertical, 8) }
-                            .buttonStyle(.bordered).controlSize(.large)
+                        .padding(.top, 8)
                     }.padding(24)
                 }
                 .navigationTitle("今やるひとつ").keyboardDismissable().navigationBarTitleDisplayMode(.inline)
@@ -297,5 +288,27 @@ struct FocusView: View {
     private func loadNote(_ task: TaskItem) { note = task.resumeNote; lastLoadedID = task.id }
     private func actionTitle(_ task: TaskItem, session: Session) -> String {
         task.steps.first(where: { $0.id == session.stepID })?.title ?? task.title
+    }
+}
+
+/// A round button beside the focus timer, its word under it.
+private struct FocusRoundButton: View {
+    let title: String
+    let systemImage: String
+    let prominent: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: systemImage).font(.title3.weight(.bold))
+                    .foregroundStyle(prominent ? Color.white : Palette.accent)
+                    .frame(width: 54, height: 54)
+                    .background(Circle().fill(prominent ? Palette.accent : Palette.accent.opacity(0.14)))
+                Text(title).font(.caption.weight(.semibold)).foregroundStyle(prominent ? Palette.accent : Color.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 }

@@ -5,17 +5,47 @@ import UIKit
 /// things as small chips, so the whole week reads at a glance without sideways scrolling. A sheet
 /// pulled up from the bottom shows the chosen day and the next one hour by hour; swiping its dates
 /// moves a day at a time. Time held for sleep or work only tints the shelves it fills.
+///
+/// A chip tapped on the shelves opens the sheet at its hour; a shelf with three or more opens a small
+/// balloon listing them all. A chip held and dragged goes to another day or time of day; the exact
+/// time is set afterwards in the sheet.
 @MainActor
 struct WeekShelfView: View {
+    /// Down (only the dates peek out), half up, or all the way up over the title bar.
+    enum Detent { case peek, half, full }
+
+    /// Where the sheet's hours should scroll to, and the block to point out there.
+    struct SheetFocus: Equatable {
+        let id = UUID()
+        var minute: Int?
+        var itemID: String?
+    }
+
+    struct ShelfTarget: Equatable {
+        var day: Date
+        var band: Band
+    }
+
+    /// A chip held and carried over the shelves.
+    struct Carry: Equatable {
+        var item: AgendaItem
+        var fromDay: Date
+        var location: CGPoint
+        var target: ShelfTarget?
+    }
+
     @EnvironmentObject private var store: TaskStore
     @Environment(\.refreshClock) private var refreshClock
     @Environment(\.colorScheme) private var scheme
     @State private var weekStart = WeekView.monday(of: Date())
     @State private var selectedDay = Calendar.current.startOfDay(for: Date())
-    @State private var sheetOpen = false
+    @State private var detent: Detent = .peek
     @State private var sheetDrag: CGFloat = 0
     @State private var dayDrag: CGFloat = 0
     @State private var dragAxis: Axis?
+    @State private var focus: SheetFocus?
+    @State private var carry: Carry?
+    @State private var rowFrames: [Date: CGRect] = [:]
     let onOpen: (AgendaItem) -> Void
     let onStart: (TaskItem) -> Void
     let onAdd: (Date) -> Void
@@ -24,6 +54,7 @@ struct WeekShelfView: View {
 
     /// How much of the sheet shows when it is down: the handle and the top half of its dates.
     static let peekHeight: CGFloat = 44
+    static let space = "weekShelf"
     private let gutter: CGFloat = 40
 
     private var days: [Date] {
@@ -35,19 +66,30 @@ struct WeekShelfView: View {
             content(now: max(context.date, refreshClock))
         }
         .background(Palette.paper)
+        // All the way up, the sheet takes the title bar's place too.
+        .toolbar(detent == .full ? .hidden : .visible, for: .navigationBar)
         .onAppear {
             #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("-uiWeekSheetOpen") { sheetOpen = true }
+            if ProcessInfo.processInfo.arguments.contains("-uiWeekSheetOpen") { detent = .half }
+            if ProcessInfo.processInfo.arguments.contains("-uiWeekSheetFull") { detent = .full }
             #endif
+        }
+    }
+
+    private func height(_ detent: Detent, full: CGFloat) -> CGFloat {
+        switch detent {
+        case .peek: return Self.peekHeight
+        case .half: return max(Self.peekHeight, full - 96)
+        case .full: return max(Self.peekHeight, full - 6)
         }
     }
 
     private func content(now: Date) -> some View {
         GeometryReader { geometry in
             let full = geometry.size.height
-            let openHeight = max(Self.peekHeight, full - 96)
-            let resting = sheetOpen ? openHeight : Self.peekHeight
-            let visible = min(openHeight, max(Self.peekHeight, resting - sheetDrag))
+            let top = height(.full, full: full)
+            let half = height(.half, full: full)
+            let visible = min(top, max(Self.peekHeight, height(detent, full: full) - sheetDrag))
             ZStack(alignment: .top) {
                 VStack(spacing: 0) {
                     header(now: now)
@@ -58,19 +100,19 @@ struct WeekShelfView: View {
                             .frame(maxWidth: 760).frame(maxWidth: .infinity)
                     }
                 }
-                .opacity(1 - 0.6 * Double((visible - Self.peekHeight) / max(1, openHeight - Self.peekHeight)))
+                .opacity(1 - 0.6 * min(1, Double((visible - Self.peekHeight) / max(1, half - Self.peekHeight))))
                 // With the sheet up, a tap on the week above it puts the sheet back down.
-                if sheetOpen {
+                if detent != .peek {
                     Color.clear.contentShape(Rectangle())
-                        .onTapGesture { withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) { sheetOpen = false } }
+                        .onTapGesture { withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) { detent = .peek } }
                         .accessibilityHidden(true)
                 }
-                sheet(now: now, width: geometry.size.width, height: openHeight)
-                    .frame(height: openHeight, alignment: .top)
+                sheet(now: now, width: geometry.size.width)
+                    .frame(height: top, alignment: .top)
                     .offset(y: full - visible)
             }
             .overlay(alignment: .bottomTrailing) {
-                FloatingAddButton { onPick($0, sheetOpen ? selectedDay : nil) }
+                FloatingAddButton { onPick($0, detent == .peek ? nil : selectedDay) }
                     .padding(.trailing, 14).padding(.bottom, Self.peekHeight + 10)
             }
             .clipped()
@@ -95,6 +137,7 @@ struct WeekShelfView: View {
                     withAnimation(.snappy) {
                         weekStart = WeekView.monday(of: now)
                         selectedDay = Calendar.current.startOfDay(for: now)
+                        focus = nil
                     }
                 }.font(.subheadline)
             }
@@ -107,6 +150,7 @@ struct WeekShelfView: View {
         withAnimation(.snappy) {
             weekStart = calendar.date(byAdding: .day, value: 7 * weeks, to: weekStart) ?? weekStart
             selectedDay = calendar.date(byAdding: .day, value: 7 * weeks, to: selectedDay) ?? selectedDay
+            focus = nil
         }
     }
 
@@ -115,6 +159,7 @@ struct WeekShelfView: View {
         let calendar = Calendar.current
         guard let day = calendar.date(byAdding: .day, value: days, to: selectedDay) else { return }
         selectedDay = day
+        focus = nil
         let monday = WeekView.monday(of: day)
         if !calendar.isDate(monday, inSameDayAs: weekStart) { weekStart = monday }
         UISelectionFeedbackGenerator().selectionChanged()
@@ -127,9 +172,23 @@ struct WeekShelfView: View {
         var title: String { ["朝", "昼", "夕", "夜"][rawValue] }
         /// Minutes of the day the band covers.
         var range: Range<Int> { [0..<12 * 60, 12 * 60..<17 * 60, 17 * 60..<20 * 60, 20 * 60..<24 * 60][rawValue] }
+        /// Where a thing moved into this band from another one lands, until a time is picked in the sheet.
+        var usualStart: Int { [9 * 60, 13 * 60, 18 * 60, 21 * 60][rawValue] }
         static func of(_ minute: Int) -> Band {
             allCases.first { $0.range.contains(minute) } ?? .night
         }
+        /// Things without a time sit with the morning.
+        static func of(_ item: AgendaItem) -> Band { item.slot.map { of($0.start) } ?? .morning }
+    }
+
+    /// The time a carried thing gets on its new shelf: unchanged within the same time of day, else
+    /// the usual start of the new one. Things without a time stay so on the morning shelf.
+    static func landing(_ item: AgendaItem, in band: Band) -> TimeSlot? {
+        guard let slot = item.slot else {
+            return band == .morning ? nil : TimeSlot(start: band.usualStart, duration: 60)
+        }
+        if Band.of(slot.start) == band { return slot }
+        return TimeSlot(start: min(band.usualStart, 24 * 60 - slot.duration), duration: slot.duration)
     }
 
     private func shelf(now: Date) -> some View {
@@ -146,25 +205,122 @@ struct WeekShelfView: View {
             ForEach(days, id: \.self) { day in
                 let emphasis: Double = calendar.isDate(day, inSameDayAs: selectedDay) ? 0.5
                     : (calendar.isDate(day, inSameDayAs: next) ? 0.22 : 0)
-                ShelfRow(day: day, now: now, gutter: gutter) {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                        selectedDay = calendar.startOfDay(for: day)
-                        sheetOpen = true
-                    }
-                }
+                let target = carry?.target.flatMap { calendar.isDate($0.day, inSameDayAs: day) ? $0.band : nil }
+                ShelfRow(day: day, now: now, gutter: gutter, targetBand: target, carrying: carry?.item.id,
+                         onSelect: { select(day) },
+                         onFocus: { band, item in focusOn(day: day, band: band, item: item) },
+                         onCarry: { item, location in carried(item, from: day, to: location) },
+                         onDrop: dropped)
                 .overlay {
                     if emphasis > 0 {
                         RoundedRectangle(cornerRadius: 12).strokeBorder(Palette.accent.opacity(emphasis), lineWidth: 1.5)
-                            .padding(.leading, gutter + 1).allowsHitTesting(false)
+                            .padding(.leading, gutter + 2).allowsHitTesting(false)
+                    }
+                }
+                .background {
+                    GeometryReader { row in
+                        Color.clear.preference(key: ShelfRowFrames.self, value: [day: row.frame(in: .named(Self.space))])
                     }
                 }
             }
+        }
+        .onPreferenceChange(ShelfRowFrames.self) { rowFrames = $0 }
+        .overlay(alignment: .topLeading) { liftedChip }
+        .coordinateSpace(name: Self.space)
+    }
+
+    private var cellWidth: CGFloat {
+        guard let frame = rowFrames.values.first else { return 80 }
+        return (frame.width - gutter - 16) / 4
+    }
+
+    /// The carried chip, above the finger, with the day and time it would land on.
+    @ViewBuilder private var liftedChip: some View {
+        if let carry {
+            VStack(alignment: .leading, spacing: 3) {
+                if let target = carry.target {
+                    let landing = Self.landing(carry.item, in: target.band)
+                    Text("\(target.day.formatted(.dateTime.month(.defaultDigits).day())) \(landing?.startLabel ?? "時間なし")")
+                        .font(.system(size: 10, weight: .bold)).monospacedDigit()
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Palette.accent, in: Capsule())
+                }
+                ShelfChip(item: carry.item)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 6))
+                    .frame(width: cellWidth + 10)
+                    .shadow(color: .black.opacity(0.3), radius: 10, y: 6)
+            }
+            .fixedSize()
+            .position(x: carry.location.x, y: carry.location.y - 36)
+            .allowsHitTesting(false)
+            .transition(.scale(scale: 0.9).combined(with: .opacity))
+        }
+    }
+
+    private func target(at point: CGPoint) -> ShelfTarget? {
+        let rows = rowFrames.sorted { $0.value.minY < $1.value.minY }
+        guard let last = rows.last else { return nil }
+        let row = rows.first { point.y <= $0.value.maxY + 2 } ?? last
+        let width = (row.value.width - gutter - 16) / 4
+        let column = Int(((point.x - row.value.minX - gutter - 4) / (width + 4)).rounded(.down))
+        return ShelfTarget(day: row.key, band: Band(rawValue: min(3, max(0, column))) ?? .morning)
+    }
+
+    private func carried(_ item: AgendaItem, from day: Date, to location: CGPoint) {
+        let target = target(at: location)
+        guard carry != nil else {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.7)) {
+                carry = Carry(item: item, fromDay: day, location: location, target: target)
+            }
+            return
+        }
+        var quiet = Transaction()
+        quiet.disablesAnimations = true
+        withTransaction(quiet) { carry?.location = location }
+        if target != carry?.target {
+            UISelectionFeedbackGenerator().selectionChanged()
+            withAnimation(.snappy(duration: 0.14)) { carry?.target = target }
+        }
+    }
+
+    private func dropped() {
+        guard let carry else { return }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { self.carry = nil }
+        guard let target = carry.target else { return }
+        let sameDay = Calendar.current.isDate(target.day, inSameDayAs: carry.fromDay)
+        guard !sameDay || target.band != Band.of(carry.item) else { return }
+        let slot = Self.landing(carry.item, in: target.band)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        store.move(carry.item, to: target.day, slot: slot)
+        store.offerUndo("「\(carry.item.title)」を\(target.day.formatted(.dateTime.month(.defaultDigits).day())) \(slot?.startLabel ?? target.band.title)へ")
+    }
+
+    private func select(_ day: Date) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            selectedDay = Calendar.current.startOfDay(for: day)
+            focus = nil
+            if detent == .peek { detent = .half }
+        }
+    }
+
+    /// The sheet opens on the day, scrolled to the thing tapped (or to the time of day), and points it out.
+    private func focusOn(day: Date, band: Band, item: AgendaItem?) {
+        let items = Agenda.items(on: day, tasks: store.notebook.tasks, routines: store.notebook.routines)
+        let first = items.filter { !$0.isBlock && Band.of($0) == band }.compactMap(\.slot).map(\.start).min()
+        // A thing without a time is in the row at the top of the sheet; the hours open as usual.
+        let minute: Int? = item != nil ? item?.slot?.start : (first ?? band.usualStart)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            selectedDay = Calendar.current.startOfDay(for: day)
+            if detent == .peek { detent = .half }
+            focus = SheetFocus(minute: minute, itemID: item?.id)
         }
     }
 
     // MARK: The sheet
 
-    private func sheet(now: Date, width: CGFloat, height: CGFloat) -> some View {
+    private func sheet(now: Date, width: CGFloat) -> some View {
         let calendar = Calendar.current
         let second = calendar.date(byAdding: .day, value: 1, to: selectedDay) ?? selectedDay
         return VStack(spacing: 0) {
@@ -175,15 +331,16 @@ struct WeekShelfView: View {
             .contentShape(Rectangle())
             .gesture(sheetGesture)
             .onTapGesture {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { sheetOpen.toggle() }
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { detent = detent == .peek ? .half : .peek }
             }
             .accessibilityElement(children: .combine)
-            .accessibilityHint(sheetOpen ? "下げると週の棚に戻ります" : "上げると2日分の時間割が開きます")
+            .accessibilityHint(detent == .peek ? "上げると2日分の時間割が開きます" : "下げると週の棚に戻ります")
             .accessibilityAction(named: "次の日") { withAnimation(.snappy) { step(1) } }
             .accessibilityAction(named: "前の日") { withAnimation(.snappy) { step(-1) } }
-            SheetDays(days: [selectedDay, second], now: now, gutter: gutter, onOpen: onOpen,
+            .accessibilityAction(named: "大きく広げる") { withAnimation(.snappy) { detent = .full } }
+            SheetDays(days: [selectedDay, second], now: now, gutter: gutter, focus: focus, onOpen: onOpen,
                       onMove: { item, day, slot in store.move(item, to: day, slot: slot) })
-                .opacity(sheetOpen || sheetDrag < -10 ? 1 : 0)
+                .opacity(detent != .peek || sheetDrag < -10 ? 1 : 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background {
@@ -194,7 +351,7 @@ struct WeekShelfView: View {
         }
     }
 
-    /// Up and down moves the sheet; sideways moves the days.
+    /// Up and down moves the sheet between its three stops; sideways moves the days.
     private var sheetGesture: some Gesture {
         DragGesture(minimumDistance: 6)
             .onChanged { value in
@@ -209,9 +366,13 @@ struct WeekShelfView: View {
             }
             .onEnded { value in
                 if dragAxis == .vertical {
-                    let throwDistance = value.predictedEndTranslation.height
+                    // Where the throw would carry the sheet, measured against a typical screen; the nearest stop wins.
+                    let stops: [(Detent, CGFloat)] = [(.peek, 0), (.half, 1), (.full, 2)]
+                    let current = stops.first { $0.0 == detent }?.1 ?? 0
+                    let landing = current - value.predictedEndTranslation.height / 260
+                    let nearest = stops.min { abs($0.1 - landing) < abs($1.1 - landing) }?.0 ?? detent
                     withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
-                        sheetOpen = sheetOpen ? throwDistance < 90 : throwDistance < -60
+                        detent = nearest
                         sheetDrag = 0
                     }
                 } else {
@@ -246,6 +407,13 @@ struct WeekShelfView: View {
         }
         .frame(width: width, height: 64)
         .clipped()
+    }
+}
+
+private struct ShelfRowFrames: PreferenceKey {
+    static let defaultValue: [Date: CGRect] = [:]
+    static func reduce(value: inout [Date: CGRect], nextValue: () -> [Date: CGRect]) {
+        value.merge(nextValue()) { $1 }
     }
 }
 
@@ -304,7 +472,13 @@ private struct ShelfRow: View {
     let day: Date
     let now: Date
     let gutter: CGFloat
+    /// The shelf a carried chip would land on, when it is in this row.
+    let targetBand: WeekShelfView.Band?
+    let carrying: String?
     let onSelect: () -> Void
+    let onFocus: (WeekShelfView.Band, AgendaItem?) -> Void
+    let onCarry: (AgendaItem, CGPoint) -> Void
+    let onDrop: () -> Void
 
     var body: some View {
         let calendar = Calendar.current
@@ -313,8 +487,8 @@ private struct ShelfRow: View {
         let today = calendar.isDate(day, inSameDayAs: now)
         let past = calendar.startOfDay(for: day) < calendar.startOfDay(for: now)
         let weekday = calendar.component(.weekday, from: day)
-        Button(action: onSelect) {
-            HStack(alignment: .top, spacing: 4) {
+        HStack(alignment: .top, spacing: 4) {
+            Button(action: onSelect) {
                 VStack(spacing: 0) {
                     Text("\(calendar.component(.day, from: day))").font(.system(size: 16, weight: .bold, design: .rounded))
                     Text(today ? "今日" : ["日", "月", "火", "水", "木", "金", "土"][weekday - 1])
@@ -322,17 +496,21 @@ private struct ShelfRow: View {
                 }
                 .foregroundStyle(today ? Palette.accent : (weekday == 1 ? Color.red.opacity(0.8) : (weekday == 7 ? Color.orange : Color.primary)))
                 .frame(width: gutter).padding(.top, 8)
-                ForEach(WeekShelfView.Band.allCases, id: \.rawValue) { band in
-                    let inBand = items.filter { !$0.isBlock && (($0.slot.map { WeekShelfView.Band.of($0.start) } ?? .morning) == band) }
-                    ShelfCell(items: inBand, heldShare: Self.share(of: held, in: band.range))
-                }
+                .frame(maxHeight: .infinity, alignment: .top)
+                .contentShape(Rectangle())
             }
-            .opacity(past ? 0.55 : 1)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(calendar.component(.day, from: day))日 \(items.filter { !$0.isBlock }.count)件")
+            .accessibilityHint("その日と次の日の時間割を開きます")
+            ForEach(WeekShelfView.Band.allCases, id: \.rawValue) { band in
+                ShelfCell(day: day, band: band,
+                          items: items.filter { !$0.isBlock && WeekShelfView.Band.of($0) == band },
+                          heldShare: Self.share(of: held, in: band.range),
+                          isTarget: targetBand == band, carrying: carrying,
+                          onFocus: { onFocus(band, $0) }, onCarry: onCarry, onDrop: onDrop)
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(calendar.component(.day, from: day))日 \(items.filter { !$0.isBlock }.count)件")
-        .accessibilityHint("その日と次の日の時間割を開きます")
+        .opacity(past ? 0.55 : 1)
     }
 
     /// How much of a band is held for sleep or work.
@@ -344,16 +522,40 @@ private struct ShelfRow: View {
     }
 }
 
-/// A shelf: up to two chips, then how many more.
+/// A shelf: up to two chips, then how many more. A tap on a chip opens the sheet at it; a shelf with
+/// more than two opens a balloon with all of them. A chip held and dragged is carried to another shelf.
+@MainActor
 private struct ShelfCell: View {
+    let day: Date
+    let band: WeekShelfView.Band
     let items: [AgendaItem]
     let heldShare: Double
+    let isTarget: Bool
+    let carrying: String?
+    let onFocus: (AgendaItem?) -> Void
+    let onCarry: (AgendaItem, CGPoint) -> Void
+    let onDrop: () -> Void
+    @State private var showAll = false
+    @GestureState private var holding = false
 
     var body: some View {
+        let crowded = items.count > 2
         VStack(alignment: .leading, spacing: 3) {
-            ForEach(items.prefix(2)) { ShelfChip(item: $0) }
-            if items.count > 2 {
+            ForEach(items.prefix(2)) { item in
+                ShelfChip(item: item)
+                    .opacity(carrying == item.id ? 0.25 : 1)
+                    .contentShape(Rectangle())
+                    .onTapGesture { if crowded { showAll = true } else { onFocus(item) } }
+                    .gesture(carryGesture(item))
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(item.slot?.startLabel ?? "時間なし") \(item.title)")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint("時間割で見る。長押しして動かすと日や時間帯を変えられます")
+            }
+            if crowded {
                 Text("+\(items.count - 2)").font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.accent).padding(.leading, 4)
+                    .accessibilityLabel("ほか\(items.count - 2)件。すべて見る")
+                    .accessibilityAddTraits(.isButton)
             }
         }
         .padding(4)
@@ -362,6 +564,56 @@ private struct ShelfCell: View {
             RoundedRectangle(cornerRadius: 10)
                 .fill(heldShare >= 0.5 ? Color.primary.opacity(0.045) : Color(uiColor: .secondarySystemGroupedBackground))
         }
+        .overlay {
+            if isTarget {
+                RoundedRectangle(cornerRadius: 10).strokeBorder(Palette.accent, lineWidth: 2.5).allowsHitTesting(false)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { if crowded { showAll = true } else { onFocus(nil) } }
+        .onChange(of: holding) { _, now in if !now { onDrop() } }
+        .popover(isPresented: $showAll) {
+            BandBalloon(day: day, band: band, items: items) { item in
+                showAll = false
+                onFocus(item)
+            }
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    private func carryGesture(_ item: AgendaItem) -> some Gesture {
+        LongPressGesture(minimumDuration: 0.35)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named(WeekShelfView.space)))
+            .updating($holding) { value, state, _ in
+                if case .second(true, _) = value { state = true }
+            }
+            .onChanged { value in
+                guard case .second(true, let drag) = value, let drag else { return }
+                onCarry(item, drag.location)
+            }
+    }
+}
+
+/// Everything on one shelf, in a small balloon that grows out of it.
+@MainActor
+private struct BandBalloon: View {
+    let day: Date
+    let band: WeekShelfView.Band
+    let items: [AgendaItem]
+    let onPick: (AgendaItem) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("\(day.formatted(.dateTime.month(.defaultDigits).day().weekday(.abbreviated))) \(band.title)")
+                .font(.caption.weight(.bold)).foregroundStyle(.secondary)
+            ForEach(items) { item in
+                Button { onPick(item) } label: { ShelfChip(item: item, roomy: true) }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(item.slot?.startLabel ?? "時間なし") \(item.title)")
+            }
+        }
+        .padding(12)
+        .frame(width: 230)
     }
 }
 
@@ -369,17 +621,19 @@ private struct ShelfCell: View {
 private struct ShelfChip: View {
     @EnvironmentObject private var store: TaskStore
     let item: AgendaItem
+    /// In the balloon there is room for the whole title on one line.
+    var roomy = false
 
     var body: some View {
         let color = ProjectColor.color(for: store.colorName(forProject: item.project)) ?? Palette.accent
         VStack(alignment: .leading, spacing: 0) {
             if let slot = item.slot {
-                Text(slot.startLabel).font(.system(size: 9, weight: .semibold)).monospacedDigit().foregroundStyle(.secondary)
+                Text(roomy ? slot.label : slot.startLabel).font(.system(size: roomy ? 10 : 9, weight: .semibold)).monospacedDigit().foregroundStyle(.secondary)
             }
-            Text(item.title).font(.system(size: 11, weight: .bold)).lineLimit(1)
+            Text(item.title).font(.system(size: roomy ? 13 : 11, weight: .bold)).lineLimit(1)
                 .strikethrough(item.isDone)
         }
-        .padding(.horizontal, 5).padding(.vertical, 3)
+        .padding(.horizontal, roomy ? 8 : 5).padding(.vertical, roomy ? 5 : 3)
         .frame(maxWidth: .infinity, alignment: .leading)
         .foregroundStyle(item.isEvent ? color : Color.primary)
         .background {
@@ -402,14 +656,16 @@ private struct ShelfChip: View {
 @MainActor
 private struct SheetDays: View {
     @EnvironmentObject private var store: TaskStore
-    @Environment(\.colorScheme) private var scheme
     let days: [Date]
     let now: Date
     let gutter: CGFloat
+    let focus: WeekShelfView.SheetFocus?
     let onOpen: (AgendaItem) -> Void
     let onMove: (AgendaItem, Date, TimeSlot) -> Void
     @State private var moving: String?
     @State private var moveOffset: CGSize = .zero
+    /// The block just pointed at from the shelves, outlined for a moment.
+    @State private var flash: String?
 
     private let hourHeight: CGFloat = 36
 
@@ -422,9 +678,17 @@ private struct SheetDays: View {
                     Text("時間なし").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
                         .frame(width: gutter - 6, alignment: .leading)
                     ForEach(0..<2, id: \.self) { index in
+                        // The one pointed at from the shelves comes first, so it is never hidden in +N.
+                        let pointed = untimed[index].filter { $0.id == flash }
+                        let list = pointed + untimed[index].filter { $0.id != flash }
                         VStack(alignment: .leading, spacing: 3) {
-                            ForEach(untimed[index].prefix(2)) { item in
+                            ForEach(list.prefix(2)) { item in
                                 Button { onOpen(item) } label: { ShelfChip(item: item) }.buttonStyle(.plain)
+                                    .overlay {
+                                        if flash == item.id {
+                                            RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary, lineWidth: 2).allowsHitTesting(false)
+                                        }
+                                    }
                             }
                             if untimed[index].count > 2 {
                                 Text("+\(untimed[index].count - 2)").font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.accent)
@@ -468,12 +732,21 @@ private struct SheetDays: View {
                 }
                 .onAppear { proxy.scrollTo(startHour, anchor: .top) }
                 .onChange(of: days.first) { _, _ in withAnimation(.snappy) { proxy.scrollTo(startHour, anchor: .top) } }
+                .onChange(of: focus) { _, focus in
+                    withAnimation(.snappy) { proxy.scrollTo(startHour, anchor: .top) }
+                    guard let id = focus?.itemID else { return }
+                    withAnimation(.easeOut(duration: 0.2)) { flash = id }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                        if flash == id { withAnimation(.easeOut(duration: 0.4)) { flash = nil } }
+                    }
+                }
             }
         }
     }
 
-    /// Today opens just before now; other days at seven.
+    /// The hour the thing pointed at sits under; else, today just before now and other days at seven.
     private var startHour: Int {
+        if let minute = focus?.minute { return max(0, min(18, minute / 60 - 1)) }
         let calendar = Calendar.current
         guard let first = days.first, calendar.isDate(first, inSameDayAs: now) else { return 7 }
         return max(0, min(18, calendar.component(.hour, from: now) - 1))
@@ -507,16 +780,32 @@ private struct SheetDays: View {
                 let slot = item.slot!
                 let width = column / CGFloat(count) - 2
                 let height = max(CGFloat(slot.duration) / 60 * hourHeight - 2, 22)
-                SheetBlock(item: item, width: width, height: height)
+                let isMoving = moving == item.id
+                SheetBlock(item: item, width: width, height: height, highlighted: flash == item.id)
+                    .overlay(alignment: .topTrailing) {
+                        // Where it would land, while it is held.
+                        if isMoving {
+                            Text(TimeSlot(start: landingStart(slot), duration: slot.duration).startLabel)
+                                .font(.system(size: 11, weight: .bold)).monospacedDigit().foregroundStyle(.white)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Palette.accent, in: Capsule())
+                                .offset(x: 4, y: -12)
+                        }
+                    }
                     .offset(x: CGFloat(lane) * (column / CGFloat(count)), y: CGFloat(slot.start) / 60 * hourHeight)
-                    .offset(moving == item.id ? moveOffset : .zero)
-                    .scaleEffect(moving == item.id ? 1.04 : 1, anchor: .topLeading)
-                    .shadow(color: .black.opacity(moving == item.id ? 0.35 : 0), radius: 10, y: 6)
-                    .zIndex(moving == item.id ? 2 : 0)
+                    .offset(isMoving ? moveOffset : .zero)
+                    .scaleEffect(isMoving ? 1.04 : 1, anchor: .topLeading)
+                    .shadow(color: .black.opacity(isMoving ? 0.35 : 0), radius: 10, y: 6)
+                    .zIndex(isMoving ? 2 : 0)
                     .onTapGesture { onOpen(item) }
                     .gesture(moveGesture(item, slot: slot, index: index, column: column))
             }
         }
+    }
+
+    private func landingStart(_ slot: TimeSlot) -> Int {
+        let minutes = Int((moveOffset.height / hourHeight * 60 / 15).rounded()) * 15
+        return min(max(0, slot.start + minutes), 24 * 60 - slot.duration)
     }
 
     /// Hold, then drag: up and down in quarter hours, sideways to the other day.
@@ -529,9 +818,11 @@ private struct SheetDays: View {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     withAnimation(.spring(response: 0.22, dampingFraction: 0.7)) { moving = item.id }
                 }
+                let before = landingStart(slot)
                 var quiet = Transaction()
                 quiet.disablesAnimations = true
                 withTransaction(quiet) { moveOffset = drag?.translation ?? .zero }
+                if landingStart(slot) != before { UISelectionFeedbackGenerator().selectionChanged() }
             }
             .onEnded { value in
                 defer {
@@ -564,6 +855,7 @@ private struct SheetBlock: View {
     let item: AgendaItem
     let width: CGFloat
     let height: CGFloat
+    var highlighted = false
 
     var body: some View {
         let color = ProjectColor.color(for: store.colorName(forProject: item.project)) ?? Palette.accent
@@ -586,6 +878,12 @@ private struct SheetBlock: View {
                 RoundedRectangle(cornerRadius: 8).fill(color)
             }
         }
+        .overlay {
+            if highlighted {
+                RoundedRectangle(cornerRadius: 9).strokeBorder(Color.primary, lineWidth: 2.5).padding(-3)
+            }
+        }
+        .scaleEffect(highlighted ? 1.04 : 1)
         .opacity(item.isDone ? 0.45 : 1)
         .contentShape(RoundedRectangle(cornerRadius: 8))
         .accessibilityElement(children: .ignore)
