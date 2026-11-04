@@ -214,6 +214,8 @@ struct TaskEditor: View {
                     .buttonStyle(.borderless)
                     .accessibilityLabel("\(piece.title)の日付と時間")
                 }
+                // The line between pieces starts under their names, as in the rest of the form.
+                .alignmentGuide(.listRowSeparatorLeading) { _ in 42 }
             }
             .onDelete { offsets in
                 for index in offsets where initialPieces.contains(where: { $0.id == pieces[index].id }) {
