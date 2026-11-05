@@ -169,10 +169,22 @@ sleep 5
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/today.png"
 python3 - "$SIMULATOR_DATA" <<'PY'
 from pathlib import Path
-import json, sys
+import json, sys, time
 directory = Path(sys.argv[1]) / 'Library/Application Support/ThreeDays'
 legacy = json.loads((directory / 'notebook.json').read_text())
-state = json.loads((directory / 'horme-state.json').read_text())
+# Steps become child tasks just after launch; a slow simulator may not have saved that yet.
+deadline = time.time() + 30
+while True:
+    try:
+        state = json.loads((directory / 'horme-state.json').read_text())
+        if not any(t.get('steps') for t in state['notebook']['tasks']):
+            break
+    except (FileNotFoundError, json.JSONDecodeError):
+        state = None
+    if time.time() > deadline:
+        break
+    time.sleep(1)
+assert state is not None, 'The app must save its state after launch'
 tasks = state['notebook']['tasks']
 by_id = {t['id'].lower(): t for t in tasks}
 legacy_ids = {t['id'].lower() for t in legacy['tasks']}
