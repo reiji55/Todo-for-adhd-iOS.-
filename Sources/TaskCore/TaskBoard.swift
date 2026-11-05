@@ -3,6 +3,9 @@ import Foundation
 public struct Candidate: Identifiable, Equatable {
     public let task: TaskItem
     public let reason: String
+    /// The reason in a few words, for a small label ("明日が締切", "今日の予定", "続き"). Empty when
+    /// there is nothing worth saying.
+    public let label: String
     public var id: UUID { task.id }
 }
 
@@ -95,14 +98,22 @@ public struct TaskBoard {
             return stableOrder(a, b)
         }.prefix(max(0, limit))).map { task in
             let reason: String
+            let label: String
             switch tier(task) {
-            case 0: reason = "明日が締切"
-            case 1: reason = "今日やる予定"
-            case 2: reason = "途中まで進んでいるタスクの続き"
+            case 0: reason = "明日が締切"; label = "明日が締切"
+            case 1: reason = "今日やる予定"; label = "今日の予定"
+            case 2: reason = "途中まで進んでいるタスクの続き"; label = "続き"
             default:
-                reason = energy.preferred == task.effort ? "今の調子に合う負荷" : "しばらく手をつけていないもの"
+                if energy.preferred == task.effort {
+                    reason = "今の調子に合う負荷"; label = "調子に合う"
+                } else {
+                    reason = "しばらく手をつけていないもの"
+                    // A task written down this week has not been waiting long.
+                    let untouched = now.timeIntervalSince(task.lastStartedAt ?? task.createdAt)
+                    label = untouched >= 7 * 24 * 3600 ? "しばらく手つかず" : ""
+                }
             }
-            return Candidate(task: task, reason: reason)
+            return Candidate(task: task, reason: reason, label: label)
         }
     }
 

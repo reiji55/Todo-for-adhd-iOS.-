@@ -15,6 +15,10 @@ final class TaskStore: ObservableObject {
     static let shared = TaskStore()
     /// Kept on this device only, so a running timer survives the app being closed.
     @Published private(set) var routineRun: RoutineRun? = TaskStore.loadRoutineRun()
+    /// The day 今日を終える was pressed on, as a day key; any other day reads as open. Kept on this device.
+    /// Demo mode keeps its own in memory, so practising never quiets real reminders.
+    @Published private(set) var closedDay: String? = UserDefaults.standard.string(forKey: TaskStore.closedDayKey)
+    static let closedDayKey = "horme.closedDay"
     @Published private(set) var notebook = Notebook() {
         // Data from an older version (or another device not yet updated) may still hold steps or a running
         // task timer; they become child tasks as soon as they arrive.
@@ -139,6 +143,7 @@ final class TaskStore: ObservableObject {
         history = []; recentlyDone = []; undoOffer = nil
         notebook = .demo(now: Date())
         isDemo = true
+        closedDay = nil
     }
 
     func endDemo() {
@@ -146,6 +151,7 @@ final class TaskStore: ObservableObject {
         isDemo = false
         history = []; recentlyDone = []; undoOffer = nil
         notebook = state.notebook
+        closedDay = UserDefaults.standard.string(forKey: Self.closedDayKey)
         // A timer started on a sample routine has nothing to finish once the samples are gone.
         if let run = routineRun, !notebook.routines.contains(where: { $0.id == run.routineID }) { cancelRoutineTimer() }
         requestSync()
@@ -320,6 +326,28 @@ final class TaskStore: ObservableObject {
         routineRun = nil
         saveRoutineRun()
     }
+
+    // MARK: Ending the day
+
+    /// 今日を終える: the いま screen shows the day as over, and what is left of today's tasks and routines
+    /// stops announcing itself (events still do). Nothing in the data changes; leftovers are sorted the
+    /// next morning as always. A routine being timed stops as with 中断.
+    func closeDay(now: Date = Date()) {
+        if routineRun != nil { cancelRoutineTimer() }
+        closedDay = DayKey.of(now)
+        if !isDemo { UserDefaults.standard.set(closedDay, forKey: Self.closedDayKey) }
+    }
+
+    /// 再開する: today is open again, with its reminders.
+    func reopenDay() {
+        closedDay = nil
+        if !isDemo { UserDefaults.standard.removeObject(forKey: Self.closedDayKey) }
+    }
+
+#if DEBUG
+    /// Screenshot runs: today shown as ended without saving it, so later launches start open.
+    func closeDayForPreview() { closedDay = DayKey.of(Date()) }
+#endif
 
     /// Where this time left off, shown when the routine is next started. An empty note keeps the last one.
     func saveRoutineNote(_ id: UUID, note: String) {

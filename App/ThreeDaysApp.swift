@@ -122,6 +122,8 @@ struct RootView: View {
         .onChange(of: selectedTab) { _, _ in store.clearRecentlyDone() }
         // Planned from the saved data, so demo mode never replaces real reminders.
         .onChange(of: store.notebook) { _, _ in Reminders.shared.reschedule(store.realNotebook) }
+        // 今日を終える quiets the rest of today's reminders; 再開する brings them back.
+        .onChange(of: store.closedDay) { _, _ in Reminders.shared.reschedule(store.realNotebook) }
         .task {
             #if DEBUG
             // Screenshot runs must not be covered by the permission dialog.
@@ -159,7 +161,9 @@ struct RootView: View {
     @ViewBuilder private func screen(_ tab: Tab) -> some View {
         switch tab {
         case .today:
-            TodayView(onOpen: open, onWeek: { selectedTab = Tab.week.rawValue })
+            // One thing to do now; the full timetable (the Today screen as it was) is a tap away.
+            NowView(onOpen: open, onWeek: { selectedTab = Tab.week.rawValue },
+                    onAdd: { quickAdd = QuickAddRoute(day: nil, kind: $0) })
                 .floatingAdd { quickAdd = QuickAddRoute(day: nil, kind: $0) }
         case .week:
             // The grid fills the screen, so the button floats over it instead of taking a row.
@@ -201,7 +205,7 @@ struct RootView: View {
             NavigationStack {
                 screen(Tab(rawValue: selectedTab) ?? .today)
                     .navigationTitle((Tab(rawValue: selectedTab) ?? .today).title)
-                    .navigationBarTitleDisplayMode(selectedTab == Tab.week.rawValue ? .inline : .automatic)
+                    .navigationBarTitleDisplayMode(selectedTab == Tab.week.rawValue || selectedTab == Tab.today.rawValue ? .inline : .automatic)
                     .toolbar { commonToolbar }
                     .safeAreaInset(edge: .top, spacing: 0) { demoBar }
                     .safeAreaInset(edge: .bottom, spacing: 0) { activeTaskBar }
@@ -218,7 +222,7 @@ struct RootView: View {
                 NavigationStack {
                     screen(tab)
                         .navigationTitle(tab == .today ? "Horme" : tab.title)
-                        .navigationBarTitleDisplayMode(tab == .week ? .inline : .automatic)
+                        .navigationBarTitleDisplayMode(tab == .week || tab == .today ? .inline : .automatic)
                         .toolbar { commonToolbar }
                         .toolbar(.hidden, for: .tabBar)
                         // The demo notice sits under the title bar, inside the screen, so no button is covered.

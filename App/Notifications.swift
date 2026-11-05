@@ -27,7 +27,8 @@ final class Reminders: NSObject, ObservableObject, UNUserNotificationCenterDeleg
         return ReminderOptions(leadMinutes: d.integer(forKey: Key.lead), tasks: d.bool(forKey: Key.tasks),
                                routines: d.bool(forKey: Key.routines), events: d.bool(forKey: Key.events),
                                deadlines: d.bool(forKey: Key.deadlines),
-                               deadlineHour: d.integer(forKey: Key.deadlineHour))
+                               deadlineHour: d.integer(forKey: Key.deadlineHour),
+                               closedDay: d.string(forKey: TaskStore.closedDayKey))
     }
 
     func refreshStatus() async {

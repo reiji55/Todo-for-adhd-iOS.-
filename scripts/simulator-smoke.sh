@@ -232,6 +232,13 @@ xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/quick-add.png"
 launch -uiTab 2 -uiOpenTask >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/task-edit.png"
+launch -uiTab 2 -uiTimetable >/dev/null
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/timetable.png"
+# Shown as ended without saving it, so the launches after this one start open.
+launch -uiTab 2 -uiDayClosed >/dev/null
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/day-closed.png"
 # Last: starting a task leaves it running in the saved sample data.
 launch -uiTab 2 -uiFocus >/dev/null
 sleep 4

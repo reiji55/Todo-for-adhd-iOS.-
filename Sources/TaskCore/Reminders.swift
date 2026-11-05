@@ -15,10 +15,13 @@ public struct ReminderOptions: Equatable {
     /// A morning banner on the day something is due.
     public var deadlines: Bool
     public var deadlineHour: Int
+    /// A day ended early with 今日を終える, as a day key: what is left of its tasks and routines stays
+    /// quiet, while events still ring.
+    public var closedDay: String?
     public init(leadMinutes: Int = 0, tasks: Bool = true, routines: Bool = true, events: Bool = true,
-                deadlines: Bool = true, deadlineHour: Int = 8) {
+                deadlines: Bool = true, deadlineHour: Int = 8, closedDay: String? = nil) {
         self.leadMinutes = leadMinutes; self.tasks = tasks; self.routines = routines; self.events = events
-        self.deadlines = deadlines; self.deadlineHour = deadlineHour
+        self.deadlines = deadlines; self.deadlineHour = deadlineHour; self.closedDay = closedDay
     }
 }
 
@@ -32,15 +35,17 @@ public enum ReminderPlan {
         for offset in 0..<days {
             guard let day = calendar.date(byAdding: .day, value: offset, to: today) else { continue }
             let key = DayKey.of(day, calendar: calendar)
+            let closed = options.closedDay == key
             for item in Agenda.items(on: day, tasks: book.tasks, routines: book.routines, calendar: calendar) {
                 guard !item.isDone, !item.isBlock, let slot = item.slot, wanted(item, in: book, options: options) else { continue }
+                if closed && !item.isEvent { continue }
                 guard let start = calendar.date(byAdding: .minute, value: slot.start, to: day),
                       let fire = calendar.date(byAdding: .minute, value: -options.leadMinutes, to: start), fire > now else { continue }
                 let when = options.leadMinutes > 0 ? "\(options.leadMinutes)分後 \(slot.label)" : slot.label
                 result.append(ReminderRequest(id: "horme.\(item.id).\(key)", date: fire, title: item.title,
                                               body: item.isRoutine ? "\(when)・ルーティン" : item.isEvent ? "\(when)・予定" : when))
             }
-            guard options.deadlines else { continue }
+            guard options.deadlines, !closed else { continue }
             for task in book.tasks where !task.isComplete && !task.isEvent && task.notify {
                 guard let due = task.deadline, calendar.isDate(due, inSameDayAs: day),
                       let fire = calendar.date(byAdding: .hour, value: options.deadlineHour, to: day), fire > now else { continue }
