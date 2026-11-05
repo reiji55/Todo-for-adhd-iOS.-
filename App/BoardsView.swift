@@ -96,7 +96,8 @@ struct AllTasksView: View {
         let done = matches.filter { $0.isComplete && !open.contains($0) }
             .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
 
-        Text("未完了 \(open.filter { !$0.isComplete }.count)件。予定日や調子にかかわらず、すべてここにあります。横にスワイプすると削除できます。")
+        let openCount = open.filter { !$0.isComplete }.count
+        Text(store.isDemo ? "未完了 \(openCount)件。予定日や調子にかかわらず、すべてここにあります。横にスワイプすると削除できます。" : "未完了 \(openCount)件")
             .font(.caption).foregroundStyle(.secondary)
         if open.isEmpty {
             ContentUnavailableView(search.isEmpty ? "タスクはありません" : "見つかりませんでした", systemImage: "checklist",
@@ -165,7 +166,7 @@ struct AllTasksView: View {
         let past = events.filter { ($0.plannedAt.map { calendar.startOfDay(for: $0) } ?? today) < today }
             .sorted { ($0.plannedAt ?? .distantPast) > ($1.plannedAt ?? .distantPast) }
         let byDay = Dictionary(grouping: upcoming) { calendar.startOfDay(for: $0.plannedAt ?? today) }
-        Text("その日にある予定。チェックはなく、タスクの候補には入りません。").font(.caption).foregroundStyle(.secondary)
+        Text("その日にある予定。チェックはなく、タスクの候補には入りません。").font(.caption).foregroundStyle(.secondary).onlyInDemo()
         if upcoming.isEmpty {
             ContentUnavailableView(search.isEmpty ? "これからのイベントはありません" : "見つかりませんでした", systemImage: "calendar",
                                    description: Text(search.isEmpty ? "右下の＋から「イベント」を選ぶと追加できます。" : "別の言葉で検索してみてください。"))

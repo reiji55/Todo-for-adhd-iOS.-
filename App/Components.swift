@@ -408,3 +408,18 @@ extension View {
         modifier(SwipeToDelete(enabled: enabled, onDelete: onDelete))
     }
 }
+
+/// A sentence on how a screen or a field works. It shows only in demo mode, where someone is learning
+/// the app with samples; in everyday use the screens stay quiet. Empty states, warnings, confirmations
+/// and the settings screen keep their text.
+private struct OnlyInDemo: ViewModifier {
+    @EnvironmentObject private var store: TaskStore
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if store.isDemo { content }
+    }
+}
+
+extension View {
+    func onlyInDemo() -> some View { modifier(OnlyInDemo()) }
+}

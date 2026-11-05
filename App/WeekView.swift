@@ -784,7 +784,7 @@ struct DayList: View {
                     .id(item.id)
             }
             Text("表の帯をタップすると、ここで目立たせます。ここをタップすると編集できます。表で長押しして動かすと日付と時間を変えられます（ルーティンはその日だけ）。左右の端からさらに引くと前後の週に移ります。")
-                .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
+                .font(.caption).foregroundStyle(.secondary).padding(.top, 6).onlyInDemo()
         }
     }
 }

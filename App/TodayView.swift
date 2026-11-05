@@ -71,7 +71,7 @@ struct TodayView: View {
             }
             if dayOffset < 0 {
                 Text("やり残したものは、今日の画面の「前の日から残っているタスク」から振り分けられます。")
-                    .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
+                    .font(.caption).foregroundStyle(.secondary).padding(.top, 6).onlyInDemo()
             }
         }
         .frame(maxWidth: 760).frame(maxWidth: .infinity)
@@ -294,14 +294,14 @@ struct CandidatePanel: View {
         let candidates = TaskBoard().candidates(placement, energy: energy, now: now)
         VStack(alignment: .leading, spacing: 10) {
             Text("今できそうなもの").font(.title3.weight(.bold))
-            Text("気になるものから。大きなタスクは、その中の一つずつが出ます。").font(.caption).foregroundStyle(.secondary)
+            Text("気になるものから。大きなタスクは、その中の一つずつが出ます。").font(.caption).foregroundStyle(.secondary).onlyInDemo()
             Picker(selection: $energy) {
                 ForEach(Energy.allCases) { Text($0.label).tag($0) }
             } label: { Text("今の調子") }
             .pickerStyle(.segmented)
             .accessibilityHint("候補の並びだけを変えます。必須や全件一覧には影響しません。")
             Text("今の調子：\(energy.label)。同じ優先度の中で、近い負荷のものを先に出します。")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(.secondary).onlyInDemo()
             if candidates.isEmpty {
                 Text("今の候補はありません。「すべて」からどのタスクでも始められます。")
                     .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 6)
@@ -410,7 +410,7 @@ struct RolloverSheet: View {
                         }.font(.caption)
                     }
                 } footer: {
-                    Text("時間は前の日のまま残ります。「いつでも」に送ると日付と時間を外します。")
+                    Text("時間は前の日のまま残ります。「いつでも」に送ると日付と時間を外します。").onlyInDemo()
                 }
             }
             .navigationTitle("残っているタスク").navigationBarTitleDisplayMode(.inline)

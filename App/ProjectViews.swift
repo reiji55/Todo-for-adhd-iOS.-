@@ -915,7 +915,7 @@ struct MilestoneStation: View {
                         ProgressView(value: progress).tint(color)
                         Text(ProjectText.value(milestone, in: book)).font(.footnote.weight(.bold)).foregroundStyle(color).monospacedDigit()
                     }
-                    Text("数値 ・ タップで今の値を入れる").font(.caption).foregroundStyle(.secondary)
+                    Text(store.isDemo ? "数値 ・ タップで今の値を入れる" : "数値").font(.caption).foregroundStyle(.secondary)
                 }
             }
             .buttonStyle(.plain)
@@ -1014,10 +1014,10 @@ struct ProjectEditor: View {
                 }
                 Section {
                     TextField("例：本番で500点", text: $project.goal, axis: .vertical).lineLimit(1...4)
-                } header: { Text("到達点") } footer: { Text("山の頂上に出ます。") }
+                } header: { Text("到達点") } footer: { Text("山の頂上に出ます。").onlyInDemo() }
                 Section {
                     TextField("何のためのプロジェクトか、どう進めるか", text: $project.overview, axis: .vertical).lineLimit(3...12)
-                } header: { Text("概要") } footer: { Text("プロジェクトのページの上に出ます。") }
+                } header: { Text("概要") } footer: { Text("プロジェクトのページの上に出ます。").onlyInDemo() }
                 Section {
                     Toggle("期限を決める", isOn: $hasDeadline.animation())
                     if hasDeadline {
@@ -1097,7 +1097,7 @@ struct MilestoneEditor: View {
                         DatePicker("目安の日", selection: Binding(get: { milestone.dueDate ?? Date() }, set: { milestone.dueDate = $0 }),
                                    displayedComponents: .date)
                     }
-                } footer: { Text("通過点は道のりの順に並びます。並べ替えは道のりで長押し。") }
+                } footer: { Text("通過点は道のりの順に並びます。並べ替えは道のりで長押し。").onlyInDemo() }
                 if !isNew {
                     Section { Button("この通過点を消す", role: .destructive) { confirmDelete = true } }
                 }
@@ -1156,7 +1156,9 @@ struct MilestoneEditor: View {
                 }
                 TextField("単位（回・本など）", text: $milestone.unit)
             } footer: {
-                Text("道のりの＋1で増えます。つないだタスクやルーティンが済むと、そのぶんも数えます（いま合わせて\(ProjectText.number(ProjectBook.value(of: milestone, in: book)))）。")
+                let total = ProjectText.number(ProjectBook.value(of: milestone, in: book))
+                Text(store.isDemo ? "道のりの＋1で増えます。つないだタスクやルーティンが済むと、そのぶんも数えます（いま合わせて\(total)）。"
+                                  : "つないだタスク・ルーティンの分も含めて いま\(total)")
             }
         case .number:
             Section {
@@ -1167,11 +1169,11 @@ struct MilestoneEditor: View {
                     TextField("0", value: $milestone.current, format: .number).keyboardType(.decimalPad).multilineTextAlignment(.trailing)
                 }
                 TextField("単位（点・kg など）", text: $milestone.unit)
-            } footer: { Text("模試の点数や体重など、目標の値に近づけていくもの。") }
+            } footer: { Text("模試の点数や体重など、目標の値に近づけていくもの。").onlyInDemo() }
         case .tasks:
             Section {
                 LabeledContent("いま", value: ProjectText.value(milestone, in: book))
-            } footer: { Text("タスクの編集画面で、この通過点を選ぶと数に入ります。済んだタスクの割合が進み具合になります。") }
+            } footer: { Text("タスクの編集画面で、この通過点を選ぶと数に入ります。済んだタスクの割合が進み具合になります。").onlyInDemo() }
         }
     }
 
@@ -1258,7 +1260,7 @@ struct IdeaToProjectSheet: View {
                     Toggle("付箋の中身を「概要」カードにする", isOn: $overviewCard)
                     Toggle("アイデアを残す", isOn: $keepIdea)
                 } footer: {
-                    Text("付箋は「きっかけのアイデア」としてプロジェクトのページに残ります。どこかのプロジェクトの一歩なら、「タスクにする」でプロジェクトを選べます。")
+                    Text("付箋は「きっかけのアイデア」としてプロジェクトのページに残ります。どこかのプロジェクトの一歩なら、「タスクにする」でプロジェクトを選べます。").onlyInDemo()
                 }
             }
             .navigationTitle("プロジェクトにする").navigationBarTitleDisplayMode(.inline)

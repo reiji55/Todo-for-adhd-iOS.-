@@ -133,7 +133,7 @@ struct IdeaQuickSheet: View {
             Form {
                 Section {
                     TextField("思いついたこと", text: $text, axis: .vertical).lineLimit(3...10).focused($focused)
-                } footer: { Text("アイデアはタスクの候補や一覧には混ざりません。あとでタスクにできます。") }
+                } footer: { Text("アイデアはタスクの候補や一覧には混ざりません。あとでタスクにできます。").onlyInDemo() }
             }
             .navigationTitle("アイデアを書き留める").keyboardDismissable().navigationBarTitleDisplayMode(.inline)
             .toolbar {

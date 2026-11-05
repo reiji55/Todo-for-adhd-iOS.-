@@ -61,7 +61,7 @@ struct TaskEditor: View {
                         }
                     }
                 } footer: {
-                    if task.isMust && !isPiece { Text("★必須：予定日が来たら上段に表示。日付なしなら今日から表示します。") }
+                    if task.isMust && !isPiece { Text("★必須：予定日が来たら上段に表示。日付なしなら今日から表示します。").onlyInDemo() }
                 }
                 Section {
                     if isWhole {
@@ -121,7 +121,7 @@ struct TaskEditor: View {
                         }
                     }
                 } header: { Text("AIへの引き継ぎ") }
-                footer: { Text("内容を保存して共有できます。AIへの自動送信はありません。") }
+                footer: { Text("内容を保存して共有できます。AIへの自動送信はありません。").onlyInDemo() }
                 }
                 if !isPiece || (!task.isEvent && !isWhole) {
                     Section("任意の属性") {
@@ -239,7 +239,7 @@ struct TaskEditor: View {
             }
         } footer: {
             if !isWhole {
-                Text("分けると、1つずつ日付を決めてチェックできます。今の予定日と時間は最初の子タスクに移ります。")
+                Text("分けると、1つずつ日付を決めてチェックできます。今の予定日と時間は最初の子タスクに移ります。").onlyInDemo()
             }
         }
     }

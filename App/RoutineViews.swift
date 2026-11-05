@@ -73,7 +73,7 @@ struct RoutineList: View {
         let active = routines.filter { !$0.isPaused }.sorted(by: order)
         let paused = routines.filter(\.isPaused)
         Text("決まった曜日・時間にくり返すもの。今日や週の画面にタスクと同じ形で並びます。")
-            .font(.caption).foregroundStyle(.secondary)
+            .font(.caption).foregroundStyle(.secondary).onlyInDemo()
         Button { onEdit(Routine(title: "", time: "19:00-20:00")) } label: {
             Label("ルーティンを追加", systemImage: "plus.circle.fill").frame(maxWidth: .infinity, alignment: .leading).frame(minHeight: 44)
         }
@@ -222,27 +222,27 @@ struct RoutineEditor: View {
                     if !routine.isBlock { MilestonePicker(project: routine.project, milestoneID: $routine.milestoneID, kinds: [.count]) }
                 } footer: {
                     if routine.milestoneID != nil {
-                        Text("済んだ日ごとに、その通過点の回数が1つ進みます。")
+                        Text("済んだ日ごとに、その通過点の回数が1つ進みます。").onlyInDemo()
                     } else {
                         Text(store.linkedCard(forProject: routine.project) == nil
                              ? "カードのあるプロジェクトを選ぶと、ここや今日の画面の本のマークから、やり方をすぐ開けます。"
-                             : "本のマークで、プロジェクトのカードを開けます。閉じると、この画面に戻ります。")
+                             : "本のマークで、プロジェクトのカードを開けます。閉じると、この画面に戻ります。").onlyInDemo()
                     }
                 }
                 Section("くり返す曜日") { WeekdayPicker(weekdays: $routine.weekdays) }
                 Section {
                     TimeSlotFields(slot: $routine.slot)
                 } header: { Text("時間") }
-                footer: { Text("週の画面で長押しして動かすと、その日だけ時間や曜日を変えられます。") }
+                footer: { Text("週の画面で長押しして動かすと、その日だけ時間や曜日を変えられます。").onlyInDemo() }
                 Section {
                     Toggle("始まる時刻に通知", isOn: $routine.notify).disabled(routine.isBlock || routine.slot == nil)
                     Toggle("時間を押さえるだけ", isOn: $routine.isBlock)
                 } footer: {
-                    Text("「押さえるだけ」は睡眠や仕事など、時間を確保しておくもの。週の画面で斜線になり、チェックや通知はしません。")
+                    Text("「押さえるだけ」は睡眠や仕事など、時間を確保しておくもの。週の画面で斜線になり、チェックや通知はしません。").onlyInDemo()
                 }
                 Section {
                     Toggle("一時停止", isOn: $routine.isPaused)
-                } footer: { Text("止めている間は今日・週の画面に出ません。設定は残ります。") }
+                } footer: { Text("止めている間は今日・週の画面に出ません。設定は残ります。").onlyInDemo() }
                 Section("メモ") {
                     TextField("やること、気をつけること", text: $routine.memo, axis: .vertical).lineLimit(2...8)
                 }
@@ -255,7 +255,7 @@ struct RoutineEditor: View {
                                 Label("計った記録を見る", systemImage: "chart.bar")
                             }
                         }
-                    } footer: { Text("今日の画面の▶で計ると、日ごとの時間が残ります。") }
+                    } footer: { Text("今日の画面の▶で計ると、日ごとの時間が残ります。").onlyInDemo() }
                 }
                 if exists {
                     Section { Button("このルーティンを削除", role: .destructive) { showDelete = true } }

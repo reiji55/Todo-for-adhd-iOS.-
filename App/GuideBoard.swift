@@ -125,7 +125,7 @@ struct GuideBoardView: View {
                 }
                 .buttonStyle(.plain)
                 Text("タスクは「いま何をするか」、カードは「どうやるか」。カードをプロジェクトに入れると、そのプロジェクトのタスクやルーティンの本のマークから開けます。")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(.secondary).onlyInDemo()
                 if cards.isEmpty {
                     ContentUnavailableView("まだカードはありません", systemImage: "book.closed",
                                            description: Text("ルーチンの手順や、案件の目的・ゴール・進め方を書いておく場所です。3日間タスクの board.json は設定から読み込めます。"))
