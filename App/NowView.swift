@@ -68,7 +68,7 @@ struct NowView: View {
                 let offers = (energy == .any ? picks : NowPlan.picks(in: book, energy: .any, now: now))
                     .contains { $0.kind == .obligation || $0.kind == .candidate }
                 if let stretch, stretch.key != chosenFor, offers {
-                    FreeTimeCard(stretch: stretch, now: now) { setEnergy($0) }
+                    FreeStretchCard(stretch: stretch, now: now) { setEnergy($0) }
                         .transition(.opacity)
                     upcoming(now: now, excluding: nil)
                 } else {
@@ -504,7 +504,7 @@ private struct EffortMeter: View {
 /// Before anything is offered in free time: that the time is free (or held for sleep or work) and until
 /// when, and the question of the condition. Nothing is suggested until it is answered.
 @MainActor
-private struct FreeTimeCard: View {
+private struct FreeStretchCard: View {
     let stretch: FreeStretch
     let now: Date
     let onChoose: (Energy) -> Void
