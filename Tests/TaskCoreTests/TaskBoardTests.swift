@@ -54,7 +54,7 @@ final class TaskBoardTests: XCTestCase {
     func testTaskWithNoStepsCanBeSuggestedAndStarted() {
         let task = TaskItem(title: "電話をかける")
         XCTAssertEqual(task.actionTitle, task.title)
-        XCTAssertEqual(board.candidates([task], energy: .low, now: now).map(\.id), [task.id])
+        XCTAssertEqual(board.candidates([task], energy: .any, now: now).map(\.id), [task.id])
     }
 
     func testSuggestionOrderExplainsPriorityAndExcludesFuturePlan() {
