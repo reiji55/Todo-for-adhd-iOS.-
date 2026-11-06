@@ -143,6 +143,7 @@ test("events are scheduled but never to-dos", async () => {
   const today = payload(await call(store, "get_today", {}));
   assert.equal(today.items[0].kind, "event");
   assert.equal(today.required.length, 0);
+  assert.equal(today.musts.length, 0, "an event is never ★");
   await call(store, "set_done", { ids: added, done: true });
   assert.ok(materialize(store.records).tasks[0].completedAt, "an event can be marked as happened");
   const undated: any = await call(store, "add_tasks", { tasks: [{ title: "いつか会う", date: "anytime", kind: "event" }] });
@@ -188,4 +189,17 @@ test("pieces: the first takes the parent's day, the parent finishes with the las
   await call(store, "remove_tasks", { ids: [parent] });
   book = materialize(store.records);
   assert.equal(book.tasks.length, 0);
+});
+
+test("★ alone never makes a task due today; it is listed with the musts until its deadline", async () => {
+  const store = memoryStore();
+  // `call` reads on 2026-10-31.
+  await call(store, "add_tasks", { tasks: [
+    { title: "申請書", date: "anytime", must: true, deadline: "2026-11-20" },
+    { title: "更新", date: "anytime", must: true },
+    { title: "支払い", date: "anytime", deadline: "2026-10-31" },
+  ] });
+  const read = payload(await call(store, "get_today", {}));
+  assert.deepEqual(read.required.map((t: any) => t.title), ["支払い"]);
+  assert.deepEqual(read.musts.map((t: any) => t.title), ["申請書", "更新"], "nearest deadline first, undated last");
 });

@@ -95,6 +95,7 @@ tasks = [
     task('提出書類を送る', isMust=True, deadline=date(now),
          steps=[dict(id=str(uuid.uuid4()), title='宛先を確認する', isDone=False)]),
     task('予約の電話をする', isMust=True, scheduledTime='14:00-14:15'),
+    task('住民票を取りに行く', isMust=True, plannedAt=None, deadline=date(now + timedelta(days=2)), effort='medium'),
     task('部屋をリセットする', scheduledTime='21:00-21:15', project='部屋'),
     task('提案の下書きをつくる', deadline=date(now + timedelta(days=1)), effort='heavy'),
     task('読みかけの本を読む', resumeNote='42ページの途中まで'),
@@ -201,6 +202,10 @@ assert len(state['notebook']['routines']) == len(legacy['routines']), 'Routines 
 assert state.get('connection') is None, 'Sharing must require user setup'
 print('Verified atomic migration of existing tasks; cloud sync stays off until configured')
 PY
+# The いま card once a condition is chosen (the first capture asks for it when the time is free).
+launch -uiTab 2 -uiEnergy high >/dev/null
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/now-card.png"
 launch -horme-settings-preview
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/sharing-settings.png"

@@ -41,7 +41,7 @@ public enum PlainText {
         return lines.joined(separator: "\n")
     }
 
-    /// Today, plus what would otherwise be missed: overdue and undated must tasks, and tasks left on earlier days.
+    /// Today, plus what would otherwise be missed: what is due today or overdue, and tasks left on earlier days.
     public static func today(_ now: Date, book: Notebook, calendar: Calendar = .current) -> String {
         let board = TaskBoard(calendar: calendar)
         var parts = [day(now, book: book, calendar: calendar)]

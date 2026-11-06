@@ -85,8 +85,9 @@ struct ParentTaskCard: View {
                                 if !parent.project.isEmpty { ProjectTag(name: parent.project) }
                             }
                         }
-                        Text(parent.title).font(.body.weight(.semibold))
-                            .strikethrough(parent.isComplete).foregroundStyle(parent.isComplete ? .secondary : .primary)
+                        Text(parent.title).font(.body.weight(parent.isMust && !parent.isComplete ? .bold : .semibold))
+                            .strikethrough(parent.isComplete)
+                            .foregroundStyle(parent.isComplete ? Color.secondary : parent.isMust ? Palette.must : Color.primary)
                             .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                         if !isOpen, let next {
                             HStack(spacing: 6) {

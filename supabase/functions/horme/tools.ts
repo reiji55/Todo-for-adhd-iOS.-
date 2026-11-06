@@ -40,7 +40,7 @@ function validTime(value: string) {
 const sameID = (a: string | null | undefined, b: string) => !!a && a.toUpperCase() === b.toUpperCase();
 const hasPieces = (book: Book, t: Task) => book.tasks.some((k) => sameID(k.parentID, t.id));
 
-/** A parent counts for "must" from the first day of its open pieces. */
+/** The first day among a parent's open pieces. */
 function firstPieceDay(book: Book, t: Task): string | undefined {
   const days = piecesOf(book, t.id).filter((p) => !p.completedAt && p.plannedAt).map((p) => dayKey(p.plannedAt!));
   return days.sort()[0];
@@ -67,17 +67,23 @@ function leftovers(book: Book, today: string) {
     .map((t) => ({ ...taskItem(t, book), plannedDay: dayKey(t.plannedAt!) }));
 }
 
-/** Overdue deadlines and must tasks that are not planned for today (those are already in today's list). */
+/** Due today or earlier and not planned for today (those are already in today's list). ★ alone never
+ * makes a task due: it marks what cannot be dropped, as in the app. */
 function required(book: Book, today: string) {
   return book.tasks.filter((t) => {
     if (t.completedAt || t.isEvent || (t.plannedAt && dayKey(t.plannedAt) === today)) return false;
-    const planned = hasPieces(book, t) ? firstPieceDay(book, t) : t.plannedAt ? dayKey(t.plannedAt) : undefined;
     // A task in pieces with a piece today is already in today's list.
-    if (hasPieces(book, t) && planned === today) return false;
-    const due = t.deadline ? dayKey(t.deadline) <= today : false;
-    const must = t.isMust && (!planned || planned <= today);
-    return due || must;
+    if (hasPieces(book, t) && firstPieceDay(book, t) === today) return false;
+    return t.deadline ? dayKey(t.deadline) <= today : false;
   }).map((t) => taskItem(t, book));
+}
+
+/** ★ tasks still open and not due yet, nearest deadline first: kept together below today's plan in the app. */
+function musts(book: Book, today: string) {
+  return book.tasks.filter((t) => t.isMust && !t.completedAt && !t.isEvent && !t.parentID
+    && !(t.deadline && dayKey(t.deadline) <= today))
+    .sort((a, b) => (a.deadline ? dayKey(a.deadline) : "9999").localeCompare(b.deadline ? dayKey(b.deadline) : "9999"))
+    .map((t) => taskItem(t, book));
 }
 
 export const tools: Tool[] = [
@@ -85,13 +91,13 @@ export const tools: Tool[] = [
     name: "get_today",
     title: "今日を読む",
     description:
-      "今日の時間割（タスク・イベント・ルーティン、時刻順。kind で見分ける）、今日中に必要なもの（締切・必須で今日の予定に入っていないもの）、" +
-      "前の日から残っているタスクを返す。各項目の id を他のツールに渡す。書き換える前にまずこれを呼ぶ。" +
+      "今日の時間割（タスク・イベント・ルーティン、時刻順。kind で見分ける）、今日中に必要なもの（締切が今日・過ぎたもので今日の予定に入っていないもの）、" +
+      "必須（★＝本人が落とせないと決めたもの。締切が来るまでは今日に割り込まない。締切の近い順）、前の日から残っているタスクを返す。各項目の id を他のツールに渡す。書き換える前にまずこれを呼ぶ。" +
       "handoff は本人が「Claude にやってほしい」と書き残した依頼。held はルーティンのうち睡眠・仕事など時間を押さえているだけのもの。",
     inputSchema: { type: "object", properties: {} },
     run: (_, { book, now }) => {
       const today = todayKey(now);
-      return { result: { ...day(book, today), required: required(book, today), leftovers: leftovers(book, today) } };
+      return { result: { ...day(book, today), required: required(book, today), musts: musts(book, today), leftovers: leftovers(book, today) } };
     },
   },
   {

@@ -150,12 +150,20 @@ struct AgendaRow: View {
                     // A piece of a bigger task says which, and how far that task has come.
                     if let parent = task?.parentID.flatMap({ store.task($0) }) {
                         let pieces = store.children(of: parent.id)
-                        Label("\(parent.title) \(pieces.filter(\.isComplete).count)/\(pieces.count)", systemImage: "arrow.turn.down.right")
-                            .font(.caption2.weight(.semibold)).lineLimit(1)
-                            .foregroundStyle(ProjectColor.color(for: store.colorName(forProject: parent.project)) ?? Palette.accent)
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.turn.down.right")
+                            Text(parent.title).lineLimit(1)
+                            if parent.isMust {
+                                Image(systemName: "star.fill").foregroundStyle(Palette.must).accessibilityLabel("必須")
+                            }
+                            Text("\(pieces.filter(\.isComplete).count)/\(pieces.count)").monospacedDigit()
+                        }
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(ProjectColor.color(for: store.colorName(forProject: parent.project)) ?? Palette.accent)
                     }
-                    Text(item.title).font(.body.weight(.medium))
-                        .strikethrough(done).foregroundStyle(done ? .secondary : .primary)
+                    // ★ (something that cannot be dropped) in bold, in the color of must.
+                    Text(item.title).font(.body.weight(item.isMust && !done ? .bold : .medium))
+                        .strikethrough(done).foregroundStyle(done ? Color.secondary : item.isMust ? Palette.must : Color.primary)
                         .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                     if !done, let task, let next = store.notebook.nextChild(of: task.id) {
                         Text("次：\(next.title)").font(.caption).foregroundStyle(.secondary).lineLimit(2)
@@ -332,6 +340,11 @@ enum EnergyMemory {
         UserDefaults.standard.set(energy.rawValue, forKey: "energy")
         UserDefaults.standard.set(DayKey.of(now), forKey: "energyDay")
     }
+
+    /// The free stretch (`FreeStretch.key`) the condition was last chosen in. The key holds the day, so
+    /// the next morning asks again.
+    static func chosenFor() -> String? { UserDefaults.standard.string(forKey: "energyChosenFor") }
+    static func markChosen(_ key: String) { UserDefaults.standard.set(key, forKey: "energyChosenFor") }
 }
 
 /// A row that slides left to show a delete button behind it, for things that are finished and only

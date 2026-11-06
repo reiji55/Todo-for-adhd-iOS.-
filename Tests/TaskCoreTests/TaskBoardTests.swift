@@ -13,25 +13,37 @@ final class TaskBoardTests: XCTestCase {
     }
     func day(_ offset: Int) -> Date { calendar.date(byAdding: .day, value: offset, to: now)! }
 
-    func testMustAndDeadlineCannotBeHiddenByEnergyOrDeferral() {
-        let must = TaskItem(title: "提出", plannedAt: now, isMust: true, effort: .heavy,
-                            suggestionDeferredUntil: day(3))
-        let overdue = TaskItem(title: "支払い", deadline: day(-1), effort: .heavy)
+    func testWhatIsDueCannotBeHiddenByEnergyOrDeferral() {
+        let overdue = TaskItem(title: "支払い", deadline: day(-1), effort: .heavy, suggestionDeferredUntil: day(3))
         let light = TaskItem(title: "紙を整理", effort: .light)
-        let all = [must, overdue, light]
-        XCTAssertEqual(Set(board.obligations(all, now: now).map(\.id)), Set([must.id, overdue.id]))
+        let all = [overdue, light]
         for energy in Energy.allCases {
+            XCTAssertEqual(board.obligations(all, now: now).map(\.id), [overdue.id])
             XCTAssertEqual(board.candidates(all, energy: energy, now: now).map(\.id), [light.id])
-            XCTAssertEqual(board.obligations(all, now: now).count, 2)
         }
     }
 
-    func testFutureMustAppearsOnPlannedDayNotToday() {
-        let task = TaskItem(title: "明日の必須", plannedAt: day(1), isMust: true)
-        XCTAssertFalse(board.isObligation(task, now: now))
-        XCTAssertTrue(board.isObligation(task, now: day(1)))
-        XCTAssertTrue(board.isObligation(task, now: day(2)))
-        XCTAssertEqual(board.scheduled([task], for: day(1)).count, 1)
+    func testStarAloneNeverMakesATaskDue() {
+        let far = TaskItem(title: "申請書", deadline: day(10), isMust: true)
+        let planned = TaskItem(title: "明日の必須", plannedAt: day(1), isMust: true)
+        let undated = TaskItem(title: "いつか必須", isMust: true)
+        for date in [now!, day(1), day(2)] {
+            XCTAssertTrue(board.obligations([far, planned, undated], now: date).isEmpty)
+        }
+        XCTAssertTrue(board.isObligation(far, now: day(10)), "its deadline makes it due")
+        XCTAssertEqual(board.scheduled([planned], for: day(1)).count, 1)
+    }
+
+    func testStarredTasksAreKeptTogetherNearestDeadlineFirst() {
+        let later = TaskItem(title: "申請", deadline: day(5), isMust: true, createdAt: day(-3))
+        let soon = TaskItem(title: "提出", deadline: day(2), isMust: true, createdAt: day(-1))
+        let planned = TaskItem(title: "予約", plannedAt: day(1), isMust: true, createdAt: day(-2))
+        let undated = TaskItem(title: "更新", isMust: true, createdAt: day(-4))
+        let due = TaskItem(title: "支払い", deadline: now, isMust: true)
+        let done = TaskItem(title: "済み", isMust: true, completedAt: now)
+        let plain = TaskItem(title: "ふつう", deadline: day(1))
+        let musts = board.musts([undated, later, done, planned, due, soon, plain], now: now)
+        XCTAssertEqual(musts.map(\.title), ["提出", "申請", "予約", "更新"], "due today is shown above everything instead")
     }
 
     func testPastDeadlineOverridesFuturePlan() {
@@ -53,17 +65,34 @@ final class TaskBoardTests: XCTestCase {
         let due = TaskItem(title: "明日締切", deadline: day(1), effort: .heavy)
         let future = TaskItem(title: "来週", plannedAt: day(7))
         let casual = TaskItem(title: "日付なし", effort: .light, createdAt: day(-30))
-        let candidates = board.candidates([casual, future, whole, finished, continuation, plan, due], energy: .low, now: now)
+        let candidates = board.candidates([casual, future, whole, finished, continuation, plan, due], energy: .any, now: now)
         XCTAssertEqual(candidates.map(\.id), [due.id, plan.id, continuation.id])
         XCTAssertEqual(candidates.map(\.reason), ["明日が締切", "今日やる予定", "途中まで進んでいるタスクの続き"])
     }
 
-    func testEnergyOnlyReordersWithinSamePriority() {
+    func testAConditionOffersNothingHeavierAndStartsFromTheHeaviest() {
         let heavy = TaskItem(title: "設計", effort: .heavy, createdAt: day(-5))
+        let medium = TaskItem(title: "資料", effort: .medium, createdAt: day(-4))
         let light = TaskItem(title: "電話", effort: .light, createdAt: day(-1))
-        XCTAssertEqual(board.candidates([heavy, light], energy: .low, now: now).first?.id, light.id)
-        XCTAssertEqual(board.candidates([heavy, light], energy: .high, now: now).first?.id, heavy.id)
-        XCTAssertEqual(board.candidates([heavy, light], energy: .low, now: now).count, 2)
+        let plannedLight = TaskItem(title: "買い物", plannedAt: now, effort: .light, createdAt: day(-2))
+        let all = [light, plannedLight, medium, heavy]
+        func titles(_ energy: Energy) -> [String] { board.candidates(all, energy: energy, now: now, limit: 9).map(\.task.title) }
+        XCTAssertEqual(titles(.high), ["設計", "資料", "買い物", "電話"], "heaviest first; today's plan first within a weight")
+        XCTAssertEqual(titles(.normal), ["資料", "買い物", "電話"])
+        XCTAssertEqual(titles(.low), ["買い物", "電話"])
+        XCTAssertEqual(titles(.any), ["買い物", "設計", "資料", "電話"], "no condition: by standing, then longest untouched")
+    }
+
+    func testPiecesCountTheirParentsStarAndDeadline() {
+        let soon = TaskItem(title: "提案書", deadline: day(1), createdAt: day(-3))
+        let soonPiece = TaskItem(title: "見出し", createdAt: day(-3), parentID: soon.id)
+        let starred = TaskItem(title: "引っ越し", deadline: day(20), isMust: true, createdAt: day(-3))
+        let starredPiece = TaskItem(title: "段ボール", createdAt: day(-3), parentID: starred.id)
+        let plain = TaskItem(title: "読書", createdAt: day(-9))
+        let picks = board.candidates([plain, starred, starredPiece, soon, soonPiece], energy: .any, now: now, limit: 9)
+        XCTAssertEqual(picks.map(\.task.title), ["見出し", "段ボール", "読書"])
+        XCTAssertEqual(picks.map(\.label), ["明日が締切", "", "しばらく手つかず"])
+        XCTAssertEqual(picks.map(\.isMust), [false, true, false])
     }
 
     func testSnoozeOnlyAffectsSuggestionsAndExpires() {

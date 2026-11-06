@@ -97,6 +97,11 @@ struct TodayView: View {
             task.plannedAt.map { calendar.isDate($0, inSameDayAs: now) } != true
                 && !store.children(of: task.id).contains { !$0.isComplete && $0.plannedAt.map { calendar.isDate($0, inSameDayAs: now) } == true }
         }
+        // ★ kept together below today's plan, folded: those not already on it above.
+        let musts = board.musts(placement, now: now).filter { task in
+            task.plannedAt.map { calendar.isDate($0, inSameDayAs: now) } != true
+                && !store.children(of: task.id).contains { !$0.isComplete && $0.plannedAt.map { calendar.isDate($0, inSameDayAs: now) } == true }
+        }
         let leftovers = board.pastPlanned(tasks, now: now)
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
         let tomorrowCount = Agenda.items(on: tomorrow, tasks: tasks, routines: store.notebook.routines)
@@ -145,9 +150,74 @@ struct TodayView: View {
                 Text("時間を決めていない").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, timed.isEmpty ? 0 : 8)
                 ForEach(untimed) { item in AgendaRow(item: item, style: .loose, onOpen: onOpen) }
             }
+            if !musts.isEmpty { MustFolder(tasks: musts, now: now, onOpen: onOpen).padding(.top, 6) }
             UpcomingDeadlines(now: now, onOpen: onOpen)
         }
         .frame(maxWidth: 760).frame(maxWidth: .infinity)
+    }
+}
+
+/// ★ tasks, what cannot be dropped, folded below today's plan. Folded, it still says how many there are
+/// and how near the nearest deadline is; a tap opens the list, nearest deadline first.
+@MainActor
+private struct MustFolder: View {
+    @EnvironmentObject private var store: TaskStore
+    let tasks: [TaskItem]
+    let now: Date
+    let onOpen: (AgendaItem) -> Void
+    @State private var open = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button { withAnimation(.snappy) { open.toggle() } } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "star.fill").font(.subheadline).foregroundStyle(Palette.must)
+                    Text("必須").font(.headline).foregroundStyle(Palette.must)
+                    Text("\(tasks.count)件").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary).monospacedDigit()
+                    Spacer(minLength: 6)
+                    if let nearest {
+                        Text(nearest).font(.caption.weight(.semibold)).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Image(systemName: "chevron.down").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(open ? 180 : 0))
+                }
+                .padding(.horizontal, 14).frame(minHeight: 52)
+                .background(RaisedCardBackground(cornerRadius: 16))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("必須 \(tasks.count)件。\(nearest ?? "")")
+            .accessibilityHint(open ? "たたみます" : "広げます")
+            if open {
+                ForEach(tasks) { task in
+                    let current = store.task(task.id) ?? task
+                    if store.hasChildren(task.id) {
+                        ParentTaskCard(parent: current, reason: plan(of: current)) { onOpen(AgendaItem(task: $0)) }
+                    } else {
+                        AgendaRow(item: AgendaItem(task: current), reason: plan(of: current), onOpen: onOpen)
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
+    }
+
+    /// "次の締切 11/08（あと2日）".
+    private var nearest: String? {
+        guard let due = tasks.compactMap(\.deadline).min() else { return nil }
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: due)).day ?? 0
+        return "次の締切 \(due.shortDay)（\(days <= 1 ? "明日" : "あと\(days)日")）"
+    }
+
+    /// The day it is planned for, when it has one: ahead, or left from before.
+    private func plan(of task: TaskItem) -> String? {
+        let day = store.hasChildren(task.id)
+            ? store.children(of: task.id).filter { !$0.isComplete }.compactMap(\.plannedAt).min()
+            : task.plannedAt
+        guard let day else { return nil }
+        let calendar = Calendar.current
+        return calendar.startOfDay(for: day) < calendar.startOfDay(for: now) ? "\(day.shortDay) から残っている" : "\(day.shortDay) にやる予定"
     }
 }
 
@@ -265,9 +335,14 @@ private struct UpcomingDeadlines: View {
             SectionHeading(title: "これからの締切")
             ForEach(upcoming.prefix(5)) { task in
                 Button { onOpen(AgendaItem(task: task)) } label: {
-                    HStack {
+                    HStack(spacing: 8) {
                         Text(task.deadline?.shortDay ?? "").font(.clock).foregroundStyle(Palette.must)
-                        Text(task.title).foregroundStyle(.primary).lineLimit(1)
+                        // ★ in bold and the color of must; the mark's place is kept so the names line up.
+                        Image(systemName: "star.fill").font(.caption).foregroundStyle(Palette.must)
+                            .opacity(task.isMust ? 1 : 0).frame(width: 14)
+                            .accessibilityHidden(!task.isMust).accessibilityLabel("必須")
+                        Text(task.title).fontWeight(task.isMust ? .bold : .regular)
+                            .foregroundStyle(task.isMust ? Palette.must : Color.primary).lineLimit(1)
                         Spacer(minLength: 0)
                         Image(systemName: "chevron.right").foregroundStyle(.secondary)
                     }.font(.subheadline).frame(minHeight: 40)
@@ -299,8 +374,8 @@ struct CandidatePanel: View {
                 ForEach(Energy.allCases) { Text($0.label).tag($0) }
             } label: { Text("今の調子") }
             .pickerStyle(.segmented)
-            .accessibilityHint("候補の並びだけを変えます。必須や全件一覧には影響しません。")
-            Text("今の調子：\(energy.label)。同じ優先度の中で、近い負荷のものを先に出します。")
+            .accessibilityHint("候補だけを変えます。今日が締切のものや全件一覧には影響しません。")
+            Text("今の調子：\(energy.label)。選んだ調子より重いものは出さず、重いものから順に出します。")
                 .font(.caption).foregroundStyle(.secondary).onlyInDemo()
             if candidates.isEmpty {
                 Text("今の候補はありません。「すべて」からどのタスクでも始められます。")

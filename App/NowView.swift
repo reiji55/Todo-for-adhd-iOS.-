@@ -2,13 +2,19 @@ import SwiftUI
 
 /// 今日 opens on this: one thing to do now, what comes after it, and the shape of the day. The full
 /// timetable (the Today screen as it was) is one tap away, unchanged.
+///
+/// When nothing on the schedule is on now, the card first says so (空き時間, or the sleep or work that
+/// holds the time) and asks for the condition; what it offers then follows that condition. The choice
+/// holds for that stretch of time, and the next free stretch asks again.
 @MainActor
 struct NowView: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.refreshClock) private var refreshClock
     @State private var energy: Energy = EnergyMemory.load()
+    /// The free stretch the condition was chosen in.
+    @State private var chosenFor: String? = EnergyMemory.chosenFor()
     @State private var passed: [String] = PassedOver.load()
-    /// Picked from ほかの候補; it leads until it is done or passed over.
+    /// Picked from ほかの候補, or kept in front while its 負荷 is changed; it leads until it is done or passed over.
     @State private var chosen: String?
     @State private var timetableOpen = false
     @State private var rolloverOpen = false
@@ -37,10 +43,10 @@ struct NowView: View {
         .sheet(isPresented: $rolloverOpen) { RolloverSheet() }
         .onAppear {
             energy = EnergyMemory.load()
+            chosenFor = EnergyMemory.chosenFor()
             passed = PassedOver.load()
             applyPreviewArguments()
         }
-        .onChange(of: energy) { _, value in EnergyMemory.save(value) }
     }
 
     @ViewBuilder private func content(now: Date) -> some View {
@@ -55,28 +61,44 @@ struct NowView: View {
                 DayClosedView(now: now) { timetableOpen = true }
                     .transition(.opacity)
             } else {
-                let picks = NowPlan.picks(in: store.notebook, energy: energy, now: now, passed: passed)
-                let current = chosen.flatMap { id in picks.first { $0.id == id } } ?? picks.first
-                if let current {
-                    NowCard(pick: current,
-                            others: Array(picks.filter { $0.id != current.id }.prefix(2)),
-                            canPass: picks.count > 1,
-                            next: laterToday(now, excluding: current.id).first,
-                            now: now,
-                            onPass: { pass(current.id) },
-                            onChoose: { chosen = $0 },
-                            onOpen: onOpen)
-                        .id(current.id)
-                        .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
+                let book = store.notebook
+                let stretch = NowPlan.freeStretch(in: book, now: now)
+                let picks = NowPlan.picks(in: book, energy: energy, now: now, passed: passed)
+                // Whether there is anything to offer at all, whatever the condition.
+                let offers = (energy == .any ? picks : NowPlan.picks(in: book, energy: .any, now: now))
+                    .contains { $0.kind == .obligation || $0.kind == .candidate }
+                if let stretch, stretch.key != chosenFor, offers {
+                    FreeTimeCard(stretch: stretch, now: now) { setEnergy($0) }
+                        .transition(.opacity)
+                    upcoming(now: now, excluding: nil)
                 } else {
-                    NothingLeftCard(now: now)
+                    let current = resolve(chosen, in: picks, book: book)
+                    if let current, !(current.kind == .upcoming && offers) {
+                        let rest = picks.filter { $0.id != current.id }
+                        NowCard(pick: current,
+                                others: Array(rest.prefix(2)),
+                                canPass: !rest.isEmpty,
+                                stretch: stretch,
+                                now: now,
+                                onPass: { pass(current.id) },
+                                onChoose: { chosen = $0 },
+                                onKeep: { chosen = current.id },
+                                onOpen: onOpen)
+                            .id(current.id)
+                            .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
+                    } else if offers {
+                        NoMatchCard(energy: energy, stretch: stretch, now: now) { setEnergy($0) }
+                    } else {
+                        NothingLeftCard(now: now)
+                    }
+                    upcoming(now: now, excluding: current?.id)
                 }
-                upcoming(now: now, excluding: current?.id)
                 DayFlow(now: now) { timetableOpen = true }
                 footer(now: now)
             }
         }
         .animation(.snappy, value: closed)
+        .animation(.snappy, value: chosenFor)
     }
 
     private func header(now: Date, closed: Bool) -> some View {
@@ -85,7 +107,7 @@ struct NowView: View {
             Spacer()
             if !closed {
                 Menu {
-                    Picker("今の調子", selection: $energy) {
+                    Picker("今の調子", selection: Binding(get: { energy }, set: { setEnergy($0) })) {
                         ForEach(Energy.allCases) { Text($0.label).tag($0) }
                     }
                 } label: {
@@ -97,6 +119,33 @@ struct NowView: View {
                 .accessibilityLabel("今の調子：\(energy.label)")
             }
         }
+    }
+
+    /// A condition chosen, here or in the menu: it holds for the stretch of time now, and starts a new round.
+    private func setEnergy(_ value: Energy) {
+        let key = NowPlan.freeStretch(in: store.notebook, now: max(Date(), refreshClock))?.key
+        withAnimation(.snappy) {
+            energy = value
+            chosen = nil
+            passed = []
+            if let key { chosenFor = key }
+        }
+        EnergyMemory.save(value)
+        if let key { EnergyMemory.markChosen(key) }
+        PassedOver.save([])
+    }
+
+    /// The pick to show: one picked or kept in front, else the first. One kept in front stays even when a
+    /// change to its 負荷 takes it out of the condition, until it is done or passed over.
+    private func resolve(_ id: String?, in picks: [NowPick], book: Notebook) -> NowPick? {
+        guard let id else { return picks.first }
+        if let pick = picks.first(where: { $0.id == id }) { return pick }
+        if id.hasPrefix("task-"), let uuid = UUID(uuidString: String(id.dropFirst(5))),
+           let task = book.tasks.first(where: { $0.id == uuid }), !task.isComplete {
+            return NowPick(item: AgendaItem(task: task), kind: .candidate, label: "", parentID: task.parentID,
+                           isMust: TaskBoard().isMust(task, among: book.tasks))
+        }
+        return picks.first
     }
 
     /// Timed things later today, not done yet, in order.
@@ -163,6 +212,11 @@ struct NowView: View {
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("-uiTimetable") { timetableOpen = true }
         if arguments.contains("-uiDayClosed") { store.closeDayForPreview() }
+        // Screenshot runs: the condition already chosen, to show the card it leads to.
+        if let i = arguments.firstIndex(of: "-uiEnergy"), arguments.indices.contains(i + 1),
+           let value = Energy(rawValue: arguments[i + 1]) {
+            setEnergy(value)
+        }
 #endif
     }
 
@@ -183,6 +237,16 @@ struct NowView: View {
         let m = max(0, minutes)
         if m < 60 { return "\(m)分" }
         return m % 60 == 0 ? "\(m / 60)時間" : "\(m / 60)時間\(m % 60)分"
+    }
+
+    /// What holds the time now, in a word: 空き時間, or the name of the sleep or work holding it.
+    static func stretchTitle(_ stretch: FreeStretch) -> String {
+        stretch.held.map { "\($0.title)の時間" } ?? "空き時間"
+    }
+
+    /// "12:00まで", or that nothing more is on today.
+    static func stretchEnd(_ stretch: FreeStretch) -> String {
+        stretch.until.map { "\(TimeSlot.clock($0))まで" } ?? "このあと予定なし"
     }
 }
 
@@ -209,20 +273,29 @@ private struct NowCard: View {
     let pick: NowPick
     let others: [NowPick]
     let canPass: Bool
-    /// The next timed thing today, for "次の予定まで".
-    let next: AgendaItem?
+    /// The free stretch the card is offered in; nil while something on the schedule is on now.
+    let stretch: FreeStretch?
     let now: Date
     let onPass: () -> Void
     let onChoose: (String) -> Void
+    /// Keeps this card in front, as when its 負荷 is changed.
+    let onKeep: () -> Void
     let onOpen: (AgendaItem) -> Void
     @State private var finished = 0
+    @State private var weighed = 0
+
+    private var task: TaskItem? {
+        guard case .task(let id) = pick.item.source, let task = store.task(id), !task.isEvent else { return nil }
+        return task
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center) {
+            HStack(alignment: .center, spacing: 8) {
                 NowMark(title: pick.kind == .upcoming ? "次" : "いま", color: Palette.accent)
-                Spacer(minLength: 8)
-                trailing
+                context
+                Spacer(minLength: 4)
+                if let task { EffortBadge(effort: task.effort) { cycleEffort(of: task) } }
             }
             Button { onOpen(pick.item) } label: {
                 VStack(alignment: .leading, spacing: 4) {
@@ -261,51 +334,62 @@ private struct NowCard: View {
         .padding(18)
         .background(RaisedCardBackground(cornerRadius: 24))
         .sensoryFeedback(.success, trigger: finished)
+        .sensoryFeedback(.selection, trigger: weighed)
     }
 
-    @ViewBuilder private var trailing: some View {
+    /// Beside いま: the time of what is on now, or the free stretch this is offered in.
+    @ViewBuilder private var context: some View {
         if pick.kind == .inSlot || pick.kind == .upcoming, let slot = pick.item.slot {
             Label("\(slot.startLabel)–\(TimeSlot.clock(slot.end))", systemImage: "clock")
                 .font(.caption.weight(.bold)).monospacedDigit()
                 .foregroundStyle(Palette.accent)
                 .padding(.horizontal, 10).padding(.vertical, 4)
                 .overlay(Capsule().strokeBorder(Palette.accent.opacity(0.45), lineWidth: 1.5))
-        } else if let next, let slot = next.slot {
-            Text("次の予定まで \(NowView.duration(slot.start - NowView.minute(of: now)))")
-                .font(.caption).foregroundStyle(.secondary)
+                .lineLimit(1)
+        } else if let stretch {
+            Text("\(NowView.stretchTitle(stretch)) ・ \(NowView.stretchEnd(stretch))")
+                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
     }
 
     @ViewBuilder private var kicker: some View {
         let parent = pick.parentID.flatMap { store.task($0) }
-        let labels = kickerLabels
+        let labels = kickerLabels(hasParent: parent != nil)
         if parent != nil || !labels.isEmpty {
             HStack(spacing: 6) {
                 if let parent {
                     let pieces = store.children(of: parent.id)
                     Text("↳ \(parent.title)").lineLimit(1)
+                    if parent.isMust { Text("★").accessibilityLabel("必須") }
                     Text("\(pieces.filter(\.isComplete).count)/\(pieces.count)").monospacedDigit()
                 }
                 if !labels.isEmpty { Text((parent == nil ? "" : "・ ") + labels.joined(separator: " ・ ")).lineLimit(1) }
             }
             .font(.footnote.weight(.bold))
-            .foregroundStyle(pick.item.isRoutine || pick.item.isEvent ? Palette.accent : Palette.must)
+            .foregroundStyle(kickerColor)
         }
     }
 
-    private var kickerLabels: [String] {
+    /// ★ and what is due in the color of must; the rest in the app's own.
+    private var kickerColor: Color {
+        if pick.item.isRoutine || pick.item.isEvent { return Palette.accent }
+        return pick.isMust || pick.label.contains("締切") ? Palette.must : Palette.accent
+    }
+
+    private func kickerLabels(hasParent: Bool) -> [String] {
         var parts: [String] = []
+        if pick.isMust && !hasParent { parts.append("★必須") }
         if !pick.label.isEmpty { parts.append(pick.label) }
         if pick.item.isRoutine || pick.item.isEvent, !pick.item.project.isEmpty { parts.append(pick.item.project) }
         return parts
     }
 
+    /// The deadline, when the reason above does not already say it.
     private var meta: String? {
-        guard case .task(let id) = pick.item.source, let task = store.task(id), !task.isEvent else { return nil }
-        var parts = [task.effort.label]
+        guard let task else { return nil }
         let due = task.deadline ?? pick.parentID.flatMap { store.task($0)?.deadline }
-        if let due, !pick.label.contains("締切") { parts.append("締切 \(ProjectText.day(due))") }
-        return parts.joined(separator: " ・ ")
+        guard let due, !pick.label.contains("締切") else { return nil }
+        return "締切 \(ProjectText.day(due))"
     }
 
     private var resumeNote: String? {
@@ -343,10 +427,13 @@ private struct NowCard: View {
 
     private func chip(_ other: NowPick) -> some View {
         HStack(spacing: 4) {
+            if other.isMust {
+                Image(systemName: "star.fill").font(.caption2).foregroundStyle(Palette.must).accessibilityLabel("必須")
+            }
             Text(other.item.title).foregroundStyle(.primary).lineLimit(1)
             if !other.label.isEmpty {
                 Text("・ \(other.label)")
-                    .foregroundStyle(other.label.contains("締切") || other.label.contains("★") ? Palette.must : Color.secondary)
+                    .foregroundStyle(other.label.contains("締切") ? Palette.must : Color.secondary)
             }
         }
         .font(.footnote)
@@ -361,6 +448,140 @@ private struct NowCard: View {
         withAnimation(.snappy) { store.complete(id) }
         store.offerUndo("「\(title)」を完了にしました")
         finished += 1
+    }
+
+    /// 軽め → ふつう → じっくり → 軽め. The card stays in front while it is set.
+    private func cycleEffort(of task: TaskItem) {
+        let all = Effort.allCases
+        let next = all[((all.firstIndex(of: task.effort) ?? 0) + 1) % all.count]
+        onKeep()
+        store.change(task.id) { $0.effort = next }
+        weighed += 1
+    }
+}
+
+/// A task's 負荷 at the top right of the card, as three bars and a word. A tap moves it one step.
+private struct EffortBadge: View {
+    let effort: Effort
+    let onCycle: () -> Void
+
+    var body: some View {
+        Button(action: onCycle) {
+            HStack(spacing: 6) {
+                Text("負荷").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                EffortMeter(level: effort.rank + 1, color: Palette.accent)
+                Text(effort.label).font(.caption.weight(.bold)).foregroundStyle(.primary)
+            }
+            .padding(.horizontal, 10).frame(minHeight: 30)
+            .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .accessibilityLabel("負荷：\(effort.label)")
+        .accessibilityHint("タップで、軽め・ふつう・じっくりを切り替えます")
+    }
+}
+
+/// Three bars of rising height, lit up to the level (1 light … 3 heavy).
+private struct EffortMeter: View {
+    let level: Int
+    var color: Color = .primary
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 2) {
+            ForEach(1...3, id: \.self) { step in
+                RoundedRectangle(cornerRadius: 1, style: .continuous)
+                    .fill(step <= level ? color : color.opacity(0.22))
+                    .frame(width: 4, height: CGFloat(4 + step * 3))
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// Before anything is offered in free time: that the time is free (or held for sleep or work) and until
+/// when, and the question of the condition. Nothing is suggested until it is answered.
+@MainActor
+private struct FreeTimeCard: View {
+    let stretch: FreeStretch
+    let now: Date
+    let onChoose: (Energy) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            NowMark(title: "いま", color: Palette.accent)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(NowView.stretchTitle(stretch)).font(.title.weight(.heavy))
+                Text(span).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary).monospacedDigit()
+            }
+            Divider().padding(.vertical, 2)
+            Text("今の調子は？").font(.subheadline.weight(.bold))
+            EnergyChoices(choices: [.high, .normal, .low, .any], onChoose: onChoose)
+            Text("選んだ調子より重いものは出さず、重いものから順に出します。指定なしは優先度の順です。")
+                .font(.caption).foregroundStyle(.secondary).onlyInDemo()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(RaisedCardBackground(cornerRadius: 24))
+    }
+
+    private var span: String {
+        guard let until = stretch.until else { return "今日はこのあと予定なし" }
+        return "\(TimeSlot.clock(until))まで ・ あと\(NowView.duration(until - NowView.minute(of: now)))"
+    }
+}
+
+/// When nothing fits the condition chosen: say so, and offer the others.
+@MainActor
+private struct NoMatchCard: View {
+    let energy: Energy
+    let stretch: FreeStretch?
+    let now: Date
+    let onChoose: (Energy) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                NowMark(title: "いま", color: Palette.accent)
+                if let stretch {
+                    Text("\(NowView.stretchTitle(stretch)) ・ \(NowView.stretchEnd(stretch))")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            Text("「\(energy.label)」に合うタスクはありません").font(.title3.weight(.bold))
+            Text("調子を変える").font(.caption).foregroundStyle(.secondary)
+            EnergyChoices(choices: [Energy.high, .normal, .low, .any].filter { $0 != energy }, onChoose: onChoose)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(RaisedCardBackground(cornerRadius: 24))
+    }
+}
+
+/// The conditions to choose from, two to a row.
+private struct EnergyChoices: View {
+    let choices: [Energy]
+    let onChoose: (Energy) -> Void
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+            ForEach(choices) { energy in
+                Button { onChoose(energy) } label: {
+                    HStack(spacing: 8) {
+                        if let effort = energy.preferred { EffortMeter(level: effort.rank + 1, color: Palette.accent) }
+                        Text(energy.label).font(.body.weight(.bold))
+                    }
+                    .foregroundStyle(Palette.accent)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .background(Palette.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 14))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("今の調子：\(energy.label)")
+            }
+        }
     }
 }
 
@@ -545,7 +766,9 @@ private struct DayClosedView: View {
     }
 }
 
-/// The day as one thin bar, with now as a red line. A tap opens the timetable.
+/// Today on the week screen's shelves: morning, midday, evening and night, each holding its timed
+/// things as the same chips, names included. The time of day now is lit and a red line marks the
+/// minute; what is past fades. A tap opens the timetable.
 @MainActor
 private struct DayFlow: View {
     @EnvironmentObject private var store: TaskStore
@@ -554,9 +777,11 @@ private struct DayFlow: View {
 
     var body: some View {
         let items = Agenda.items(on: now, tasks: store.notebook.tasks, routines: store.notebook.routines)
-            .filter { !$0.isBlock && $0.slot != nil }
+        let held = items.filter(\.isBlock).compactMap(\.slot)
+        let timed = items.filter { !$0.isBlock && $0.slot != nil }
+        let minute = NowView.minute(of: now)
         Button(action: onOpen) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("今日の流れ").font(.subheadline.weight(.bold)).foregroundStyle(.primary)
                     Spacer()
@@ -566,8 +791,12 @@ private struct DayFlow: View {
                     }
                     .font(.subheadline.weight(.semibold)).foregroundStyle(Palette.accent)
                 }
-                FlowBar(items: items, range: Agenda.hourRange(for: items), now: now)
-                    .frame(height: 40)
+                HStack(alignment: .top, spacing: 4) {
+                    ForEach(WeekShelfView.Band.allCases, id: \.rawValue) { band in
+                        DayShelf(band: band, items: timed.filter { WeekShelfView.Band.of($0) == band },
+                                 heldShare: Self.share(of: held, in: band.range), minute: minute)
+                    }
+                }
             }
             .padding(14)
             .background(RaisedCardBackground(cornerRadius: 16))
@@ -575,59 +804,78 @@ private struct DayFlow: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("今日の流れ。時間割を開く")
+        .accessibilityLabel(spoken(timed))
         .accessibilityAddTraits(.isButton)
+    }
+
+    /// How much of a time of day is held for sleep or work.
+    static func share(of held: [TimeSlot], in range: Range<Int>) -> Double {
+        let covered = held.reduce(0) { total, slot in
+            total + max(0, min(slot.end, range.upperBound) - max(slot.start, range.lowerBound))
+        }
+        return Double(covered) / Double(range.count)
+    }
+
+    private func spoken(_ timed: [AgendaItem]) -> String {
+        let open = timed.filter { !$0.isDone }
+        let list = open.prefix(4).map { "\($0.slot?.startLabel ?? "") \($0.title)" }.joined(separator: "、")
+        return "今日の流れ。" + (open.isEmpty ? "時間の決まった予定はありません。" : "\(list)。") + "時間割を開く"
     }
 }
 
-@MainActor
-private struct FlowBar: View {
-    @EnvironmentObject private var store: TaskStore
+/// One time of day on today's shelf: up to three chips, then how many more.
+private struct DayShelf: View {
+    let band: WeekShelfView.Band
     let items: [AgendaItem]
-    let range: ClosedRange<Int>
-    let now: Date
+    let heldShare: Double
+    let minute: Int
 
     var body: some View {
-        GeometryReader { geometry in
-            let width = geometry.size.width
-            let minute = NowView.minute(of: now)
-            ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color(uiColor: .tertiarySystemFill))
-                    .frame(width: width, height: 22)
-                ForEach(items) { item in
-                    if let slot = item.slot {
-                        let start = position(slot.start, width: width)
-                        let end = position(slot.end, width: width)
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
-                            .fill(color(for: item).opacity(item.isDone ? 0.3 : 0.85))
-                            .frame(width: max(3, end - start), height: 14)
-                            .offset(x: start, y: 4)
-                    }
+        let isNow = band.range.contains(minute)
+        let isPast = band.range.upperBound <= minute
+        let shown = Array(items.prefix(3))
+        // Where the minute falls among the chips of the time of day it is in.
+        let split: Int? = isNow ? (shown.firstIndex { ($0.slot?.start ?? 0) > minute } ?? shown.count) : nil
+        VStack(spacing: 4) {
+            HStack(spacing: 3) {
+                if isNow { Circle().fill(Palette.accent).frame(width: 5, height: 5) }
+                Text(band.title)
+            }
+            .font(.caption.weight(isNow ? .heavy : .semibold))
+            .foregroundStyle(isNow ? Palette.accent : Color.secondary)
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(Array(shown.enumerated()), id: \.element.id) { index, item in
+                    if index == split { NowLine() }
+                    ShelfChip(item: item, lines: 2)
                 }
-                if range.contains(minute / 60) {
-                    Capsule().fill(Color.red).frame(width: 2, height: 28)
-                        .offset(x: position(minute, width: width) - 1, y: -3)
-                }
-                ForEach(ticks, id: \.self) { hour in
-                    Text("\(hour)").font(.caption2).foregroundStyle(.secondary).monospacedDigit()
-                        .fixedSize()
-                        .offset(x: max(0, min(width - 14, position(hour * 60, width: width) - 6)), y: 26)
+                if split == shown.count { NowLine() }
+                if items.count > shown.count {
+                    Text("+\(items.count - shown.count)").font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.accent)
+                        .padding(.leading, 4)
                 }
             }
+            .padding(4)
+            .frame(maxWidth: .infinity, minHeight: 84, alignment: .topLeading)
+            .background {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(heldShare >= 0.5 ? Color.primary.opacity(0.07) : Palette.paper)
+            }
+            .overlay {
+                if isNow { RoundedRectangle(cornerRadius: 10).strokeBorder(Palette.accent.opacity(0.7), lineWidth: 1.5) }
+            }
         }
+        .opacity(isPast ? 0.55 : 1)
     }
+}
 
-    private var ticks: [Int] {
-        Array(stride(from: ((range.lowerBound + 5) / 6) * 6, through: range.upperBound, by: 6))
-    }
-
-    private func position(_ minute: Int, width: CGFloat) -> CGFloat {
-        let span = CGFloat(max(1, range.upperBound - range.lowerBound) * 60)
-        return min(width, max(0, CGFloat(minute - range.lowerBound * 60) / span * width))
-    }
-
-    private func color(for item: AgendaItem) -> Color {
-        ProjectColor.color(for: store.colorName(forProject: item.project)) ?? Palette.accent
+/// The present minute between the chips of the time of day it falls in.
+private struct NowLine: View {
+    var body: some View {
+        HStack(spacing: 0) {
+            Circle().fill(Color.red).frame(width: 5, height: 5)
+            Rectangle().fill(Color.red).frame(height: 1.5)
+        }
+        .padding(.vertical, 1)
+        .accessibilityHidden(true)
     }
 }

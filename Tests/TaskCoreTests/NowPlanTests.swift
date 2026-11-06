@@ -14,7 +14,7 @@ final class NowPlanTests: XCTestCase {
         calendar.date(from: DateComponents(year: 2026, month: 10, day: 30, hour: hour, minute: minute))!
     }
 
-    func testWhatIsHappeningNowComesFirstThenWhatMustBeDoneThenSuggestions() {
+    func testWhatIsHappeningNowComesFirstThenWhatIsDueThenSuggestions() {
         let call = TaskItem(title: "電話", plannedAt: friday, scheduledTime: "14:00-14:15", createdAt: day(-1))
         let address = TaskItem(title: "宛先を確認", isMust: true, createdAt: day(-1))
         let headings = TaskItem(title: "見出し", plannedAt: friday, scheduledTime: "15:00-16:00", createdAt: day(-1))
@@ -24,13 +24,14 @@ final class NowPlanTests: XCTestCase {
 
         let picks = NowPlan.picks(in: book, energy: .any, now: at(14, 5), calendar: calendar)
         XCTAssertEqual(picks.map(\.item.title), ["電話", "宛先を確認", "段ボール"], "見出し waits for 15:00; the lunch is over")
-        XCTAssertEqual(picks.map(\.kind), [.inSlot, .obligation, .candidate])
-        XCTAssertEqual(picks.map(\.label), ["", "★必須", ""])
+        XCTAssertEqual(picks.map(\.kind), [.inSlot, .candidate, .candidate], "★ alone is not due today")
+        XCTAssertEqual(picks.map(\.label), ["", "", ""])
+        XCTAssertEqual(picks.map(\.isMust), [false, true, false])
 
-        // A timed task not done by its end stays as part of today's plan.
+        // A timed task not done by its end stays as part of today's plan, ahead of ★.
         let later = NowPlan.picks(in: book, energy: .any, now: at(15, 10), calendar: calendar)
-        XCTAssertEqual(later.map(\.item.title), ["見出し", "宛先を確認", "電話", "段ボール"])
-        XCTAssertEqual(later.map(\.label), ["", "★必須", "今日の予定", ""])
+        XCTAssertEqual(later.map(\.item.title), ["見出し", "電話", "宛先を確認", "段ボール"])
+        XCTAssertEqual(later.map(\.label), ["", "今日の予定", "", ""])
     }
 
     func testAPieceStandsForItsTaskAndPassingOverSendsThingsToTheBack() {
@@ -44,7 +45,7 @@ final class NowPlanTests: XCTestCase {
 
         let picks = NowPlan.picks(in: book, energy: .any, now: now, calendar: calendar)
         XCTAssertEqual(picks.map(\.item.title), ["本文", "図", "段ボール"])
-        XCTAssertEqual(picks.map(\.label), ["今日が締切", "続き", ""])
+        XCTAssertEqual(picks.map(\.label), ["今日が締切", "今日が締切", ""], "every piece of what is due today is due today")
         XCTAssertEqual(picks.map(\.parentID), [proposal.id, proposal.id, nil])
 
         let once = NowPlan.picks(in: book, energy: .any, now: now, passed: [AgendaItem(task: draft).id], calendar: calendar)
@@ -65,6 +66,47 @@ final class NowPlanTests: XCTestCase {
         XCTAssertEqual(picks.first?.label, "ルーティン")
         XCTAssertEqual(NowPlan.picks(in: book, energy: .any, now: at(19, 5), calendar: calendar).first?.kind, .inSlot)
         XCTAssertTrue(NowPlan.picks(in: book, energy: .any, now: at(21), calendar: calendar).isEmpty)
+    }
+
+    func testAConditionStartsFromTheHeaviestAndARoundStartsOver() {
+        let report = TaskItem(title: "設計", effort: .heavy, createdAt: day(-5))
+        let slides = TaskItem(title: "資料", effort: .medium, createdAt: day(-4))
+        let call = TaskItem(title: "電話", effort: .light, createdAt: day(-3))
+        let pay = TaskItem(title: "支払い", deadline: friday, effort: .heavy, createdAt: day(-2))
+        let book = Notebook(tasks: [call, slides, report, pay])
+        let now = at(10)
+        func titles(_ energy: Energy, _ passed: [TaskItem] = []) -> [String] {
+            NowPlan.picks(in: book, energy: energy, now: now, passed: passed.map { AgendaItem(task: $0).id }, calendar: calendar)
+                .map(\.item.title)
+        }
+        XCTAssertEqual(titles(.high), ["支払い", "設計", "資料", "電話"], "what is due today comes first whatever the condition")
+        XCTAssertEqual(titles(.normal), ["支払い", "資料", "電話"])
+        XCTAssertEqual(titles(.low), ["支払い", "電話"])
+        XCTAssertEqual(titles(.high, [pay, report]), ["資料", "電話", "支払い", "設計"], "passing over comes down to lighter ones")
+        XCTAssertEqual(titles(.high, [pay, report, slides, call]), titles(.high), "once all are passed over, it starts over")
+    }
+
+    func testAFreeStretchRunsToTheNextThingAndHeldTimeIsNotFree() {
+        let lunch = TaskItem(title: "ランチ", plannedAt: friday, scheduledTime: "12:00-13:30", createdAt: day(-2), isEvent: true)
+        var call = TaskItem(title: "電話", plannedAt: friday, scheduledTime: "14:00-14:15", createdAt: day(-1))
+        let sleep = Routine(title: "睡眠", time: "0:00-7:00", isBlock: true, createdAt: day(-30))
+        var book = Notebook(tasks: [lunch, call], routines: [sleep])
+
+        let morning = NowPlan.freeStretch(in: book, now: at(9), calendar: calendar)
+        XCTAssertNil(morning?.held)
+        XCTAssertEqual(morning?.until, 12 * 60)
+        XCTAssertEqual(morning?.next?.title, "ランチ")
+        XCTAssertEqual(morning?.key, NowPlan.freeStretch(in: book, now: at(11, 50), calendar: calendar)?.key, "one stretch, one key")
+        XCTAssertNil(NowPlan.freeStretch(in: book, now: at(12, 30), calendar: calendar), "lunch is on now")
+        XCTAssertEqual(NowPlan.freeStretch(in: book, now: at(6), calendar: calendar)?.held?.title, "睡眠")
+        XCTAssertEqual(NowPlan.freeStretch(in: book, now: at(6), calendar: calendar)?.until, 7 * 60)
+        XCTAssertNotEqual(NowPlan.freeStretch(in: book, now: at(13, 40), calendar: calendar)?.key, morning?.key)
+
+        call.completedAt = at(13, 50)
+        book = Notebook(tasks: [lunch, call], routines: [sleep])
+        let afterCall = NowPlan.freeStretch(in: book, now: at(14, 5), calendar: calendar)
+        XCTAssertNotNil(afterCall, "a thing done early frees its time")
+        XCTAssertNil(afterCall?.until, "nothing more today")
     }
 
     func testTheNextDaysFirstThingIsItsEarliestTimedItem() {

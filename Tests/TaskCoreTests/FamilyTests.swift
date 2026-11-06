@@ -103,19 +103,20 @@ final class FamilyTests: XCTestCase {
         XCTAssertEqual(book.tasks.first { $0.id == task.id }?.completedAt, today)
     }
 
-    func testAParentIsRequiredFromItsFirstChildsDayAndOnlyChildrenAreSuggested() {
+    func testAStarredParentIsKeptWithTheMustsAndOnlyItsPiecesAreSuggested() {
         let calendar = Calendar(identifier: .gregorian)
         let board = TaskBoard(calendar: calendar)
         let later = today.addingTimeInterval(3 * 86_400)
         let parent = TaskItem(title: "提案書", isMust: true, createdAt: created)
         var book = Notebook(tasks: [parent])
         book.addChild(TaskItem(title: "見出し", plannedAt: later, createdAt: created), to: parent.id)
-        XCTAssertTrue(board.obligations(book.tasks, now: today).isEmpty, "★ waits for the first piece's day")
-        XCTAssertFalse(board.obligations(book.tasks, now: later).isEmpty)
+        XCTAssertTrue(board.obligations(book.tasks, now: today).isEmpty, "★ alone is not a deadline")
+        XCTAssertTrue(board.obligations(book.tasks, now: later).isEmpty)
+        XCTAssertEqual(board.musts(book.tasks, now: today).map(\.title), ["提案書"])
         book.addChild(TaskItem(title: "本文", createdAt: created), to: parent.id)
-        let suggested = board.candidates(book.tasks, energy: .any, now: today, limit: 5).map(\.task.title)
-        XCTAssertFalse(suggested.contains("提案書"))
-        XCTAssertTrue(suggested.contains("本文"))
+        let suggested = board.candidates(book.tasks, energy: .any, now: today, limit: 5)
+        XCTAssertFalse(suggested.map(\.task.title).contains("提案書"))
+        XCTAssertEqual(suggested.first { $0.task.title == "本文" }?.isMust, true, "a piece carries its parent's ★")
     }
 
     func testChildrenTravelThroughSync() throws {

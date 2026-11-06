@@ -57,11 +57,11 @@ struct TaskEditor: View {
                             .buttonStyle(.borderless)
                             .accessibilityLabel("必須")
                             .accessibilityAddTraits(task.isMust ? .isSelected : [])
-                            .accessibilityHint("必須のものは予定日が来たら上段に出ます")
+                            .accessibilityHint("落とせないものの印です。時間割の下の「必須」にまとまり、候補で先に出ます")
                         }
                     }
                 } footer: {
-                    if task.isMust && !isPiece { Text("★必須：予定日が来たら上段に表示。日付なしなら今日から表示します。").onlyInDemo() }
+                    if task.isMust && !isPiece { Text("★必須：落とせないものの印。今日の上段には出さず、時間割の下の「必須」にまとめます。締切の日が来たら上段に出ます。").onlyInDemo() }
                 }
                 Section {
                     if isWhole {

@@ -84,17 +84,26 @@ struct AllTasksView: View {
         let open = matches.filter { !$0.isComplete || store.recentlyDone.contains(AgendaItem(task: $0).id) }
         let board = TaskBoard()
         let now = Date()
+        let calendar = Calendar.current
+        // Due today or earlier, ★ or not: above everything.
         let required = open.filter { task in
             var reopened = task
             reopened.completedAt = nil
-            return board.isObligation(reopened, among: book.tasks, now: now)
+            return board.isObligation(reopened, now: now)
         }
-        let remaining = open.filter { !required.contains($0) }
-        let calendar = Calendar.current
+        // ★ without a day of their own yet, kept together. Those with a day stay on it, marked.
+        let musts = open.filter { $0.isMust && !required.contains($0) && listedDay($0) == nil }
+            .sorted { ($0.deadline ?? .distantFuture, $0.createdAt) < ($1.deadline ?? .distantFuture, $1.createdAt) }
+        let remaining = open.filter { !required.contains($0) && !musts.contains($0) }
         let byDay = Dictionary(grouping: remaining.filter { listedDay($0) != nil }) { listedDay($0)! }
+        let days = byDay.keys.sorted()
         let undated = remaining.filter { listedDay($0) == nil }
         let done = matches.filter { $0.isComplete && !open.contains($0) }
             .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+        // The ★ group stands where its nearest deadline falls among the days: on 11/6 with the nearest on
+        // 11/8, after 11/6 and 11/7. Without a deadline, after the last day, before いつでも.
+        let nearest = musts.compactMap(\.deadline).min().map { calendar.startOfDay(for: $0) }
+        let mustsBefore = nearest.flatMap { day in days.first { $0 >= day } }
 
         let openCount = open.filter { !$0.isComplete }.count
         Text(store.isDemo ? "未完了 \(openCount)件。予定日や調子にかかわらず、すべてここにあります。横にスワイプすると削除できます。" : "未完了 \(openCount)件")
@@ -104,12 +113,13 @@ struct AllTasksView: View {
                                    description: Text(search.isEmpty ? "右下の＋から、タイトルだけで登録できます。" : "別の言葉で検索してみてください。"))
         }
         if !required.isEmpty {
-            SectionHeading(title: "必須・締切 \(required.count)件", color: Palette.must)
+            SectionHeading(title: "今日中に必要なもの \(required.count)件", color: Palette.must)
             ForEach(required) { task in
                 row(task, reason: board.obligationReason(task, now: now), raised: listedDay(task).map(calendar.isDateInToday) == true)
             }
         }
-        ForEach(byDay.keys.sorted(), id: \.self) { day in
+        ForEach(days, id: \.self) { day in
+            if !musts.isEmpty && mustsBefore == day { mustSection(musts, nearest: nearest) }
             SectionHeading(title: dayTitle(day, now: now))
             // Today's things are lifted off the page so they stand out from the rest; a task in pieces
             // with a piece today shows its pieces.
@@ -117,6 +127,7 @@ struct AllTasksView: View {
                 row(task, raised: calendar.isDateInToday(day), startsOpen: calendar.isDateInToday(day))
             }
         }
+        if !musts.isEmpty && mustsBefore == nil { mustSection(musts, nearest: nearest) }
         if !undated.isEmpty {
             SectionHeading(title: "いつでも \(undated.count)件", subtitle: "日付を決めていないもの")
             ForEach(undated) { task in row(task) }
@@ -145,6 +156,14 @@ struct AllTasksView: View {
             return store.children(of: task.id).filter { !$0.isComplete }.compactMap(\.plannedAt).min().map { calendar.startOfDay(for: $0) }
         }
         return task.plannedAt.map { calendar.startOfDay(for: $0) }
+    }
+
+    /// ★ not given a day yet, nearest deadline first.
+    @ViewBuilder private func mustSection(_ musts: [TaskItem], nearest: Date?) -> some View {
+        SectionHeading(title: "★ 必須 \(musts.count)件",
+                       subtitle: nearest.map { "日付を決めていないもの。いちばん近い締切 \($0.shortDay)" } ?? "日付を決めていないもの",
+                       color: Palette.must)
+        ForEach(musts) { task in row(task) }
     }
 
     @ViewBuilder private func row(_ task: TaskItem, reason: String? = nil, raised: Bool = false, startsOpen: Bool = false) -> some View {

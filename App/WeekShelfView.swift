@@ -627,12 +627,16 @@ private struct BandBalloon: View {
     }
 }
 
+/// A thing on a shelf: its start time and name, tinted in its project's color; outlined for an event,
+/// dashed when it has no time yet. Today's shelves on the いま screen use it too.
 @MainActor
-private struct ShelfChip: View {
+struct ShelfChip: View {
     @EnvironmentObject private var store: TaskStore
     let item: AgendaItem
     /// In the balloon there is room for the whole title on one line.
     var roomy = false
+    /// Lines the name may take.
+    var lines = 1
 
     var body: some View {
         let color = ProjectColor.color(for: store.colorName(forProject: item.project)) ?? Palette.accent
@@ -640,7 +644,7 @@ private struct ShelfChip: View {
             if let slot = item.slot {
                 Text(roomy ? slot.label : slot.startLabel).font(.system(size: roomy ? 10 : 9, weight: .semibold)).monospacedDigit().foregroundStyle(.secondary)
             }
-            Text(item.title).font(.system(size: roomy ? 13 : 11, weight: .bold)).lineLimit(1)
+            Text(item.title).font(.system(size: roomy ? 13 : 11, weight: .bold)).lineLimit(lines)
                 .strikethrough(item.isDone)
         }
         .padding(.horizontal, roomy ? 8 : 5).padding(.vertical, roomy ? 5 : 3)
