@@ -55,6 +55,8 @@ struct RootView: View {
     @State private var keyboardShown = false
     /// The sprout that opens the app; shown once, at a cold start.
     @State private var splashing = true
+    /// 振り分け, over everything: deciding an idea can open a project in the ボード tab behind it.
+    @State private var sorting = false
 
     var body: some View {
         Group {
@@ -98,6 +100,10 @@ struct RootView: View {
             }
         }
         .sheet(isPresented: $focusOpen) { RoutineFocusView() }
+        .fullScreenCover(isPresented: $sorting) {
+            SortIdeasView(ideaIDs: SortIdeasView.order(store.notebook.ideas, now: Date()),
+                          onShowToday: { selectedTab = Tab.today.rawValue })
+        }
         .sheet(isPresented: $settingsOpen) { SettingsView() }
         .sheet(item: $guide) { route in GuideSheet(cardID: route.id) }
         .alert("保存・読み込みのお知らせ", isPresented: Binding(
@@ -149,7 +155,7 @@ struct RootView: View {
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom != .pad }
 
     private var presenting: Bool {
-        editor != nil || routineEditor != nil || quickAdd != nil || focusOpen || settingsOpen || guide != nil
+        editor != nil || routineEditor != nil || quickAdd != nil || focusOpen || settingsOpen || guide != nil || sorting
     }
 
     private func takeQuickAddRequest() {
@@ -162,7 +168,7 @@ struct RootView: View {
     private func openQuickAdd(_ link: QuickAddLink) {
         let route = QuickAddRoute(day: nil, kind: link == .task ? .task : .idea)
         guard presenting else { quickAdd = route; return }
-        editor = nil; routineEditor = nil; quickAdd = nil; focusOpen = false; settingsOpen = false; guide = nil
+        editor = nil; routineEditor = nil; quickAdd = nil; focusOpen = false; settingsOpen = false; guide = nil; sorting = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { quickAdd = route }
     }
 
@@ -190,7 +196,7 @@ struct RootView: View {
                 .floatingAdd { quickAdd = QuickAddRoute(day: nil, kind: $0) }
         case .ideas:
             // Ideas and the board have their own way to add, so the ⊕ would only confuse there.
-            IdeasView(onEditTask: edit)
+            IdeasView(onEditTask: edit, onSort: { sorting = true })
         case .board:
             GuideBoardView(onEdit: edit)
         }
@@ -334,6 +340,7 @@ struct RootView: View {
             routineEditor = store.notebook.routines.first { !$0.project.isEmpty && !$0.isBlock }
         }
         if arguments.contains("-uiQuickAdd") { quickAdd = QuickAddRoute(day: nil, kind: .task) }
+        if arguments.contains("-uiSortIdeas") { sorting = true }
         // A task in pieces, to capture its editor.
         if arguments.contains("-uiOpenTask") {
             let tasks = store.notebook.tasks.filter { !$0.isComplete && !$0.isEvent }

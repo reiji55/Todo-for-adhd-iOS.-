@@ -223,6 +223,9 @@ xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/ideas.png"
 launch -uiTab 3 -uiOpenFirstIdea >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/idea-open.png"
+launch -uiTab 3 -uiSortIdeas >/dev/null
+sleep 4
+xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/sort-ideas.png"
 launch -uiTab 4 >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board.png"

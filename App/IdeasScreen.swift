@@ -14,6 +14,8 @@ struct IdeasView: View {
     /// After 入れる: the free time chosen, waiting for a note to be tapped.
     @State private var placing: FreeSlotPick?
     let onEditTask: (TaskItem) -> Void
+    /// Opens 振り分け: the notes one at a time, each given a first step and a day.
+    let onSort: () -> Void
 
     var body: some View {
         let now = max(Date(), refreshClock)
@@ -24,6 +26,25 @@ struct IdeasView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 if !ideas.isEmpty {
+                    HStack {
+                        Spacer()
+                        Button(action: onSort) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "square.stack").font(.subheadline.weight(.bold))
+                                Text("振り分ける").font(.subheadline.weight(.bold))
+                                Text("\(ideas.count)").font(.caption.weight(.heavy)).monospacedDigit()
+                                    .padding(.horizontal, 7).padding(.vertical, 2)
+                                    .background(Capsule().fill(Palette.accent.opacity(0.14)))
+                            }
+                            .foregroundStyle(Palette.accent)
+                            .padding(.horizontal, 14).frame(minHeight: 40)
+                            .overlay(Capsule().strokeBorder(Palette.accent, lineWidth: 1.5))
+                            .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("付箋\(ideas.count)枚を振り分ける")
+                    }
+                    .padding(.bottom, -8)
                     FreeTimeCard(now: now, placing: $placing) { idea, day, slot in
                         placing = nil
                         planning = IdeaPlan(idea: idea, day: day, slot: slot)
