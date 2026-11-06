@@ -190,6 +190,24 @@
 			<key>fileRef</key>
 			<string>495C0F2F9D005AE00F553158</string>
 		</dict>
+		<key>C371F96DEAA3AC2F3E48AEEB</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>LaunchSplash.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>52F709755577AFF8922CBBC6</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>C371F96DEAA3AC2F3E48AEEB</string>
+		</dict>
 		<key>5D94E39A7D2B5A745A88C030</key>
 		<dict>
 			<key>isa</key>
@@ -498,6 +516,7 @@
 				<string>36B0BA04D51CBF0868C9C026</string>
 				<string>2B7E09D2153F55F53B7D3DBD</string>
 				<string>495C0F2F9D005AE00F553158</string>
+				<string>C371F96DEAA3AC2F3E48AEEB</string>
 				<string>5D94E39A7D2B5A745A88C030</string>
 				<string>5548F3958C79240BDAFE493B</string>
 				<string>224D18BEA0242DF47A8B13B0</string>
@@ -1043,6 +1062,7 @@
 				<string>28A1F2A4CEC5603A945B9561</string>
 				<string>5CC8A29F56EA2A002E6517C4</string>
 				<string>C930A07953BF519925FD9BA2</string>
+				<string>52F709755577AFF8922CBBC6</string>
 				<string>E006F41FD741337DEFED01E2</string>
 				<string>250EBCED29BE7231CF429FED</string>
 				<string>AE6D0E871386093FC36707BD</string>
@@ -1202,7 +1222,7 @@
 				<key>INFOPLIST_KEY_UIApplicationSceneManifest_Generation</key>
 				<string>YES</string>
 				<key>INFOPLIST_KEY_UILaunchScreen_Generation</key>
-				<string>YES</string>
+				<string>NO</string>
 				<key>INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone</key>
 				<string>UIInterfaceOrientationPortrait</string>
 				<key>INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad</key>
@@ -1339,7 +1359,7 @@
 				<key>INFOPLIST_KEY_UIApplicationSceneManifest_Generation</key>
 				<string>YES</string>
 				<key>INFOPLIST_KEY_UILaunchScreen_Generation</key>
-				<string>YES</string>
+				<string>NO</string>
 				<key>INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone</key>
 				<string>UIInterfaceOrientationPortrait</string>
 				<key>INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad</key>

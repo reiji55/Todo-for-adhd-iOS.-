@@ -53,6 +53,8 @@ struct RootView: View {
     @State private var guide: GuideRoute?
     @State private var refreshDate = Date()
     @State private var keyboardShown = false
+    /// The sprout that opens the app; shown once, at a cold start.
+    @State private var splashing = true
 
     var body: some View {
         Group {
@@ -74,6 +76,12 @@ struct RootView: View {
             }
         }
         .overlay(alignment: .bottom) { undoToast }
+        .overlay {
+            if splashing {
+                LaunchSplash { withAnimation(.easeOut(duration: 0.15)) { splashing = false } }
+                    .transition(.opacity)
+            }
+        }
         // ▶ on a routine row starts its timer and opens its focus screen.
         .environment(\.startRoutine, StartRoutineAction { startRoutine($0) })
         .animation(.snappy, value: store.undoOffer)

@@ -374,6 +374,14 @@ private struct NowMark: View {
             Text(title)
         }
         .font(.footnote.weight(.heavy)).foregroundStyle(color)
+        // The launch sprout's bud lands on this mark.
+        .background {
+            GeometryReader { geometry in
+                Color.clear
+                    .onAppear { LaunchMark.shared.report(geometry.frame(in: .global)) }
+                    .onChange(of: geometry.frame(in: .global)) { _, frame in LaunchMark.shared.report(frame) }
+            }
+        }
     }
 }
 
