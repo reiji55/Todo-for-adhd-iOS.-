@@ -286,7 +286,7 @@ private struct NowCard: View {
                     Text("↳ \(parent.title)").lineLimit(1)
                     Text("\(pieces.filter(\.isComplete).count)/\(pieces.count)").monospacedDigit()
                 }
-                if !labels.isEmpty { Text(labels.joined(separator: " ・ ")).lineLimit(1) }
+                if !labels.isEmpty { Text((parent == nil ? "" : "・ ") + labels.joined(separator: " ・ ")).lineLimit(1) }
             }
             .font(.footnote.weight(.bold))
             .foregroundStyle(pick.item.isRoutine || pick.item.isEvent ? Palette.accent : Palette.must)
