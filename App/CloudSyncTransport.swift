@@ -33,10 +33,23 @@ final class CloudSyncTransport {
     static let recordType = "HormeItem"
     lazy var container = CKContainer(identifier: Self.containerID)
     private var subscribed: Set<String> = []
+    /// The signed-in account's id, asked of the server once. Checked before every write, it used to cost a
+    /// round trip each time; a change of account clears it.
+    private var cachedAccount: String?
+    private var accountObserver: NSObjectProtocol?
+
+    init() {
+        accountObserver = NotificationCenter.default.addObserver(forName: .CKAccountChanged, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.cachedAccount = nil }
+        }
+    }
 
     func accountID() async throws -> String {
-        guard try await container.accountStatus() == .available else { throw CloudSyncError.accountUnavailable }
-        return try await container.userRecordID().recordName
+        guard try await container.accountStatus() == .available else { cachedAccount = nil; throw CloudSyncError.accountUnavailable }
+        if let cachedAccount { return cachedAccount }
+        let id = try await container.userRecordID().recordName
+        cachedAccount = id
+        return id
     }
 
     func verify(_ connection: SyncConnection) async throws {

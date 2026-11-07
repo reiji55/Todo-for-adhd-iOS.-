@@ -88,6 +88,7 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
+            .background(CloudSharingAnchor().frame(width: 0, height: 0))
             .navigationTitle("設定とデータ").keyboardDismissable().navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { dismiss() } } }
             .onChange(of: store.sharingSheet?.id) { _, id in

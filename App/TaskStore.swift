@@ -50,12 +50,20 @@ final class TaskStore: ObservableObject {
     @Published var syncError: String?
     @Published var pendingJoin: PendingCloudJoin?
     @Published var sharingSheet: CloudSharingSheet?
+    /// Why the sharing screen could not open. Kept apart from sync errors, which a later sync clears.
+    @Published var shareError: String?
     private var syncGeneration = UUID()
     private var scheduledSync: Task<Void, Never>?
     private var foregroundRefresh: Task<Void, Never>?
     private var retryAfter = Date.distantPast
     private let network = NWPathMonitor()
     private var accountObserver: NSObjectProtocol?
+    /// Only a foreground app follows the network; in the background, silent notifications bring changes.
+    private var isForeground = false
+    private var networkWasUp = true
+    /// How often an open app checks for changes it was not told about. Edits sync at once, and other
+    /// devices' changes arrive by silent notification; this is only the fallback.
+    static let refreshInterval: Duration = .seconds(300)
 
     var connection: SyncConnection? { state.connection }
     var lastSyncedAt: Date? { state.lastSyncedAt }
@@ -70,8 +78,14 @@ final class TaskStore: ObservableObject {
         do { state = try repository.load(); notebook = state.notebook }
         catch { loadFailed = true; self.error = "保存データを開けませんでした。\(error.localizedDescription)" }
         network.pathUpdateHandler = { [weak self] path in
-            guard path.status == .satisfied else { return }
-            Task { @MainActor [weak self] in self?.requestSync() }
+            let up = path.status == .satisfied
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                // Only coming back online is a reason to sync; every other path change is noise.
+                let cameBack = up && !self.networkWasUp
+                self.networkWasUp = up
+                if cameBack && self.isForeground { self.requestSync() }
+            }
         }
         network.start(queue: DispatchQueue(label: "Horme.network"))
         accountObserver = NotificationCenter.default.addObserver(forName: .CKAccountChanged, object: nil, queue: .main) { [weak self] _ in
@@ -661,11 +675,12 @@ final class TaskStore: ObservableObject {
 
     func setForeground(_ active: Bool) {
         foregroundRefresh?.cancel(); foregroundRefresh = nil
+        isForeground = active
         guard active else { return }
         requestSync()
         foregroundRefresh = Task { [weak self] in
             while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                do { try await Task.sleep(for: Self.refreshInterval) } catch { return }
                 self?.requestSync()
             }
         }
@@ -764,13 +779,23 @@ final class TaskStore: ObservableObject {
             try next.receive(Array(result.records.values))
             next.hasPendingChanges = next.replica?.records != result.records
             next.lastSyncedAt = Date()
-            if !Self.sameContents(notebook, next.notebook) {
-                try repository.backup(notebook, beforeSharing: false)
-                // Do not apply a stale whole-book undo over a remote change.
-                history = []; undoOffer = nil
+            let changed = next.replica?.records != state.replica?.records || next.hasPendingChanges != state.hasPendingChanges
+            if changed {
+                if !Self.sameContents(notebook, next.notebook) {
+                    try repository.backup(notebook, beforeSharing: false)
+                    // Do not apply a stale whole-book undo over a remote change.
+                    history = []; undoOffer = nil
+                }
+                try repository.save(next)
+                state = next
+                // Redraw only when what is shown changed.
+                if notebook != next.notebook { notebook = next.notebook }
+            } else {
+                // Nothing new: no write, no redraw. The time of the check is kept in memory.
+                state.lastSyncedAt = next.lastSyncedAt
             }
-            try repository.save(next)
-            state = next; notebook = next.notebook; syncError = nil; retryAfter = .distantPast
+            if syncError != nil { syncError = nil }
+            retryAfter = .distantPast
             if next.hasPendingChanges { requestSync() }
         } catch {
             guard generation == syncGeneration else { return }
@@ -786,20 +811,18 @@ final class TaskStore: ObservableObject {
         guard !isDemo else { syncError = "デモモード中は共有や連携の設定を変えられません。設定からデモモードを終えてください。"; return }
         guard !loadFailed, !isPreparingShare else { return }
         isPreparingShare = true
+        shareError = nil
         defer { isPreparingShare = false }
         do {
             if let connection {
-                await synchronize()
-                // An outstanding local change is not a reason to lose access to
-                // the existing share-management UI.
+                // The share itself is all the screen needs; syncing first only made it slower to open.
                 let share = try await cloud.share(for: connection)
                 sharingSheet = CloudSharingSheet(share: share, container: cloud.container)
             } else {
                 let snapshot = try await cloud.prepareOwnData()
                 pendingJoin = try PendingCloudJoin(snapshot: snapshot, local: notebook, openShareAfterJoin: true)
             }
-            syncError = nil
-        } catch { syncError = Self.describe(error) }
+        } catch { shareError = Self.describe(error) }
     }
 
     func acceptInvitation(_ metadata: CKShare.Metadata) async {

@@ -20,11 +20,19 @@ final class HormeAppDelegate: NSObject, UIApplicationDelegate {
         guard CKNotification(fromRemoteNotificationDictionary: userInfo)?.containerIdentifier == CloudSyncTransport.containerID else {
             completionHandler(.noData); return
         }
-        Task {
-            let previous = TaskStore.shared.notebook
+        // The system gives a woken app about thirty seconds; going over gets it terminated, which shows
+        // as a crash. The sync stops at 25 seconds and the answer goes back exactly once.
+        let previous = TaskStore.shared.notebook
+        let answer = FetchAnswer(completionHandler)
+        let work = Task {
             await TaskStore.shared.synchronize()
-            completionHandler(TaskStore.shared.syncError == nil
-                ? (previous == TaskStore.shared.notebook ? .noData : .newData) : .failed)
+            answer.send(TaskStore.shared.syncError == nil ? (previous == TaskStore.shared.notebook ? .noData : .newData) : .failed)
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(25))
+            guard !answer.sent else { return }
+            work.cancel()
+            answer.send(previous == TaskStore.shared.notebook ? .noData : .newData)
         }
     }
 }
@@ -40,5 +48,17 @@ final class HormeSceneDelegate: NSObject, UIWindowSceneDelegate {
     }
     private func receive(_ metadata: CKShare.Metadata) {
         Task { await TaskStore.shared.acceptInvitation(metadata) }
+    }
+}
+
+/// Hands a background fetch its result once, whichever comes first: the sync or the time limit.
+@MainActor
+private final class FetchAnswer {
+    private var handler: ((UIBackgroundFetchResult) -> Void)?
+    init(_ handler: @escaping (UIBackgroundFetchResult) -> Void) { self.handler = handler }
+    var sent: Bool { handler == nil }
+    func send(_ result: UIBackgroundFetchResult) {
+        handler?(result)
+        handler = nil
     }
 }

@@ -36,10 +36,16 @@ struct CloudSharingSheet: Identifiable {
 enum CloudSharingPresenter {
     /// UICloudSharingController holds its delegate weakly; keep it alive while the screen is up.
     private static var delegate: Coordinator?
+    /// A view controller inside the settings screen; presenting from it puts the sharing screen right
+    /// over settings, whatever else the windows hold.
+    static weak var anchor: UIViewController?
 
     static func present(_ item: CloudSharingSheet, store: TaskStore) {
-        guard let top = topViewController() else {
-            store.syncError = "共有の画面を開けませんでした。設定を閉じて、もう一度お試しください。"
+        let base = anchor.flatMap { $0.viewIfLoaded?.window != nil ? $0 : nil } ?? topViewController()
+        var presenter = base
+        while let presented = presenter?.presentedViewController, !presented.isBeingDismissed { presenter = presented }
+        guard let top = presenter else {
+            store.shareError = "共有の画面を開けませんでした。設定を閉じて、もう一度お試しください。"
             return
         }
         let controller = UICloudSharingController(share: item.share, container: item.container)
@@ -54,11 +60,20 @@ enum CloudSharingPresenter {
             popover.permittedArrowDirections = []
         }
         top.present(controller, animated: true)
+        // If UIKit quietly refused, say so instead of leaving the button looking dead.
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.5))
+            if controller.presentingViewController == nil && controller.viewIfLoaded?.window == nil {
+                store.shareError = "共有の画面を開けませんでした。設定を閉じて開き直してから、もう一度お試しください。"
+            }
+        }
     }
 
     private static func topViewController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        let window = scenes.flatMap(\.windows).first { $0.isKeyWindow } ?? scenes.first?.windows.first
+        let active = scenes.filter { $0.activationState == .foregroundActive }
+        let window = active.flatMap(\.windows).first { $0.isKeyWindow } ?? active.first?.windows.first
+            ?? scenes.flatMap(\.windows).first { $0.isKeyWindow } ?? scenes.first?.windows.first
         var top = window?.rootViewController
         while let presented = top?.presentedViewController, !presented.isBeingDismissed { top = presented }
         return top
@@ -69,7 +84,7 @@ enum CloudSharingPresenter {
         init(store: TaskStore) { self.store = store }
         func itemTitle(for csc: UICloudSharingController) -> String? { "Hormeの共有データ" }
         func cloudSharingController(_ csc: UICloudSharingController, failedToSaveShareWithError error: Error) {
-            Task { @MainActor in store.syncError = TaskStore.describe(error) }
+            Task { @MainActor in store.shareError = TaskStore.describe(error) }
         }
         func cloudSharingControllerDidSaveShare(_ csc: UICloudSharingController) {
             Task { @MainActor in store.requestSync() }
@@ -78,6 +93,18 @@ enum CloudSharingPresenter {
             Task { @MainActor in store.sharingStopped() }
         }
     }
+}
+
+/// Invisible, inside the settings screen: what the sharing screen is presented from.
+struct CloudSharingAnchor: UIViewControllerRepresentable {
+    final class Controller: UIViewController {
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            CloudSharingPresenter.anchor = self
+        }
+    }
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) {}
 }
 
 @MainActor
@@ -108,6 +135,9 @@ struct SharingSection: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             if store.isPreparingShare { ProgressView("iCloudの共有を確認しています") }
+            if let message = store.shareError {
+                Label(message, systemImage: "exclamationmark.triangle").font(.subheadline).foregroundStyle(Palette.must)
+            }
             if let message = store.syncError {
                 Text(message).font(.subheadline).foregroundStyle(.secondary).accessibilityLabel("同期のお知らせ。\(message)")
             }
