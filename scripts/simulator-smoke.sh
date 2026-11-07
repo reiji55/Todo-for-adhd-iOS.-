@@ -206,6 +206,12 @@ PY
 launch -uiTab 2 -uiEnergy high >/dev/null
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/now-card.png"
+# Where the main thread is while the いま screen shows, to catch a stuck layout.
+pid=$(pgrep -f 'ThreeDays.app/ThreeDays' | head -1 || true)
+if [ -n "$pid" ]; then
+  echo "== main thread of the app on the いま screen ($DEVICE_FAMILY)"
+  sample "$pid" 2 2>/dev/null | sed -n '/Thread_[0-9]*.*DispatchQueue_1: com.apple.main-thread/,/^ *[0-9]* Thread_/p' | head -120 || true
+fi
 launch -horme-settings-preview
 sleep 4
 xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/sharing-settings.png"
