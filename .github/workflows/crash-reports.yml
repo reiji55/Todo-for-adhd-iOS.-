@@ -1,0 +1,24 @@
+name: クラッシュレポートを読む（TestFlight）
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'pyjwt[crypto]==2.9.0'
+      - name: Print recent crash reports
+        env:
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID || secrets.ASC_ISSURE_ID || secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.ASC_KEY_ID || secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.ASC_KEY_P8 || secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: python scripts/crash_reports.py
