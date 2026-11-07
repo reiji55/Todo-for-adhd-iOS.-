@@ -28,6 +28,12 @@
 
 ## 保留中の作業
 
+### Android版を作るときに決めること（2026-11-07 検討メモ）
+- CloudKit（iCloud共有）はAndroidから使えない（CloudKitのWeb APIはApple Accountでのログインが必要で不自然）。Androidと共有するなら、共有の土台をSupabase（ログイン・共有権限・招待つき）に移し、iPhone同士もそれにそろえるのが筋。
+- 費用の目安：iCloudは開発者負担ほぼゼロ。Supabaseは1000人規模でProプラン（月25ドル前後）。ただし今の「同期のたびに全件取得」のままだと通信量が月数百GBになり上乗せが出るので、「前回から変わった分だけ取る」増分同期に直すことが前提。Claude連携のサーバー（全件を返す）も同様に直す。
+- 費用の回収案：Androidとの共有やClaude連携を有料機能にする。
+- その段階になったら改めて検討する。料金は公式ページで確認し直す。
+
 ### Claude連携（Supabase）
 - [x] `HORME_KEY` を設定する（[Edge Function Secrets](https://supabase.com/dashboard/project/vdufjfnhgkocccueqaws/functions/secrets)）
 - [ ] 動作確認で作ったアイデア「b」（`idea_00000000-0000-0000-0000-0000000000AA`）を消す。アプリをつないだあとアプリから消してもよい
