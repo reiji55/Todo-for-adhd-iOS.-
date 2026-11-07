@@ -23,7 +23,8 @@ Bundle IDは既存の `io.github.reiji55.threedays` を引き続き使用する�
 4. **Push Notifications** も有効化して保存する。通知許可ダイアログのためではなく、変更を知らせるサイレント通知に使用する。
 5. [CloudKit Console](https://icloud.developer.apple.com/)で上記コンテナを開く。
 6. **Development** 環境のSchema / Record Typesで **`HormeItem`** を作り、**`payload`** という **Bytes** 型のフィールドを追加する。アプリはレコード変更取得APIを使うので独自の検索インデックスは不要。
-7. Schemaの **Deploy Schema Changes** でProductionへ反映する。TestFlight版はProduction環境を使用する。利用者のタスクをConsoleに入力する必要はない。
+7. 共有には **`cloudkit.share`** という型も要る（共有を一度作ると自動でできるが、Xcodeから動かさない場合はできない）。Developmentで左下の **Import Schema…** を選び、このリポジトリの [`docs/cloudkit-schema.ckdb`](cloudkit-schema.ckdb) を読み込む。Record Typesに `HormeItem`・`Users`・`cloudkit.share` の3つが並べばよい。
+8. Schemaの **Deploy Schema Changes** でProductionへ反映する。TestFlight版はProduction環境を使用する。利用者のタスクをConsoleに入力する必要はない。
 
 TestFlight用のワークフローは、ダウンロードした配布プロファイルに上記コンテナ・CloudKit・Productionの通知権限が含まれることを検証する。設定変更で古いプロファイルが無効になっていれば通常は自動で作り直される。設定済みでも検証が止まる場合はApple DeveloperのProfilesでこのアプリのApp Store配布プロファイルを編集・再生成し、最新のmainからワークフローを実行する。証明書や秘密鍵を作り直す必要はない。
 
