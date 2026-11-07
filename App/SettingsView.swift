@@ -84,7 +84,7 @@ struct SettingsView: View {
                 }
                 Section("この版について") {
                     Text("Horme · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
-                    Text("タスクとルーティン、週の時間割、通知、やり方を書き溜めるボードを備えた版です。Claudeとの自動連携はまだ含めていません。")
+                    Text("タスクとルーティン、週の時間割、通知、やり方を書き溜めるボード、端末間の共有、Claudeとの連携を備えた版です。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

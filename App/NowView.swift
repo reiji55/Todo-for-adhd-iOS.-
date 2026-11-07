@@ -299,6 +299,7 @@ private struct NowCard: View {
             }
             Button { onOpen(pick.item) } label: {
                 VStack(alignment: .leading, spacing: 4) {
+                    projectLine
                     kicker
                     Text(pick.item.title).font(.title.weight(.heavy)).foregroundStyle(.primary)
                         .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
@@ -349,6 +350,27 @@ private struct NowCard: View {
         } else if let stretch {
             Text("\(NowView.stretchTitle(stretch)) ・ \(NowView.stretchEnd(stretch))")
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+    }
+
+    /// The project a task belongs to (or its parent does), so a suggestion says what it is for.
+    private var project: String {
+        if !pick.item.project.isEmpty { return pick.item.project }
+        return pick.parentID.flatMap { store.task($0)?.project } ?? ""
+    }
+
+    @ViewBuilder private var projectLine: some View {
+        if !project.isEmpty, !(pick.item.isRoutine || pick.item.isEvent) {
+            let color = ProjectColor.color(for: store.colorName(forProject: project)) ?? Palette.accent
+            HStack(spacing: 6) {
+                Circle().fill(color).frame(width: 8, height: 8)
+                Text(project).lineLimit(1)
+            }
+            .font(.footnote.weight(.bold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(color.opacity(0.12), in: Capsule())
+            .accessibilityLabel("プロジェクト：\(project)")
         }
     }
 
@@ -431,6 +453,12 @@ private struct NowCard: View {
                 Image(systemName: "star.fill").font(.caption2).foregroundStyle(Palette.must).accessibilityLabel("必須")
             }
             Text(other.item.title).foregroundStyle(.primary).lineLimit(1)
+            let otherProject = other.item.project.isEmpty ? (other.parentID.flatMap { store.task($0)?.project } ?? "") : other.item.project
+            if !otherProject.isEmpty, !(other.item.isRoutine || other.item.isEvent) {
+                Circle().fill(ProjectColor.color(for: store.colorName(forProject: otherProject)) ?? Palette.accent)
+                    .frame(width: 6, height: 6).accessibilityHidden(true)
+                Text(otherProject).foregroundStyle(.secondary).lineLimit(1)
+            }
             if !other.label.isEmpty {
                 Text("・ \(other.label)")
                     .foregroundStyle(other.label.contains("締切") ? Palette.must : Color.secondary)
