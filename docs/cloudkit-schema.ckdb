@@ -25,7 +25,7 @@ DEFINE SCHEMA
         GRANT READ TO "_world"
     );
 
-    RECORD TYPE cloudkit.share (
+    RECORD TYPE "cloudkit.share" (
         "___createTime" TIMESTAMP,
         "___createdBy"  REFERENCE,
         "___etag"       STRING,
