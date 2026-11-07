@@ -2,7 +2,7 @@
 // and lets the database merge them, so the app's own edits made at the same time survive.
 
 import { addDays, agenda, dayKey, dayToISO, isAlive, materialize, newID, nowISO, piecesOf, taskItem, todayKey, Writer } from "./records.ts";
-import type { Book, SyncRecord, Task } from "./records.ts";
+import type { Book, Milestone, Project, SyncRecord, Task } from "./records.ts";
 
 export interface RecordStore {
   load(): Promise<SyncRecord[]>;
@@ -44,6 +44,32 @@ function validWeekdays(value: unknown): number[] | undefined {
   }
   return [...new Set(value as number[])].sort();
 }
+
+function findProject(book: Book, id: string): Project {
+  const project = book.projects.find((p) => p.id.toUpperCase() === String(id).toUpperCase());
+  if (!project) throw new Error(`プロジェクトが見つかりません: ${id}。先に get_projects で id を確かめてください。`);
+  return project;
+}
+
+/** How far a checkpoint has come, as the app counts it. */
+function progress(book: Book, project: Project, m: Milestone) {
+  const linked = book.tasks.filter((t: any) => sameID(t.milestoneID, m.id));
+  const routines = book.routines.filter((r: any) => sameID(r.milestoneID, m.id));
+  switch (m.kind) {
+    case "check": return { done: m.isDone };
+    case "number": return { current: m.current, target: m.target, unit: m.unit, done: m.current >= m.target };
+    case "count": {
+      const count = m.current + linked.filter((t) => t.completedAt).length + routines.reduce((n, r) => n + r.doneDays.length, 0);
+      return { current: count, target: m.target, unit: m.unit, done: count >= m.target };
+    }
+    case "tasks": {
+      const done = linked.filter((t) => t.completedAt).length;
+      return { current: done, target: linked.length, done: linked.length > 0 && done === linked.length };
+    }
+  }
+}
+
+const sameKey = (a: string, b: string) => a.replace(/\s+/g, "").toLowerCase() === b.replace(/\s+/g, "").toLowerCase();
 
 const sameID = (a: string | null | undefined, b: string) => !!a && a.toUpperCase() === b.toUpperCase();
 const hasPieces = (book: Book, t: Task) => book.tasks.some((k) => sameID(k.parentID, t.id));
@@ -386,6 +412,118 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: "get_projects",
+    title: "プロジェクトを読む",
+    description:
+      "プロジェクトの一覧。goal は到達点、deadline は期限、overview は概要、milestones は途中の到達点（チェックポイント）を順に。" +
+      "kind は check（できたら印）・count（○回やる）・number（数値を目指す）・tasks（つないだタスクの完了数）。" +
+      "タスク・ルーティン・カードは project の名前でプロジェクトにつながる（openTasks に未完了のタスク）。",
+    inputSchema: { type: "object", properties: {} },
+    run: (_, { book }) => ({
+      result: book.projects.map((p) => ({
+        id: p.id, name: p.name, goal: p.goal, deadline: p.deadline ? dayKey(p.deadline) : undefined, overview: p.overview || undefined,
+        milestones: p.milestones.map((m) => ({
+          id: m.id, title: m.title, kind: m.kind, due: m.dueDate ? dayKey(m.dueDate) : undefined, ...progress(book, p, m),
+        })),
+        openTasks: book.tasks.filter((t) => !t.completedAt && !t.isEvent && !t.parentID && sameKey(t.project ?? "", p.name))
+          .map((t) => ({ id: t.id, title: t.title })),
+      })),
+    }),
+  },
+  {
+    name: "set_project",
+    title: "プロジェクトを作る・直す",
+    description:
+      "プロジェクトを作る（id なし、name 必須）か直す（id あり）。渡した欄だけ変わる。deadline は YYYY-MM-DD、空文字で外す。" +
+      "名前を変えると、その名前でつながっているタスク・ルーティン・カードの project も新しい名前に移す。本人に頼まれたときに行う。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" }, name: { type: "string" }, goal: { type: "string", description: "到達点" },
+        deadline: { type: "string", description: "期限 YYYY-MM-DD、空文字で外す" }, overview: { type: "string", description: "概要" },
+      },
+    },
+    run: (args, { records, book, now }) => {
+      const writer = new Writer(records, "claude", now.getTime());
+      const values: Args = {};
+      if (args.name !== undefined) {
+        if (!String(args.name).trim()) throw new Error("名前は空にできません。");
+        values.name = String(args.name).trim();
+      }
+      for (const key of ["goal", "overview"]) if (args[key] !== undefined) values[key] = String(args[key]);
+      if (args.deadline !== undefined) {
+        if (args.deadline) validDate(args.deadline);
+        values.deadline = args.deadline ? dayToISO(args.deadline) : null;
+      }
+      if (args.id) {
+        const project = findProject(book, args.id);
+        if (values.name && book.projects.some((p) => p.id !== project.id && sameKey(p.name, values.name))) {
+          throw new Error(`「${values.name}」という名前のプロジェクトがすでにあります。`);
+        }
+        if (!Object.keys(values).length) return { result: { changed: false } };
+        writer.set(`project_${project.id}`, values);
+        if (values.name && values.name !== project.name) {
+          for (const t of book.tasks) if (sameKey(t.project ?? "", project.name)) writer.set(`task_${t.id}`, { project: values.name });
+          for (const r of book.routines) if (sameKey(r.project ?? "", project.name)) writer.set(`routine_${r.id}`, { project: values.name });
+          for (const c of book.cards as any[]) if (sameKey(c.project ?? "", project.name)) writer.set(`card_${c.id}`, { project: values.name });
+        }
+        return { result: { changed: true, id: project.id }, changes: writer.changes };
+      }
+      if (!values.name) throw new Error("新しいプロジェクトには name が必要です。");
+      if (book.projects.some((p) => sameKey(p.name, values.name))) throw new Error(`「${values.name}」という名前のプロジェクトがすでにあります。`);
+      const id = newID();
+      writer.set(`project_${id}`, { alive: true, id, goal: "", overview: "", origin: "", createdAt: nowISO(now), ...values });
+      return { result: { added: id }, changes: writer.changes };
+    },
+  },
+  {
+    name: "set_milestone",
+    title: "途中の到達点を足す・直す",
+    description:
+      "プロジェクトの途中の到達点（チェックポイント）を足す（milestone なし、title 必須、最後に入る）か直す（milestone に id）。" +
+      "kind は check・count・number・tasks（既定 check）。target は目標の数、current は number なら今の値・count なら手で数えた分。" +
+      "done は check の完了、due は YYYY-MM-DD（空文字で外す）。remove=true で消す。本人に頼まれたときに行う。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "プロジェクトの id" }, milestone: { type: "string", description: "直すときの id" },
+        title: { type: "string" }, kind: { type: "string", enum: ["check", "count", "number", "tasks"] },
+        target: { type: "number" }, current: { type: "number" }, unit: { type: "string" },
+        done: { type: "boolean" }, due: { type: "string" }, remove: { type: "boolean" },
+      },
+      required: ["project"],
+    },
+    run: (args, { records, book, now }) => {
+      const project = findProject(book, args.project);
+      const writer = new Writer(records, "claude", now.getTime());
+      if (args.due) validDate(args.due);
+      const existing = args.milestone ? project.milestones.find((m) => sameID(m.id, args.milestone)) : undefined;
+      if (args.milestone && !existing) throw new Error(`途中の到達点が見つかりません: ${args.milestone}`);
+      if (existing && args.remove) {
+        writer.set(`project_${project.id}`, { [`ms.${existing.id}`]: null });
+        for (const t of book.tasks as any[]) if (sameID(t.milestoneID, existing.id)) writer.set(`task_${t.id}`, { milestoneID: null });
+        for (const r of book.routines as any[]) if (sameID(r.milestoneID, existing.id)) writer.set(`routine_${r.id}`, { milestoneID: null });
+        return { result: { removed: existing.id }, changes: writer.changes };
+      }
+      const base: Milestone = existing ?? {
+        id: newID(), title: "", kind: "check", target: 1, current: 0, unit: "", isDone: false, createdAt: nowISO(now),
+        rank: Math.max(-1, ...project.milestones.map((m) => m.rank)) + 1,
+      };
+      const next: Milestone = { ...base };
+      if (args.title !== undefined) next.title = String(args.title).trim();
+      if (!next.title) throw new Error("title が空です。");
+      if (args.kind !== undefined) next.kind = args.kind;
+      if (args.target !== undefined) next.target = Number(args.target);
+      if (args.current !== undefined) next.current = Number(args.current);
+      if (args.unit !== undefined) next.unit = String(args.unit);
+      if (args.done !== undefined) next.isDone = !!args.done;
+      if (args.due !== undefined) next.dueDate = args.due ? dayToISO(args.due) : null;
+      const { dueDate, ...rest } = next;
+      writer.set(`project_${project.id}`, { [`ms.${next.id}`]: dueDate ? { ...rest, dueDate } : rest });
+      return { result: existing ? { changed: true, id: next.id } : { added: next.id }, changes: writer.changes };
+    },
+  },
+  {
     name: "get_routines",
     title: "ルーティンを読む",
     description: "ルーティン（くり返しの予定）の一覧。weekdays は 1=日曜〜7=土曜。isBlock は睡眠・仕事など時間を押さえるだけのもの。",
@@ -470,11 +608,11 @@ export const tools: Tool[] = [
 
 export const instructions =
   "Horme（本人のタスク管理アプリ）の中身を読み書きする。種類はタスク（その日にやる・単発で終わる）、イベント（その日にある予定。済んだら印を付けられるが、やり残しにはならない）、" +
-  "ルーティン（くり返し）、アイデア（まだ決めていない思いつき）。ほかにボード（やり方の書き置き）がある。" +
+  "ルーティン（くり返し）、アイデア（まだ決めていない思いつき）。ほかにボード（やり方の書き置き）と、プロジェクト（到達点・期限・途中の到達点を持つ大きな枠）がある。" +
   "大きなタスクは子タスクに分かれていることがある（pieces / parent）。日付と時間は子タスクが持ち、親タスクは締切と必須だけを持つ。子タスクがすべて済むと親も完了になる。" +
   "日付は日本時間。書き換える前に get_today / get_days で id と現状を確かめる。" +
   "handoff は本人が「Claude にやってほしい」と残した依頼で、対応したら memo に結果を書いて handoff を空にする。" +
-  "変更はアプリと iCloud に数十秒以内に反映される。タスク・イベント・ルーティンの追加や変更は本人に頼まれたときに行う。頼まれていないのに必須にしたり消したりはしない。";
+  "変更はアプリと iCloud に数十秒以内に反映される。タスク・イベント・ルーティン・プロジェクトの追加や変更は本人に頼まれたときに行う。頼まれていないのに必須にしたり消したりはしない。";
 
 /** Minimal MCP over HTTP (JSON responses, no sessions), enough for Claude's custom connectors. */
 export async function handleMcp(message: any, store: RecordStore, now = new Date()): Promise<any | null> {

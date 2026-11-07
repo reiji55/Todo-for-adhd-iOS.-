@@ -26,7 +26,17 @@ export type Routine = {
   id: string; title: string; project: string; memo: string; weekdays: number[]; time: string; notify: boolean;
   isBlock: boolean; isPaused: boolean; createdAt: string; doneDays: string[]; moves: Record<string, Move>;
 };
-export type Book = { tasks: Task[]; ideas: Idea[]; cards: Card[]; routines: Routine[] };
+export type Milestone = {
+  id: string; title: string; kind: "check" | "count" | "number" | "tasks"; target: number; current: number; unit: string;
+  isDone: boolean; dueDate?: string | null; createdAt: string; rank: number;
+};
+/** A project: a goal (到達点), a deadline, an overview, and checkpoints on the way. Tasks, routines and cards
+ *  belong to it by name (their `project`). Each checkpoint is its own field (`ms.<id>`), null once removed. */
+export type Project = {
+  id: string; name: string; goal: string; deadline?: string | null; overview: string; origin: string; createdAt: string;
+  milestones: Milestone[];
+};
+export type Book = { tasks: Task[]; ideas: Idea[]; cards: Card[]; routines: Routine[]; projects: Project[] };
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -48,12 +58,12 @@ export function decodeValue(value: string | undefined): unknown {
 export const isAlive = (r: SyncRecord) => decodeValue(r.fields.alive?.value) === true;
 
 export function materialize(records: SyncRecord[]): Book {
-  const book: Book = { tasks: [], ideas: [], cards: [], routines: [] };
+  const book: Book = { tasks: [], ideas: [], cards: [], routines: [], projects: [] };
   for (const record of records) {
     if (!isAlive(record)) continue;
     const plain: Record<string, unknown> = {};
     for (const [key, field] of Object.entries(record.fields)) {
-      if (key === "alive" || key.startsWith("step.") || key.startsWith("done.") || key.startsWith("move.")) continue;
+      if (key === "alive" || key.startsWith("step.") || key.startsWith("done.") || key.startsWith("move.") || key.startsWith("ms.")) continue;
       plain[key] = decodeValue(field.value);
     }
     if (record.id.startsWith("task_")) {
@@ -70,6 +80,15 @@ export function materialize(records: SyncRecord[]): Book {
       book.ideas.push(plain as Idea);
     } else if (record.id.startsWith("card_")) {
       book.cards.push({ purpose: "", goal: "", detail: "", rank: 0, ...(plain as Card) });
+    } else if (record.id.startsWith("project_")) {
+      const milestones: Milestone[] = [];
+      for (const [key, field] of Object.entries(record.fields)) {
+        if (!key.startsWith("ms.")) continue;
+        const value = decodeValue(field.value);
+        if (value && typeof value === "object") milestones.push({ unit: "", current: 0, target: 1, isDone: false, kind: "check", rank: 0, ...(value as Milestone) });
+      }
+      milestones.sort((a, b) => a.rank - b.rank || a.id.localeCompare(b.id));
+      book.projects.push({ goal: "", overview: "", origin: "", ...(plain as Project), milestones });
     } else if (record.id.startsWith("routine_")) {
       const doneDays: string[] = [];
       const moves: Record<string, Move> = {};

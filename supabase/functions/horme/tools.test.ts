@@ -222,3 +222,26 @@ test("routines: Claude can make one when asked, change it and pause it", async (
   const bad: any = await call(store, "add_routine", { title: "x", weekdays: [8] });
   assert.equal(bad.result.isError, true);
 });
+
+test("projects: read goal and checkpoints, make and change them, rename carries the tasks along", async () => {
+  const store = memoryStore();
+  const id = payload(await call(store, "set_project", { name: "TOEIC", goal: "本番で500点", deadline: "2026-12-20" })).added;
+  await call(store, "add_tasks", { tasks: [{ title: "模試を解く", project: "TOEIC", date: "anytime" }] });
+  const m1 = payload(await call(store, "set_milestone", { project: id, title: "単語帳を1周" })).added;
+  const m2 = payload(await call(store, "set_milestone", { project: id, title: "模試", kind: "number", target: 450, current: 420, unit: "点" })).added;
+  await call(store, "set_milestone", { project: id, milestone: m1, done: true });
+  let read = payload(await call(store, "get_projects", {}));
+  assert.equal(read[0].goal, "本番で500点");
+  assert.equal(read[0].deadline, "2026-12-20");
+  assert.deepEqual(read[0].milestones.map((m: any) => [m.title, m.done]), [["単語帳を1周", true], ["模試", false]]);
+  assert.equal(read[0].milestones[1].current, 420);
+  assert.deepEqual(read[0].openTasks.map((t: any) => t.title), ["模試を解く"]);
+  await call(store, "set_project", { id, name: "英語" });
+  const book = materialize(store.records);
+  assert.equal(book.tasks[0].project, "英語");
+  await call(store, "set_milestone", { project: id, milestone: m2, remove: true });
+  read = payload(await call(store, "get_projects", {}));
+  assert.deepEqual(read[0].milestones.map((m: any) => m.title), ["単語帳を1周"]);
+  const dup: any = await call(store, "set_project", { name: "英語" });
+  assert.equal(dup.result.isError, true);
+});
