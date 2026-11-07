@@ -37,6 +37,14 @@ function validTime(value: string) {
   throw new Error(`時間帯は "19:00-20:30" か "9:00" の形で渡してください: ${value}`);
 }
 
+function validWeekdays(value: unknown): number[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value) || !value.length || !value.every((d) => Number.isInteger(d) && d >= 1 && d <= 7)) {
+    throw new Error("weekdays は 1（日曜）〜7（土曜）の数の配列で渡してください。");
+  }
+  return [...new Set(value as number[])].sort();
+}
+
 const sameID = (a: string | null | undefined, b: string) => !!a && a.toUpperCase() === b.toUpperCase();
 const hasPieces = (book: Book, t: Task) => book.tasks.some((k) => sameID(k.parentID, t.id));
 
@@ -137,7 +145,7 @@ export const tools: Tool[] = [
     title: "タスク・イベントを足す",
     description:
       "タスクかイベントを追加する。date を省くと今日、\"anytime\" で日付なし（タスクのみ）。同じものを二重に足さないよう、先に get_today / get_days で確認する。" +
-      "kind=\"event\" はその日にある予定（買い物、人に会う）で、必須や締切はなく、やり残しにもならない。くり返すものはルーティンなので、本人に確認してから。" +
+      "kind=\"event\" はその日にある予定（買い物、人に会う）で、必須や締切はなく、やり残しにもならない。くり返すものは add_routine でルーティンにする。" +
       "parent にタスクの id を渡すと、そのタスクの子タスクとして足す（子タスクの date を省くと日付なし。ただし最初の子タスクは親の日付と時間を引き継ぎ、親は締切と必須だけを持つ形になる）。",
     inputSchema: {
       type: "object",
@@ -314,6 +322,70 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: "add_routine",
+    title: "ルーティンを作る",
+    description:
+      "くり返しの予定（ルーティン）を作る。weekdays は 1=日曜〜7=土曜（省くと毎日）、time は時間帯 \"19:00-20:30\"（省くと時間なし）。" +
+      "held=true は睡眠・仕事など時間を押さえるだけのもの（チェックも通知もない）。本人に頼まれたときに作る。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string" }, time: TIME, project: { type: "string" }, memo: { type: "string" },
+        weekdays: { type: "array", items: { type: "integer", minimum: 1, maximum: 7 }, description: "1=日曜〜7=土曜" },
+        held: { type: "boolean", description: "時間を押さえるだけ（睡眠・仕事）" },
+        notify: { type: "boolean", description: "通知する（既定は true）" },
+      },
+      required: ["title"],
+    },
+    run: (args, { records, now }) => {
+      const title = String(args.title ?? "").trim();
+      if (!title) throw new Error("title が空です。");
+      const time = String(args.time ?? "").trim();
+      validTime(time);
+      const weekdays = validWeekdays(args.weekdays) ?? [1, 2, 3, 4, 5, 6, 7];
+      const held = !!args.held;
+      const writer = new Writer(records, "claude", now.getTime());
+      const id = newID();
+      writer.set(`routine_${id}`, {
+        alive: true, id, title, project: String(args.project ?? ""), memo: String(args.memo ?? ""), weekdays, time,
+        notify: held ? false : args.notify !== false, isBlock: held, isPaused: false, createdAt: nowISO(now),
+      });
+      return { result: { added: id }, changes: writer.changes };
+    },
+  },
+  {
+    name: "update_routine",
+    title: "ルーティンを直す",
+    description: "ルーティンの名前・曜日・時間帯・プロジェクト・メモ・通知・一時停止（paused）を書き換える。渡した欄だけ変わる。やめるときは paused=true（記録は残る）。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" }, title: { type: "string" }, time: TIME, project: { type: "string" }, memo: { type: "string" },
+        weekdays: { type: "array", items: { type: "integer", minimum: 1, maximum: 7 } },
+        notify: { type: "boolean" }, paused: { type: "boolean" },
+      },
+      required: ["id"],
+    },
+    run: (args, { records, book, now }) => {
+      const routine = book.routines.find((r) => r.id.toUpperCase() === String(args.id).toUpperCase());
+      if (!routine) throw new Error(`ルーティンが見つかりません: ${args.id}`);
+      const values: Args = {};
+      if (args.title !== undefined) {
+        if (!String(args.title).trim()) throw new Error("名前は空にできません。");
+        values.title = String(args.title).trim();
+      }
+      if (args.time !== undefined) { validTime(String(args.time)); values.time = String(args.time).trim(); }
+      if (args.weekdays !== undefined) values.weekdays = validWeekdays(args.weekdays) ?? routine.weekdays;
+      for (const key of ["project", "memo"]) if (args[key] !== undefined) values[key] = String(args[key]);
+      if (args.notify !== undefined) values.notify = !!args.notify;
+      if (args.paused !== undefined) values.isPaused = !!args.paused;
+      if (!Object.keys(values).length) return { result: { changed: false } };
+      const writer = new Writer(records, "claude", now.getTime());
+      writer.set(`routine_${routine.id}`, values);
+      return { result: { changed: true, id: routine.id }, changes: writer.changes };
+    },
+  },
+  {
     name: "get_routines",
     title: "ルーティンを読む",
     description: "ルーティン（くり返しの予定）の一覧。weekdays は 1=日曜〜7=土曜。isBlock は睡眠・仕事など時間を押さえるだけのもの。",
@@ -402,7 +474,7 @@ export const instructions =
   "大きなタスクは子タスクに分かれていることがある（pieces / parent）。日付と時間は子タスクが持ち、親タスクは締切と必須だけを持つ。子タスクがすべて済むと親も完了になる。" +
   "日付は日本時間。書き換える前に get_today / get_days で id と現状を確かめる。" +
   "handoff は本人が「Claude にやってほしい」と残した依頼で、対応したら memo に結果を書いて handoff を空にする。" +
-  "変更はアプリと iCloud に数十秒以内に反映される。本人が決めること（必須にする・消す・ルーティンを作る）は勝手にしない。";
+  "変更はアプリと iCloud に数十秒以内に反映される。タスク・イベント・ルーティンの追加や変更は本人に頼まれたときに行う。頼まれていないのに必須にしたり消したりはしない。";
 
 /** Minimal MCP over HTTP (JSON responses, no sessions), enough for Claude's custom connectors. */
 export async function handleMcp(message: any, store: RecordStore, now = new Date()): Promise<any | null> {

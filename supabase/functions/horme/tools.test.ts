@@ -203,3 +203,22 @@ test("★ alone never makes a task due today; it is listed with the musts until 
   assert.deepEqual(read.required.map((t: any) => t.title), ["支払い"]);
   assert.deepEqual(read.musts.map((t: any) => t.title), ["申請書", "更新"], "nearest deadline first, undated last");
 });
+
+test("routines: Claude can make one when asked, change it and pause it", async () => {
+  const store = memoryStore();
+  const id = payload(await call(store, "add_routine", { title: "英単語", time: "7:30-7:45", weekdays: [2, 3, 4, 5, 6], project: "TOEIC" })).added;
+  let routine = materialize(store.records).routines.find((r) => r.id === id)!;
+  assert.deepEqual(routine.weekdays, [2, 3, 4, 5, 6]);
+  assert.equal(routine.time, "7:30-7:45");
+  assert.equal(routine.isBlock, false);
+  assert.equal(routine.notify, true);
+  await call(store, "update_routine", { id, time: "8:00-8:15", paused: true });
+  routine = materialize(store.records).routines.find((r) => r.id === id)!;
+  assert.equal(routine.time, "8:00-8:15");
+  assert.equal(routine.isPaused, true);
+  const held = payload(await call(store, "add_routine", { title: "睡眠", time: "0:00-7:00", held: true })).added;
+  const sleep = materialize(store.records).routines.find((r) => r.id === held)!;
+  assert.deepEqual([sleep.isBlock, sleep.notify, sleep.weekdays.length], [true, false, 7]);
+  const bad: any = await call(store, "add_routine", { title: "x", weekdays: [8] });
+  assert.equal(bad.result.isError, true);
+});
