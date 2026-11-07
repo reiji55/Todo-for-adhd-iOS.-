@@ -918,9 +918,22 @@ final class TaskStore: ObservableObject {
             return "共有にアクセスできません。共有元の権限や招待を確認してください。端末のデータは残っています。"
         case .quotaExceeded: return "iCloudの空き容量を確認してください。入力した内容は端末に保存されています。"
         case .badContainer, .badDatabase, .serverRejectedRequest, .invalidArguments, .missingEntitlement:
-            return "この版のiCloud設定を確認する必要があります。アプリの開発者にお知らせください。端末のデータは保存されています。"
+            // The server's own words say which setting is missing; keep them, short, for whoever fixes it.
+            let detail = Self.serverDetail(cloud)
+            if detail.contains("cloudkit.share") {
+                return "iCloudの本番環境に「共有」の型（cloudkit.share）がまだありません。CloudKit Consoleでスキーマを本番へ反映すると共有できます。端末のデータは保存されています。（コード\(cloud.code.rawValue)）"
+            }
+            return "この版のiCloud設定を確認する必要があります。アプリの開発者にお知らせください。端末のデータは保存されています。（コード\(cloud.code.rawValue)\(detail.isEmpty ? "" : "：" + detail)）"
         default: return "同期できませんでした。少し待ってから「今すぐ同期」を試してください。端末のデータは保存されています。"
         }
+    }
+
+    /// The server's message, also from a partial failure, cut to a line.
+    private static func serverDetail(_ error: CKError) -> String {
+        let inner = error.partialErrorsByItemID?.values.compactMap { $0 as? CKError }.first
+        let text = (inner ?? error).userInfo[NSLocalizedDescriptionKey] as? String
+            ?? (error.userInfo[NSDebugDescriptionErrorKey] as? String) ?? ""
+        return String(text.prefix(120))
     }
 }
 
