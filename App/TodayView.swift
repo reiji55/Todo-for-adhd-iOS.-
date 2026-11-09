@@ -231,10 +231,13 @@ struct TimelinePanel: View {
     let now: Date
     /// The red line for now; off for days other than today.
     var showsNow = true
+    /// The home overview opens details only, as its old upcoming rows did. The full timetable keeps
+    /// the existing completion and routine-start controls on its rail.
+    var interactiveChecks = true
     let onOpen: (AgendaItem) -> Void
 
     private let timeWidth: CGFloat = 46
-    private let railWidth: CGFloat = 44
+    private var railWidth: CGFloat { interactiveChecks ? 44 : 20 }
 
     var body: some View {
         let calendar = Calendar.current
@@ -270,7 +273,19 @@ struct TimelinePanel: View {
             .frame(width: timeWidth, alignment: .trailing)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(item.slot?.label ?? "")
-            AgendaCheck(item: item).frame(width: railWidth)
+            if interactiveChecks {
+                AgendaCheck(item: item).frame(width: railWidth)
+            } else {
+                Group {
+                    if item.isEvent {
+                        RoundedRectangle(cornerRadius: 3).strokeBorder(Palette.accent, lineWidth: 2)
+                    } else {
+                        Circle().strokeBorder(Palette.accent, lineWidth: 2)
+                    }
+                }
+                .frame(width: 11, height: 11).frame(width: railWidth)
+                .accessibilityHidden(true)
+            }
             AgendaRow(item: item, showsTime: false, style: .timeline, showsCheck: false, onOpen: onOpen)
                 .padding(.horizontal, 6)
                 .background {
@@ -557,8 +572,9 @@ struct DaySwitcher: View {
                         Text(Self.weekday(day)).font(.caption.weight(.semibold))
                         Text("\(calendar.component(.day, from: day))")
                             .font(.system(.title2, design: .rounded).weight(.bold)).monospacedDigit()
+                            .lineLimit(1).minimumScaleFactor(0.5)
                         Text(value == -2 ? "2日前" : value == 2 ? "2日後" : Self.name(for: value))
-                            .font(.caption2).lineLimit(1).minimumScaleFactor(0.8)
+                            .font(.caption2).lineLimit(1).minimumScaleFactor(0.5)
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
                     .foregroundStyle(selected ? Color(uiColor: .systemBackground) : Color.primary)

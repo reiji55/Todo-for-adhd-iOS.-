@@ -200,7 +200,7 @@ struct NowView: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("openTimetable")
             if !items.isEmpty {
-                TimelinePanel(items: items, now: now, showsNow: false, onOpen: onOpen)
+                TimelinePanel(items: items, now: now, showsNow: false, interactiveChecks: false, onOpen: onOpen)
             } else {
                 Text("このあとの時間が決まった予定はありません")
                     .font(.caption).foregroundStyle(.secondary).padding(.vertical, 4)
@@ -308,6 +308,7 @@ enum PassedOver {
 private struct NowCard: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.startRoutine) private var startRoutine
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let pick: NowPick
     let others: [NowPick]
     let canPass: Bool
@@ -413,7 +414,7 @@ private struct NowCard: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
+        headerLayout {
             Text(working ? "実行中" : pick.kind == .upcoming ? "次" : "いま")
                 .font(.caption.weight(.bold)).foregroundStyle(Color.black.opacity(0.8))
                 .padding(.horizontal, 10).padding(.vertical, 6).background(mint, in: Capsule())
@@ -433,7 +434,7 @@ private struct NowCard: View {
                 }
                 .font(.caption2)
             }
-            Spacer(minLength: 0)
+            if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 0) }
             if let task {
                 EffortBadge(effort: task.effort) { cycleEffort(of: task) }
             }
@@ -442,7 +443,7 @@ private struct NowCard: View {
 
     @ViewBuilder private var actions: some View {
         if working {
-            HStack(spacing: 10) {
+            actionLayout {
                 Button {
                     onStop()
                     draft = task?.continuationNote ?? ""
@@ -463,7 +464,7 @@ private struct NowCard: View {
             .buttonStyle(FocusActionStyle(kind: .primary))
             .accessibilityIdentifier("completeEvent")
         } else {
-            HStack(spacing: 10) {
+            actionLayout {
                 Button {
                     if let task {
                         if onStart(task.id) { showingNote = false }
@@ -482,6 +483,16 @@ private struct NowCard: View {
                 }
             }
         }
+    }
+
+    private var actionLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
+    }
+
+    private var headerLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
     }
 
     private var candidateChips: some View {
