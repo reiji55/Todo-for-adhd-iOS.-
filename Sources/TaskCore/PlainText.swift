@@ -23,6 +23,7 @@ public enum PlainText {
         if let task, !task.isComplete {
             if let next = task.nextStep { text += "\n    次の一手：\(next.title)" }
             if !task.resumeNote.isEmpty { text += "\n    続き：\(task.resumeNote)" }
+            if !task.continuationNote.isEmpty { text += "\n    前回の続き：\(task.continuationNote)" }
             if !task.handoff.isEmpty { text += "\n    AIへの引き継ぎ：\(task.handoff)" }
         }
         return text

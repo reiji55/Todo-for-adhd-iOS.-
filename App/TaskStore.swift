@@ -94,6 +94,16 @@ final class TaskStore: ObservableObject {
         moveCardsIntoProjectsOnce()
         // Property observers do not run during init, so data loaded here is converted explicitly.
         if notebook.needsStepConversion { scheduleStepConversion() }
+#if DEBUG
+        if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-uiScenario"),
+           ProcessInfo.processInfo.arguments.indices.contains(i + 1) {
+            // UI automation fixtures live only in memory, like the existing demo mode.
+            isDemo = true
+            notebook = InterfacePreviewData.notebook(ProcessInfo.processInfo.arguments[i + 1])
+            closedDay = nil
+            routineRun = nil
+        }
+#endif
     }
 
     /// The saved data, even while demo mode shows samples. Notifications are planned from this.
@@ -104,6 +114,7 @@ final class TaskStore: ObservableObject {
         guard isDemo || !loadFailed else { error = "読み込みに失敗したデータを保護しています。設定から直前の保存を復旧してください。"; return false }
         var next = notebook
         update(&next)
+        next.clearCompletedContinuationNotes()
         guard next != notebook else { return true }
         // Any new change replaces the previous undo offer, so 取り消す always reverts what it names.
         undoOffer = nil
@@ -214,12 +225,25 @@ final class TaskStore: ObservableObject {
 
     /// Checks a task off or undoes it. A parent finishes with its last child; checking off a parent
     /// finishes the children still open. What was just finished stays in place, struck through.
-    func complete(_ id: UUID) {
+    @discardableResult
+    func complete(_ id: UUID) -> Bool {
         let before = notebook
-        guard commit({ $0.toggleTask(id) }) else { return }
+        guard commit({ $0.toggleTask(id) }) else { return false }
         for task in notebook.tasks where task.isComplete && before.tasks.first(where: { $0.id == task.id })?.isComplete == false {
             recentlyDone.insert("task-\(task.id.uuidString)")
         }
+        return true
+    }
+
+    func startTask(_ id: UUID, at now: Date) -> Bool {
+        guard let task = task(id), !task.isComplete, !task.isEvent, !hasChildren(id) else { return false }
+        return commit { $0.startTask(id, at: now) }
+    }
+
+    func saveTaskContinuation(_ id: UUID, note: String) -> Bool {
+        guard let task = task(id), !task.isComplete, !task.isEvent,
+              !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return commit { $0.saveTaskContinuation(id, note: note) }
     }
 
     /// A new piece of a task, at the end of its list. The first one takes over the task's day and time.

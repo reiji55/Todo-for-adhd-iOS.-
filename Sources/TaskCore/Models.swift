@@ -48,6 +48,9 @@ public struct TaskItem: Codable, Identifiable, Equatable {
     public var effort: Effort
     public var project: String
     public var memo: String
+    /// A temporary, optional note left on interruption. Independent of the legacy resumeNote migration
+    /// and the permanent memo/AI handoff. Cleared when this task is completed.
+    public var continuationNote: String
     public var handoff: String
     public var resumeNote: String
     public var steps: [Step]
@@ -75,7 +78,7 @@ public struct TaskItem: Codable, Identifiable, Equatable {
                 handoff: String = "", resumeNote: String = "", steps: [Step] = [],
                 createdAt: Date = Date(), lastStartedAt: Date? = nil, completedAt: Date? = nil,
                 suggestionDeferredUntil: Date? = nil, notify: Bool = true, isEvent: Bool = false, milestoneID: UUID? = nil,
-                parentID: UUID? = nil, rank: Int = 0) {
+                parentID: UUID? = nil, rank: Int = 0, continuationNote: String = "") {
         self.id = id; self.title = title; self.plannedAt = plannedAt
         self.scheduledTime = scheduledTime; self.deadline = deadline; self.isMust = isMust
         self.effort = effort; self.project = project; self.memo = memo; self.handoff = handoff
@@ -83,6 +86,7 @@ public struct TaskItem: Codable, Identifiable, Equatable {
         self.lastStartedAt = lastStartedAt; self.completedAt = completedAt
         self.suggestionDeferredUntil = suggestionDeferredUntil; self.notify = notify; self.isEvent = isEvent
         self.milestoneID = milestoneID; self.parentID = parentID; self.rank = rank
+        self.continuationNote = continuationNote
     }
     public var isComplete: Bool { completedAt != nil }
     public var nextStep: Step? { steps.first { !$0.isDone } }
@@ -217,7 +221,7 @@ extension TaskItem {
     enum CodingKeys: String, CodingKey {
         case id, title, plannedAt, scheduledTime, deadline, isMust, effort, project, memo, handoff
         case resumeNote, steps, createdAt, lastStartedAt, completedAt, suggestionDeferredUntil, notify, isEvent, milestoneID
-        case parentID, rank
+        case parentID, rank, continuationNote
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -239,7 +243,8 @@ extension TaskItem {
                   isEvent: try c.decodeIfPresent(Bool.self, forKey: .isEvent) ?? false,
                   milestoneID: try c.decodeIfPresent(UUID.self, forKey: .milestoneID),
                   parentID: try c.decodeIfPresent(UUID.self, forKey: .parentID),
-                  rank: try c.decodeIfPresent(Int.self, forKey: .rank) ?? 0)
+                  rank: try c.decodeIfPresent(Int.self, forKey: .rank) ?? 0,
+                  continuationNote: try text(.continuationNote))
     }
 }
 

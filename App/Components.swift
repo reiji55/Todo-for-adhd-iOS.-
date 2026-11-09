@@ -165,6 +165,7 @@ struct AgendaRow: View {
                     Text(item.title).font(.body.weight(item.isMust && !done ? .bold : .medium))
                         .strikethrough(done).foregroundStyle(done ? Color.secondary : item.isMust ? Palette.must : Color.primary)
                         .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                    ItemNotesView(item: item)
                     if !done, let task, let next = store.notebook.nextChild(of: task.id) {
                         Text("次：\(next.title)").font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     }

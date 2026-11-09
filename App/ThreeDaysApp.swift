@@ -38,7 +38,7 @@ struct RootView: View {
     enum Tab: Int, CaseIterable {
         case all, week, today, ideas, board
         var title: String { ["すべて", "週", "今日", "アイデア", "ボード"][rawValue] }
-        var icon: String { ["square.stack.3d.up", "calendar", "house", "lightbulb", "square.grid.2x2"][rawValue] }
+        var icon: String { ["square.3.layers.3d", "calendar", "sun.max", "lightbulb", "rectangle.split.2x2"][rawValue] }
     }
     @EnvironmentObject private var store: TaskStore
     @Environment(\.scenePhase) private var phase
@@ -150,6 +150,9 @@ struct RootView: View {
         .environment(\.refreshClock, refreshDate)
         .environment(\.openGuide, OpenGuideAction { guide = GuideRoute(id: $0) })
         .onAppear(perform: openTabForScreenshot)
+#if DEBUG
+        .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("-uiDark") ? .dark : nil)
+#endif
     }
 
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom != .pad }
@@ -445,7 +448,10 @@ struct HormeTabBar: View {
         let selected = selection == tab.rawValue
         return Button { selection = tab.rawValue } label: {
             VStack(spacing: 3) {
-                Image(systemName: tab.icon).font(.system(size: 21, weight: selected ? .semibold : .regular)).frame(height: 26)
+                Group {
+                    if tab == .board { BoardTabIcon().frame(width: 23, height: 22) }
+                    else { Image(systemName: tab.icon).font(.system(size: 21, weight: selected ? .semibold : .regular)) }
+                }.frame(height: 26)
                 Text(tab.title).font(.system(size: 10, weight: selected ? .bold : .medium))
             }
             .foregroundStyle(selected ? Palette.accent : Color.secondary)
@@ -469,7 +475,7 @@ struct HormeTabBar: View {
                         .shadow(color: dark ? Color.white.opacity(0.08) : .white, radius: 7, x: -4, y: -4)
                         .overlay(Circle().strokeBorder(LinearGradient(colors: [Color.white.opacity(dark ? 0.15 : 0.7), Color.white.opacity(0)],
                                                                       startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
-                    Image(systemName: selected ? "house.fill" : "house").font(.system(size: 25, weight: .semibold))
+                    Image(systemName: selected ? "sun.max.fill" : "sun.max").font(.system(size: 25, weight: .semibold))
                         .foregroundStyle(selected ? Color.white : Palette.accent)
                 }
                 .frame(width: 60, height: 60)
@@ -486,5 +492,24 @@ struct HormeTabBar: View {
         .accessibilityLabel("今日")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .animation(.snappy(duration: 0.2), value: selected)
+    }
+}
+
+/// The reference board glyph: one full left column and two right-hand panels.
+/// Only the glyph changes; the existing raised tab housing and hit area stay intact.
+private struct BoardTabIcon: View {
+    var body: some View {
+        GeometryReader { g in
+            ZStack {
+                RoundedRectangle(cornerRadius: 2).stroke(lineWidth: 1.7)
+                Path { p in
+                    p.move(to: CGPoint(x: g.size.width / 2, y: 0))
+                    p.addLine(to: CGPoint(x: g.size.width / 2, y: g.size.height))
+                    p.move(to: CGPoint(x: g.size.width / 2, y: g.size.height / 2))
+                    p.addLine(to: CGPoint(x: g.size.width, y: g.size.height / 2))
+                }.stroke(lineWidth: 1.5)
+            }
+        }
+        .accessibilityHidden(true)
     }
 }

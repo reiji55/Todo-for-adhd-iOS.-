@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['App/**', 'Sources/**', 'Tests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/ios.yml', '.github/workflows/testflight.yml']
+    paths: ['App/**', 'Sources/**', 'Tests/**', 'UITests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/ios.yml', '.github/workflows/testflight.yml']
   pull_request:
-    paths: ['App/**', 'Sources/**', 'Tests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/ios.yml', '.github/workflows/testflight.yml']
+    paths: ['App/**', 'Sources/**', 'Tests/**', 'UITests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/ios.yml', '.github/workflows/testflight.yml']
 
 permissions:
   contents: read
@@ -16,7 +16,7 @@ jobs:
     runs-on: macos-15
     permissions:
       contents: write
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
@@ -57,6 +57,8 @@ jobs:
           -derivedDataPath DerivedData-device
           CODE_SIGNING_ALLOWED=NO
           build
+      - name: Exercise start, interruption, notes, events, routines and five dates
+        run: bash scripts/interface-tests.sh
       - name: Launch app in iPhone Simulator and capture screen
         run: bash scripts/simulator-smoke.sh iPhone
       - name: Launch app in iPad Simulator and capture screen
