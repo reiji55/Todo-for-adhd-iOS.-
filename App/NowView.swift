@@ -43,7 +43,7 @@ struct NowView: View {
         }
         .sheet(isPresented: $rolloverOpen) { RolloverSheet() }
         .onChange(of: store.notebook) { _, book in
-            if let work, !book.tasks.contains(where: { $0.id == work.taskID && !$0.isComplete && !$0.isEvent }) {
+            if let work, book.hasChildren(work.taskID) || !book.tasks.contains(where: { $0.id == work.taskID && !$0.isComplete && !$0.isEvent }) {
                 self.work = nil
             }
             if let chosen, chosen.hasPrefix("task-"),
@@ -96,7 +96,9 @@ struct NowView: View {
                                     if store.startTask(id, at: started) {
                                         chosen = current.id
                                         work = TaskWork(taskID: id, startedAt: started)
+                                        return true
                                     }
+                                    return false
                                 },
                                 onStop: {
                                     work = nil
@@ -165,6 +167,11 @@ struct NowView: View {
         if let pick = picks.first(where: { $0.id == id }) { return pick }
         if id.hasPrefix("task-"), let uuid = UUID(uuidString: String(id.dropFirst(5))),
            let task = book.tasks.first(where: { $0.id == uuid }), !task.isComplete {
+            if book.hasChildren(task.id) {
+                guard let child = book.nextChild(of: task.id) else { return picks.first }
+                return NowPick(item: AgendaItem(task: child), kind: .candidate, label: "", parentID: task.id,
+                               isMust: TaskBoard().isMust(child, among: book.tasks))
+            }
             return NowPick(item: AgendaItem(task: task), kind: .candidate, label: "", parentID: task.parentID,
                            isMust: TaskBoard().isMust(task, among: book.tasks))
         }
@@ -307,7 +314,7 @@ private struct NowCard: View {
     let stretch: FreeStretch?
     let now: Date
     let work: TaskWork?
-    let onStart: (UUID) -> Void
+    let onStart: (UUID) -> Bool
     let onStop: () -> Void
     let onPass: () -> Void
     let onChoose: (String) -> Void
@@ -456,8 +463,7 @@ private struct NowCard: View {
             HStack(spacing: 10) {
                 Button {
                     if let task {
-                        showingNote = false
-                        onStart(task.id)
+                        if onStart(task.id) { showingNote = false }
                     } else if let startRoutine { startRoutine(pick.item) }
                 } label: {
                     Label(store.isTiming(pick.item) ? "計測中" : "始める", systemImage: "play.fill")

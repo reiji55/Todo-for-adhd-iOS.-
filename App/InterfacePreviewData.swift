@@ -12,12 +12,16 @@ enum InterfacePreviewData {
         let later = TimeSlot(start: min(23 * 60, minute + 90), duration: 30).label
         let parent = TaskItem(title: "案内メールを送る", deadline: now, isMust: true, project: "仕事", createdAt: now.addingTimeInterval(-1000))
         let titles = ["本文を下書きする", "送信先をそろえる", "PDFを用意する", "宛先と添付を確認する"]
-        let children = (0..<10).map { i in
-            TaskItem(title: i < titles.count ? titles[i] : "確認項目 \(i + 1)",
-                     effort: .medium, project: "仕事", memo: i == 3 ? "添付は共有フォルダの最新版。" : "",
-                     createdAt: now.addingTimeInterval(Double(-900 + i)), completedAt: i < 3 ? now : nil,
-                     parentID: parent.id, rank: i,
-                     continuationNote: i == 3 && scenario == "memo" ? "宛先は確認済み。次はPDFの差し替え。" : "")
+        var children: [TaskItem] = []
+        for i in 0..<10 {
+            let title = i < titles.count ? titles[i] : "確認項目 \(i + 1)"
+            var child = TaskItem(title: title, createdAt: now.addingTimeInterval(Double(-900 + i)), parentID: parent.id, rank: i)
+            child.effort = .medium
+            child.project = "仕事"
+            if i < 3 { child.completedAt = now }
+            if i == 3 { child.memo = "添付は共有フォルダの最新版。" }
+            if i == 3 && scenario == "memo" { child.continuationNote = "宛先は確認済み。次はPDFの差し替え。" }
+            children.append(child)
         }
         let event = TaskItem(title: scenario == "event" ? "打ち合わせ" : "歯医者の予約", plannedAt: now,
                              scheduledTime: scenario == "event" ? ongoing : later,
