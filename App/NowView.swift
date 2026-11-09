@@ -283,6 +283,8 @@ private struct NowCard: View {
     let onOpen: (AgendaItem) -> Void
     @State private var finished = 0
     @State private var weighed = 0
+    @State private var taskFocusOpen = false
+    @State private var taskStartedAt = Date()
 
     private var task: TaskItem? {
         guard case .task(let id) = pick.item.source, let task = store.task(id), !task.isEvent else { return nil }
@@ -310,16 +312,29 @@ private struct NowCard: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint("開いて編集します")
-            if let note = resumeNote {
+            if let support = supportText {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("前回の続き").font(.caption).foregroundStyle(.secondary)
-                    Text(note).font(.subheadline.weight(.semibold))
+                    Text(support.label).font(.caption).foregroundStyle(.secondary)
+                    Text(support.text).font(.subheadline.weight(.semibold)).lineLimit(3)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             if !pick.item.isEvent || canPass { actions }
+            if task != nil {
+                HStack {
+                    Spacer()
+                    Button(action: complete) {
+                        Label("完了にする", systemImage: "checkmark.circle")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("このタスクを完了します。間違えた場合は取り消せます")
+                }
+            }
             if !others.isEmpty {
                 Divider().padding(.vertical, 2)
                 Text("ほかの候補").font(.caption).foregroundStyle(.secondary)
@@ -333,9 +348,22 @@ private struct NowCard: View {
             }
         }
         .padding(18)
+        .background(alignment: .topTrailing) {
+            Image(systemName: "leaf.fill")
+                .font(.system(size: 60, weight: .ultraLight))
+                .rotationEffect(.degrees(-24))
+                .foregroundStyle(Palette.accent.opacity(0.08))
+                .padding(.top, 70)
+                .padding(.trailing, 20)
+                .accessibilityHidden(true)
+                .allowsHitTesting(false)
+        }
         .background(RaisedCardBackground(cornerRadius: 24))
         .sensoryFeedback(.success, trigger: finished)
         .sensoryFeedback(.selection, trigger: weighed)
+        .sheet(isPresented: $taskFocusOpen) {
+            if let task { TaskStartSheet(taskID: task.id, startedAt: taskStartedAt) }
+        }
     }
 
     /// Beside いま: the time of what is on now, or the free stretch this is offered in.
@@ -414,9 +442,27 @@ private struct NowCard: View {
         return "締切 \(ProjectText.day(due))"
     }
 
-    private var resumeNote: String? {
-        guard case .routine(let id, _) = pick.item.source, let note = store.routine(id)?.resumeNote, !note.isEmpty else { return nil }
-        return note
+    /// Only display existing data; never invent a motivational summary.
+    private var supportText: (label: String, text: String)? {
+        if let task {
+            if !task.resumeNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return ("前回の続き", task.resumeNote)
+            }
+            if let child = store.children(of: task.id).first(where: { !$0.isComplete }) {
+                return ("最初の一手", child.title)
+            }
+            if let step = task.steps.first(where: { !$0.isDone }) {
+                return ("最初の一手", step.title)
+            }
+            if !task.memo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return ("メモ", task.memo)
+            }
+        }
+        if case .routine(let id, _) = pick.item.source,
+           let note = store.routine(id)?.resumeNote, !note.isEmpty {
+            return ("前回の続き", note)
+        }
+        return nil
     }
 
     private var actions: some View {
@@ -424,8 +470,8 @@ private struct NowCard: View {
             switch pick.item.source {
             case .task:
                 if !pick.item.isEvent {
-                    Button(action: complete) {
-                        Label("完了にする", systemImage: "checkmark").frame(maxWidth: .infinity)
+                    Button(action: startTask) {
+                        Label("始める", systemImage: "play.fill").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(NowButtonStyle(prominent: true))
                 }
@@ -444,6 +490,10 @@ private struct NowCard: View {
                 }
                 .buttonStyle(NowButtonStyle(prominent: false))
             }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            // Intentionally no tap overlay: the two main actions must stay unobstructed.
+            EmptyView()
         }
     }
 
@@ -470,6 +520,15 @@ private struct NowCard: View {
         .accessibilityElement(children: .combine)
     }
 
+    private func startTask() {
+        guard let task else { return }
+        let started = Date()
+        store.change(task.id) { $0.lastStartedAt = started }
+        guard store.task(task.id)?.lastStartedAt == started else { return }
+        taskStartedAt = started
+        taskFocusOpen = true
+    }
+
     private func complete() {
         guard case .task(let id) = pick.item.source else { return }
         let title = pick.item.title
@@ -485,6 +544,134 @@ private struct NowCard: View {
         onKeep()
         store.change(task.id) { $0.effort = next }
         weighed += 1
+    }
+}
+
+
+/// A deliberately lightweight starting place for an ordinary task. This does not create a
+/// second task-management system: it uses the existing resume note and complete operations.
+@MainActor
+private struct TaskStartSheet: View {
+    @EnvironmentObject private var store: TaskStore
+    @Environment(\.dismiss) private var dismiss
+    let taskID: UUID
+    let startedAt: Date
+    @State private var note = ""
+    @State private var loaded = false
+
+    private var task: TaskItem? { store.task(taskID) }
+
+    private var nextAction: (label: String, text: String)? {
+        guard let task else { return nil }
+        if !task.resumeNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return ("前回の続き", task.resumeNote)
+        }
+        if let child = store.children(of: task.id).first(where: { !$0.isComplete }) {
+            return ("最初の一手", child.title)
+        }
+        if let step = task.steps.first(where: { !$0.isDone }) {
+            return ("最初の一手", step.title)
+        }
+        if !task.memo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return ("メモ", task.memo)
+        }
+        return nil
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    if let task {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("取り組み中", systemImage: "play.circle.fill")
+                                .font(.subheadline.weight(.bold)).foregroundStyle(Palette.accent)
+                            Text(task.title).font(.largeTitle.weight(.semibold))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("経過時間").font(.caption).foregroundStyle(.secondary)
+                                Text(ElapsedTimer.clock(max(0, context.date.timeIntervalSince(startedAt))))
+                                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                                    .monospacedDigit()
+                            }
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(24)
+                            .background(Palette.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 20))
+                        }
+                        if let nextAction {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(nextAction.label).font(.caption.weight(.bold)).foregroundStyle(Palette.accent)
+                                Text(nextAction.text).font(.title3.weight(.medium))
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(16)
+                            .background(Color(uiColor: .secondarySystemGroupedBackground),
+                                        in: RoundedRectangle(cornerRadius: 16))
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("次に始める場所").font(.subheadline.weight(.semibold))
+                            TextField("中断するときに、次の一手を一言メモ", text: $note, axis: .vertical)
+                                .lineLimit(2...5)
+                                .textFieldStyle(.roundedBorder)
+                            Text("中断すると、このメモが次回の「いま」カードに表示されます。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        HStack(spacing: 12) {
+                            Button(action: pause) {
+                                Label("中断する", systemImage: "pause.fill").frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.large)
+                            Button(action: completeTask) {
+                                Label("完了にする", systemImage: "checkmark").frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                        }
+                    } else {
+                        Text("タスクが見つかりません").foregroundStyle(.secondary)
+                        Button("閉じる") { dismiss() }
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: 620)
+                .frame(maxWidth: .infinity)
+            }
+            .background(Palette.paper)
+            .navigationTitle("始める")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("中断") { pause() }
+                }
+            }
+            .interactiveDismissDisabled()
+            .onAppear {
+                guard !loaded else { return }
+                note = task?.resumeNote ?? ""
+                loaded = true
+            }
+        }
+    }
+
+    private func saveResumeNote() {
+        let text = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        store.change(taskID) { $0.resumeNote = text }
+    }
+
+    private func pause() {
+        saveResumeNote()
+        dismiss()
+    }
+
+    private func completeTask() {
+        saveResumeNote()
+        guard let task = store.task(taskID) else { dismiss(); return }
+        store.complete(taskID)
+        store.offerUndo("「\(task.title)」を完了にしました")
+        dismiss()
     }
 }
 
