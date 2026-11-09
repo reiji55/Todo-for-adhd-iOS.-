@@ -234,7 +234,7 @@ struct TimelinePanel: View {
     let onOpen: (AgendaItem) -> Void
 
     private let timeWidth: CGFloat = 46
-    private let railWidth: CGFloat = 20
+    private let railWidth: CGFloat = 44
 
     var body: some View {
         let calendar = Calendar.current
@@ -260,7 +260,6 @@ struct TimelinePanel: View {
     }
 
     private func row(_ item: AgendaItem) -> some View {
-        let color = ProjectColor.color(for: store.colorName(forProject: item.project)) ?? Palette.accent
         return HStack(alignment: .center, spacing: 0) {
             VStack(alignment: .trailing, spacing: 1) {
                 if let slot = item.slot {
@@ -271,18 +270,8 @@ struct TimelinePanel: View {
             .frame(width: timeWidth, alignment: .trailing)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(item.slot?.label ?? "")
-            // An event's mark is square like its check box; a filled mark means it is done.
-            Group {
-                if item.isEvent {
-                    RoundedRectangle(cornerRadius: 3).fill(item.isDone ? color : RaisedPanel.fill(scheme))
-                        .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(color, lineWidth: 2))
-                } else {
-                    Circle().fill(item.isDone ? color : RaisedPanel.fill(scheme)).overlay(Circle().strokeBorder(color, lineWidth: 2))
-                }
-            }
-            .frame(width: 11, height: 11).frame(width: railWidth)
-            .accessibilityHidden(true)
-            AgendaRow(item: item, showsTime: false, style: .timeline, onOpen: onOpen)
+            AgendaCheck(item: item).frame(width: railWidth)
+            AgendaRow(item: item, showsTime: false, style: .timeline, showsCheck: false, onOpen: onOpen)
                 .padding(.horizontal, 6)
                 .background {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)

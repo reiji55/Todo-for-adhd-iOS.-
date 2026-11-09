@@ -427,8 +427,11 @@ private struct NowCard: View {
                 Text("\(slot.startLabel)–\(TimeSlot.clock(slot.end))")
                     .font(.caption).monospacedDigit().lineLimit(1).minimumScaleFactor(0.85)
             } else if let stretch {
-                Text("\(NowView.stretchTitle(stretch)) · \(NowView.stretchEnd(stretch))")
-                    .font(.caption2).lineLimit(1).truncationMode(.tail)
+                HStack(spacing: 3) {
+                    Text(NowView.stretchTitle(stretch)).lineLimit(1).truncationMode(.tail)
+                    Text("· " + NowView.stretchEnd(stretch)).lineLimit(1).fixedSize(horizontal: true, vertical: false)
+                }
+                .font(.caption2)
             }
             Spacer(minLength: 0)
             if let task {

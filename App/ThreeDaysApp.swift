@@ -212,7 +212,7 @@ struct RootView: View {
                 set: { if let tab = $0 { selectedTab = tab; compactColumn = .detail } }
             )) {
                 ForEach(Tab.allCases, id: \.rawValue) { tab in
-                    NavigationLink(value: tab.rawValue) { Label(tab.title, systemImage: tab.icon) }
+                    NavigationLink(value: tab.rawValue) { Label { Text(tab.title) } icon: { HormeTabGlyph(tab: tab) } }
                 }
             }
             .navigationTitle("Horme")
@@ -448,10 +448,8 @@ struct HormeTabBar: View {
         let selected = selection == tab.rawValue
         return Button { selection = tab.rawValue } label: {
             VStack(spacing: 3) {
-                Group {
-                    if tab == .board { BoardTabIcon().frame(width: 23, height: 22) }
-                    else { Image(systemName: tab.icon).font(.system(size: 21, weight: selected ? .semibold : .regular)) }
-                }.frame(height: 26)
+                HormeTabGlyph(tab: tab)
+                    .font(.system(size: 21, weight: selected ? .semibold : .regular)).frame(height: 26)
                 Text(tab.title).font(.system(size: 10, weight: selected ? .bold : .medium))
             }
             .foregroundStyle(selected ? Palette.accent : Color.secondary)
@@ -508,6 +506,40 @@ private struct BoardTabIcon: View {
                     p.move(to: CGPoint(x: g.size.width / 2, y: g.size.height / 2))
                     p.addLine(to: CGPoint(x: g.size.width, y: g.size.height / 2))
                 }.stroke(lineWidth: 1.5)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+private struct HormeTabGlyph: View {
+    let tab: RootView.Tab
+    var body: some View {
+        Group {
+            switch tab {
+            case .week: CalendarTabIcon().frame(width: 23, height: 22)
+            case .board: BoardTabIcon().frame(width: 23, height: 22)
+            default: Image(systemName: tab.icon)
+            }
+        }
+    }
+}
+
+/// Empty calendar outline and binding rings, matching the user's tab reference.
+private struct CalendarTabIcon: View {
+    var body: some View {
+        GeometryReader { g in
+            ZStack {
+                RoundedRectangle(cornerRadius: 2).stroke(lineWidth: 1.7)
+                    .frame(height: g.size.height - 3).offset(y: 1.5)
+                Path { p in
+                    for x in [g.size.width * 0.28, g.size.width * 0.72] {
+                        p.move(to: CGPoint(x: x, y: 0))
+                        p.addLine(to: CGPoint(x: x, y: 6))
+                    }
+                    p.move(to: CGPoint(x: 0, y: 8))
+                    p.addLine(to: CGPoint(x: g.size.width, y: 8))
+                }.stroke(style: StrokeStyle(lineWidth: 1.7, lineCap: .round))
             }
         }
         .accessibilityHidden(true)
