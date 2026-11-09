@@ -445,8 +445,8 @@ private struct NowCard: View {
     /// Only display existing data; never invent a motivational summary.
     private var supportText: (label: String, text: String)? {
         if let task {
-            if !task.resumeNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return ("前回の続き", task.resumeNote)
+            if let continuation = task.memo.split(separator: "\n").last(where: { $0.hasPrefix("続き：") }) {
+                return ("前回の続き", String(continuation.dropFirst(3)))
             }
             if let child = store.children(of: task.id).first(where: { !$0.isComplete }) {
                 return ("最初の一手", child.title)
@@ -491,10 +491,7 @@ private struct NowCard: View {
                 .buttonStyle(NowButtonStyle(prominent: false))
             }
         }
-        .overlay(alignment: .bottomTrailing) {
-            // Intentionally no tap overlay: the two main actions must stay unobstructed.
-            EmptyView()
-        }
+
     }
 
     private func chip(_ other: NowPick) -> some View {
@@ -548,23 +545,20 @@ private struct NowCard: View {
 }
 
 
-/// A deliberately lightweight starting place for an ordinary task. This does not create a
-/// second task-management system: it uses the existing resume note and complete operations.
+/// A deliberately lightweight starting place for an ordinary task. Legacy task resumeNote is
+/// migrated into memo/child tasks; avoid writing it because the migration would run again.
 @MainActor
 private struct TaskStartSheet: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.dismiss) private var dismiss
     let taskID: UUID
     let startedAt: Date
-    @State private var note = ""
-    @State private var loaded = false
-
     private var task: TaskItem? { store.task(taskID) }
 
     private var nextAction: (label: String, text: String)? {
         guard let task else { return nil }
-        if !task.resumeNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return ("前回の続き", task.resumeNote)
+        if let continuation = task.memo.split(separator: "\n").last(where: { $0.hasPrefix("続き：") }) {
+            return ("前回の続き", String(continuation.dropFirst(3)))
         }
         if let child = store.children(of: task.id).first(where: { !$0.isComplete }) {
             return ("最初の一手", child.title)
@@ -610,14 +604,6 @@ private struct TaskStartSheet: View {
                             .background(Color(uiColor: .secondarySystemGroupedBackground),
                                         in: RoundedRectangle(cornerRadius: 16))
                         }
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("次に始める場所").font(.subheadline.weight(.semibold))
-                            TextField("中断するときに、次の一手を一言メモ", text: $note, axis: .vertical)
-                                .lineLimit(2...5)
-                                .textFieldStyle(.roundedBorder)
-                            Text("中断すると、このメモが次回の「いま」カードに表示されます。")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
                         HStack(spacing: 12) {
                             Button(action: pause) {
                                 Label("中断する", systemImage: "pause.fill").frame(maxWidth: .infinity)
@@ -648,26 +634,14 @@ private struct TaskStartSheet: View {
                 }
             }
             .interactiveDismissDisabled()
-            .onAppear {
-                guard !loaded else { return }
-                note = task?.resumeNote ?? ""
-                loaded = true
-            }
         }
     }
 
-    private func saveResumeNote() {
-        let text = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        store.change(taskID) { $0.resumeNote = text }
-    }
-
     private func pause() {
-        saveResumeNote()
         dismiss()
     }
 
     private func completeTask() {
-        saveResumeNote()
         guard let task = store.task(taskID) else { dismiss(); return }
         store.complete(taskID)
         store.offerUndo("「\(task.title)」を完了にしました")
