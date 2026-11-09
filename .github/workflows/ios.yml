@@ -59,7 +59,18 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           build
       - name: Exercise start, interruption, notes, events, routines and five dates
+        timeout-minutes: 20
         run: bash scripts/interface-tests.sh
+      - name: Keep UI interaction results and screenshots
+        if: always() && steps.simulator-build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Horme-interface-tests
+          path: |
+            ci-results/interface-summary.json
+            ci-results/interface-screens/
+            ci-results/InterfaceTests.xcresult/
+          retention-days: 7
       - name: Launch app in iPhone Simulator and capture screen
         if: always() && steps.simulator-build.outcome == 'success'
         run: bash scripts/simulator-smoke.sh iPhone

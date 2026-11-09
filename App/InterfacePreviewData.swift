@@ -21,6 +21,10 @@ enum InterfacePreviewData {
             if i < 3 { child.completedAt = now }
             if i == 3 { child.memo = "添付は共有フォルダの最新版。" }
             if i == 3 && scenario == "memo" { child.continuationNote = "宛先は確認済み。次はPDFの差し替え。" }
+            if i == 3 && scenario == "memo" {
+                child.plannedAt = now
+                child.scheduledTime = ongoing
+            }
             children.append(child)
         }
         let event = TaskItem(title: scenario == "event" ? "打ち合わせ" : "歯医者の予約", plannedAt: now,

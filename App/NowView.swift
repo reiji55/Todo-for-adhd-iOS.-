@@ -410,7 +410,6 @@ private struct NowCard: View {
         }
         .sensoryFeedback(.success, trigger: finished)
         .sensoryFeedback(.selection, trigger: weighed)
-        .accessibilityIdentifier("nowCard")
     }
 
     private var header: some View {

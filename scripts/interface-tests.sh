@@ -36,6 +36,8 @@ print(devices[0]["udid"])
 SIMULATOR_ID=$(xcrun simctl clone "$BASE_SIMULATOR" 'Horme Interface Tests')
 cleanup() {
   if [[ -d ci-results/InterfaceTests.xcresult ]]; then
+    xcrun xcresulttool get test-results summary --path ci-results/InterfaceTests.xcresult \
+      > ci-results/interface-summary.json || true
     xcrun xcresulttool export attachments --path ci-results/InterfaceTests.xcresult \
       --output-path ci-results/interface-screens || true
   fi
@@ -46,4 +48,6 @@ trap cleanup EXIT
 xcodebuild -project ThreeDays.xcodeproj -scheme ThreeDays -configuration Debug \
   -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
   -derivedDataPath DerivedData -resultBundlePath ci-results/InterfaceTests.xcresult \
-  -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test
+  -parallel-testing-enabled NO -test-timeouts-enabled YES \
+  -default-test-execution-time-allowance 180 -maximum-test-execution-time-allowance 240 \
+  CODE_SIGNING_ALLOWED=NO test
