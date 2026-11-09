@@ -38,7 +38,7 @@ struct RootView: View {
     enum Tab: Int, CaseIterable {
         case all, week, today, ideas, board
         var title: String { ["すべて", "週", "今日", "アイデア", "ボード"][rawValue] }
-        var icon: String { ["list.bullet.rectangle", "calendar", "sun.max", "tray", "book.closed"][rawValue] }
+        var icon: String { ["square.3.layers.3d", "calendar", "sun.max", "lightbulb", "rectangle.split.2x2"][rawValue] }
     }
     @EnvironmentObject private var store: TaskStore
     @Environment(\.scenePhase) private var phase
@@ -150,6 +150,9 @@ struct RootView: View {
         .environment(\.refreshClock, refreshDate)
         .environment(\.openGuide, OpenGuideAction { guide = GuideRoute(id: $0) })
         .onAppear(perform: openTabForScreenshot)
+#if DEBUG
+        .preferredColorScheme(ProcessInfo.processInfo.arguments.contains("-uiDark") ? .dark : nil)
+#endif
     }
 
     private var isPhone: Bool { UIDevice.current.userInterfaceIdiom != .pad }
@@ -209,7 +212,7 @@ struct RootView: View {
                 set: { if let tab = $0 { selectedTab = tab; compactColumn = .detail } }
             )) {
                 ForEach(Tab.allCases, id: \.rawValue) { tab in
-                    NavigationLink(value: tab.rawValue) { Label(tab.title, systemImage: tab.icon) }
+                    NavigationLink(value: tab.rawValue) { Label { Text(tab.title) } icon: { HormeTabGlyph(tab: tab) } }
                 }
             }
             .navigationTitle("Horme")
@@ -445,7 +448,8 @@ struct HormeTabBar: View {
         let selected = selection == tab.rawValue
         return Button { selection = tab.rawValue } label: {
             VStack(spacing: 3) {
-                Image(systemName: tab.icon).font(.system(size: 21, weight: selected ? .semibold : .regular)).frame(height: 26)
+                HormeTabGlyph(tab: tab)
+                    .font(.system(size: 21, weight: selected ? .semibold : .regular)).frame(height: 26)
                 Text(tab.title).font(.system(size: 10, weight: selected ? .bold : .medium))
             }
             .foregroundStyle(selected ? Palette.accent : Color.secondary)
@@ -486,5 +490,58 @@ struct HormeTabBar: View {
         .accessibilityLabel("今日")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .animation(.snappy(duration: 0.2), value: selected)
+    }
+}
+
+/// The reference board glyph: one full left column and two right-hand panels.
+/// Only the glyph changes; the existing raised tab housing and hit area stay intact.
+private struct BoardTabIcon: View {
+    var body: some View {
+        GeometryReader { g in
+            ZStack {
+                RoundedRectangle(cornerRadius: 2).stroke(lineWidth: 1.7)
+                Path { p in
+                    p.move(to: CGPoint(x: g.size.width / 2, y: 0))
+                    p.addLine(to: CGPoint(x: g.size.width / 2, y: g.size.height))
+                    p.move(to: CGPoint(x: g.size.width / 2, y: g.size.height / 2))
+                    p.addLine(to: CGPoint(x: g.size.width, y: g.size.height / 2))
+                }.stroke(lineWidth: 1.5)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+private struct HormeTabGlyph: View {
+    let tab: RootView.Tab
+    var body: some View {
+        Group {
+            switch tab {
+            case .week: CalendarTabIcon().frame(width: 23, height: 22)
+            case .board: BoardTabIcon().frame(width: 23, height: 22)
+            default: Image(systemName: tab.icon)
+            }
+        }
+    }
+}
+
+/// Empty calendar outline and binding rings, matching the user's tab reference.
+private struct CalendarTabIcon: View {
+    var body: some View {
+        GeometryReader { g in
+            ZStack {
+                RoundedRectangle(cornerRadius: 2).stroke(lineWidth: 1.7)
+                    .frame(height: g.size.height - 3).offset(y: 1.5)
+                Path { p in
+                    for x in [g.size.width * 0.28, g.size.width * 0.72] {
+                        p.move(to: CGPoint(x: x, y: 0))
+                        p.addLine(to: CGPoint(x: x, y: 6))
+                    }
+                    p.move(to: CGPoint(x: 0, y: 8))
+                    p.addLine(to: CGPoint(x: g.size.width, y: 8))
+                }.stroke(style: StrokeStyle(lineWidth: 1.7, lineCap: .round))
+            }
+        }
+        .accessibilityHidden(true)
     }
 }

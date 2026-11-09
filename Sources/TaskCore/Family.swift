@@ -34,6 +34,7 @@ public extension Notebook {
         guard !kids.isEmpty else { return }
         if kids.allSatisfy(\.isComplete) {
             if tasks[p].completedAt == nil { tasks[p].completedAt = now }
+            tasks[p].continuationNote = ""
         } else {
             tasks[p].completedAt = nil
         }
@@ -61,6 +62,7 @@ public extension Notebook {
             if let parent = tasks[i].parentID { settleParent(parent, at: now) }
         }
         if activeSession?.taskID == id { activeSession = nil }
+        clearCompletedContinuationNotes()
     }
 
     /// Adds a piece to a task. The first piece takes over the task's day and time (the task keeps only

@@ -112,6 +112,12 @@ struct TaskEditor: View {
                              : "手順はボードのカードにあります。このタスクだけのことはメモへ。")
                     }
                 }
+                if !task.isEvent && !task.continuationNote.isEmpty {
+                    Section {
+                        TextField("次はどこから？", text: $task.continuationNote, axis: .vertical).lineLimit(2...6)
+                    } header: { Text("前回の続き") }
+                    footer: { Text("この一時メモは、タスクを完了すると削除されます。") }
+                }
                 if !task.isEvent {
                 Section {
                     TextField("AIに頼みたいこと", text: $task.handoff, axis: .vertical).lineLimit(2...8)

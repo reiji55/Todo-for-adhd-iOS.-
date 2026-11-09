@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['App/**', 'Sources/**', 'Tests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/ios.yml', '.github/workflows/testflight.yml']
+    paths: ['App/**', 'Sources/**', 'Tests/**', 'UITests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/ios.yml', '.github/workflows/testflight.yml']
   pull_request:
-    paths: ['App/**', 'Sources/**', 'Tests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/ios.yml', '.github/workflows/testflight.yml']
+    paths: ['App/**', 'Sources/**', 'Tests/**', 'UITests/**', 'Package.swift', 'ThreeDays.xcodeproj/**', 'scripts/**', '.github/workflows/ios.yml', '.github/workflows/testflight.yml']
 
 permissions:
   contents: read
@@ -16,7 +16,7 @@ jobs:
     runs-on: macos-15
     permissions:
       contents: write
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
@@ -38,6 +38,7 @@ jobs:
       - name: Test task selection and persistence
         run: swift test
       - name: Build for iPhone and iPad Simulator
+        id: simulator-build
         run: >-
           xcodebuild
           -project ThreeDays.xcodeproj
@@ -57,9 +58,24 @@ jobs:
           -derivedDataPath DerivedData-device
           CODE_SIGNING_ALLOWED=NO
           build
+      - name: Exercise start, interruption, notes, events, routines and five dates
+        timeout-minutes: 20
+        run: bash scripts/interface-tests.sh
+      - name: Keep UI interaction results and screenshots
+        if: always() && steps.simulator-build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Horme-interface-tests
+          path: |
+            ci-results/interface-summary.json
+            ci-results/interface-screens/
+            ci-results/InterfaceTests.xcresult/
+          retention-days: 7
       - name: Launch app in iPhone Simulator and capture screen
+        if: always() && steps.simulator-build.outcome == 'success'
         run: bash scripts/simulator-smoke.sh iPhone
       - name: Launch app in iPad Simulator and capture screen
+        if: always() && steps.simulator-build.outcome == 'success'
         run: bash scripts/simulator-smoke.sh iPad
       - name: Publish screenshots to the screenshots branch
         if: github.event_name != 'pull_request'

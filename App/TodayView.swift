@@ -8,7 +8,7 @@ struct TodayView: View {
     @State private var energy: Energy = EnergyMemory.load()
     @State private var drawerOpen = false
     @State private var rolloverOpen = false
-    /// -1 yesterday, 0 today, 1 tomorrow. Yesterday and tomorrow are for a look; coming back is always today.
+    /// A fixed five-day window centered on today. Other days are for a look; reopening returns to today.
     @State private var dayOffset = 0
     let onOpen: (AgendaItem) -> Void
     let onWeek: () -> Void
@@ -57,9 +57,9 @@ struct TodayView: View {
         let untimed = items.filter { $0.slot == nil }
         return LazyVStack(alignment: .leading, spacing: 10) {
             DaySwitcher(offset: $dayOffset, now: now)
-            SectionHeading(title: dayOffset > 0 ? "明日の時間割" : "昨日の時間割")
+            SectionHeading(title: "\(DaySwitcher.name(for: dayOffset))の時間割")
             if items.isEmpty {
-                Text(dayOffset > 0 ? "明日の予定はまだありません。右下の＋から足せます。" : "昨日の予定はありませんでした。")
+                Text("\(DaySwitcher.name(for: dayOffset))の予定はありません。")
                     .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 6)
             }
             if !timed.isEmpty {
@@ -231,10 +231,13 @@ struct TimelinePanel: View {
     let now: Date
     /// The red line for now; off for days other than today.
     var showsNow = true
+    /// The home overview opens details only, as its old upcoming rows did. The full timetable keeps
+    /// the existing completion and routine-start controls on its rail.
+    var interactiveChecks = true
     let onOpen: (AgendaItem) -> Void
 
     private let timeWidth: CGFloat = 46
-    private let railWidth: CGFloat = 20
+    private var railWidth: CGFloat { interactiveChecks ? 44 : 20 }
 
     var body: some View {
         let calendar = Calendar.current
@@ -245,7 +248,7 @@ struct TimelinePanel: View {
                 if index == nowIndex {
                     nowRow
                 } else if index > 0 {
-                    Divider().padding(.leading, 8 + timeWidth + railWidth + 44)
+                    Color.clear.frame(height: 10)
                 }
                 row(item)
             }
@@ -260,7 +263,6 @@ struct TimelinePanel: View {
     }
 
     private func row(_ item: AgendaItem) -> some View {
-        let color = ProjectColor.color(for: store.colorName(forProject: item.project)) ?? Palette.accent
         return HStack(alignment: .center, spacing: 0) {
             VStack(alignment: .trailing, spacing: 1) {
                 if let slot = item.slot {
@@ -271,20 +273,34 @@ struct TimelinePanel: View {
             .frame(width: timeWidth, alignment: .trailing)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(item.slot?.label ?? "")
-            // An event's mark is square like its check box; a filled mark means it is done.
-            Group {
-                if item.isEvent {
-                    RoundedRectangle(cornerRadius: 3).fill(item.isDone ? color : RaisedPanel.fill(scheme))
-                        .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(color, lineWidth: 2))
-                } else {
-                    Circle().fill(item.isDone ? color : RaisedPanel.fill(scheme)).overlay(Circle().strokeBorder(color, lineWidth: 2))
+            if interactiveChecks {
+                AgendaCheck(item: item).frame(width: railWidth)
+            } else {
+                Group {
+                    if item.isEvent {
+                        RoundedRectangle(cornerRadius: 3).strokeBorder(Palette.accent, lineWidth: 2)
+                    } else {
+                        Circle().strokeBorder(Palette.accent, lineWidth: 2)
+                    }
                 }
+                .frame(width: 11, height: 11).frame(width: railWidth)
+                .accessibilityHidden(true)
             }
-            .frame(width: 11, height: 11).frame(width: railWidth)
-            .accessibilityHidden(true)
-            AgendaRow(item: item, showsTime: false, style: .timeline, onOpen: onOpen)
+            AgendaRow(item: item, showsTime: false, style: .timeline, showsCheck: false, onOpen: onOpen)
+                .padding(.horizontal, 6)
+                .background {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                        .overlay {
+                            if showsNow, !item.isDone, let slot = item.slot,
+                               slot.start <= NowView.minute(of: now), NowView.minute(of: now) < slot.end {
+                                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Palette.accent.opacity(0.08))
+                            }
+                        }
+                        .shadow(color: .black.opacity(scheme == .dark ? 0.3 : 0.07), radius: 4, x: 2, y: 3)
+                }
         }
-        .padding(.leading, 8)
+        .padding(.leading, 8).padding(.trailing, 8)
     }
 
     private var nowRow: some View {
@@ -529,41 +545,64 @@ struct RolloverSheet: View {
     }
 }
 
-/// 昨日 · 今日 · 明日, as in task-3days. Each shows its date; 明日 shows how many things are planned.
+/// Five fixed positions centered on the real today, never on the selected date.
 struct DaySwitcher: View {
     @Binding var offset: Int
     let now: Date
     var tomorrowCount = 0
 
+    static func name(for offset: Int) -> String {
+        switch offset {
+        case -2: return "一昨日"
+        case -1: return "昨日"
+        case 1: return "明日"
+        case 2: return "明後日"
+        default: return "今日"
+        }
+    }
+
     var body: some View {
         let calendar = Calendar.current
-        HStack(spacing: 4) {
-            ForEach([-1, 0, 1], id: \.self) { value in
+        HStack(spacing: 8) {
+            ForEach(-2...2, id: \.self) { value in
                 let day = calendar.date(byAdding: .day, value: value, to: now) ?? now
                 let selected = value == offset
                 Button { withAnimation(.snappy) { offset = value } } label: {
-                    VStack(spacing: 1) {
-                        HStack(spacing: 4) {
-                            Text(["昨日", "今日", "明日"][value + 1]).font(.subheadline.weight(selected ? .bold : .medium))
-                            if value == 1 && tomorrowCount > 0 && !selected {
-                                Text("\(tomorrowCount)").font(.caption2.weight(.bold)).monospacedDigit()
-                                    .padding(.horizontal, 5).background(Capsule().fill(Palette.accent.opacity(0.18)))
-                            }
-                        }
-                        Text(day.formatted(.dateTime.month(.defaultDigits).day().weekday(.abbreviated)))
-                            .font(.caption2).monospacedDigit().opacity(0.8)
+                    VStack(spacing: 7) {
+                        Text(Self.weekday(day)).font(.caption.weight(.semibold))
+                        Text("\(calendar.component(.day, from: day))")
+                            .font(.system(.title2, design: .rounded).weight(.bold)).monospacedDigit()
+                            .lineLimit(1).minimumScaleFactor(0.5)
+                        Text(value == -2 ? "2日前" : value == 2 ? "2日後" : Self.name(for: value))
+                            .font(.caption2).lineLimit(1).minimumScaleFactor(0.5)
                     }
-                    .frame(maxWidth: .infinity).padding(.vertical, 7)
-                    .foregroundStyle(selected ? Color.white : Color.primary)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(selected ? Palette.accent : Color.clear))
-                    .contentShape(Rectangle())
+                    .frame(maxWidth: .infinity).padding(.vertical, 12)
+                    .foregroundStyle(selected ? Color(uiColor: .systemBackground) : Color.primary)
+                    .background {
+                        if selected {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Palette.accent)
+                        } else {
+                            RaisedCardBackground(cornerRadius: 18)
+                        }
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        if value == 1, tomorrowCount > 0, !selected {
+                            Text("\(tomorrowCount)").font(.system(size: 9, weight: .bold)).monospacedDigit()
+                                .padding(4).background(Palette.accent.opacity(0.15), in: Circle()).offset(x: 2, y: -2)
+                        }
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 18))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(["昨日", "今日", "明日"][value + 1])
+                .accessibilityLabel("\(Self.name(for: value))、\(day.formatted(.dateTime.month().day().weekday()))")
                 .accessibilityAddTraits(selected ? .isSelected : [])
+                .accessibilityIdentifier("timetableDay\(value)")
             }
         }
-        .padding(4)
-        .background(RoundedRectangle(cornerRadius: 15).fill(Color(uiColor: .secondarySystemGroupedBackground)))
+        .padding(.vertical, 4)
+    }
+
+    private static func weekday(_ date: Date) -> String {
+        ["日", "月", "火", "水", "木", "金", "土"][(Calendar.current.component(.weekday, from: date) - 1) % 7]
     }
 }

@@ -103,11 +103,11 @@ struct AgendaRow: View {
     enum Style { case card, timeline, loose, raised }
     @EnvironmentObject private var store: TaskStore
     @Environment(\.openGuide) private var openGuide
-    @Environment(\.startRoutine) private var startRoutine
     let item: AgendaItem
     var reason: String? = nil
     var showsTime = true
     var style: Style = .card
+    var showsCheck = true
     let onOpen: (AgendaItem) -> Void
 
     private var task: TaskItem? {
@@ -122,7 +122,7 @@ struct AgendaRow: View {
         let done = item.isDone
         let task = self.task
         HStack(alignment: .center, spacing: 8) {
-            check
+            if showsCheck { AgendaCheck(item: item) }
             RowButton { onOpen(item) } label: {
                 VStack(alignment: .leading, spacing: 3) {
                     if let reason {
@@ -165,6 +165,7 @@ struct AgendaRow: View {
                     Text(item.title).font(.body.weight(item.isMust && !done ? .bold : .medium))
                         .strikethrough(done).foregroundStyle(done ? Color.secondary : item.isMust ? Palette.must : Color.primary)
                         .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                    ItemNotesView(item: item)
                     if !done, let task, let next = store.notebook.nextChild(of: task.id) {
                         Text("次：\(next.title)").font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     }
@@ -201,7 +202,32 @@ struct AgendaRow: View {
         }
     }
 
-    @ViewBuilder private var check: some View {
+    /// A long press offers only checking off (or undoing it); opening is a tap, deleting a slide.
+    @ViewBuilder private var menu: some View {
+        if item.isRoutine && store.isTiming(item) {
+            Button("計測をやめる（完了にしない）", systemImage: "stop") { store.cancelRoutineTimer() }
+        }
+        if !item.isBlock {
+            Button(item.isDone ? "未完了に戻す" : "完了にする", systemImage: item.isDone ? "arrow.uturn.backward" : "checkmark") {
+                store.toggle(item)
+            }
+        }
+    }
+}
+
+/// Existing completion/start control shared by list rows and the timetable rail. Moving the same
+/// control onto the rail removes duplicate markers without changing its behavior or 44pt hit area.
+@MainActor
+struct AgendaCheck: View {
+    @EnvironmentObject private var store: TaskStore
+    @Environment(\.startRoutine) private var startRoutine
+    let item: AgendaItem
+    private var task: TaskItem? {
+        if case .task(let id) = item.source { return store.task(id) }
+        return nil
+    }
+
+    @ViewBuilder var body: some View {
         if item.isEvent {
             // A square box tells an event from a task; checking it only records that it happened.
             RowButton { store.toggle(item) } label: {
@@ -244,17 +270,6 @@ struct AgendaRow: View {
             .frame(width: 44, height: 44).contentShape(Rectangle())
     }
 
-    /// A long press offers only checking off (or undoing it); opening is a tap, deleting a slide.
-    @ViewBuilder private var menu: some View {
-        if item.isRoutine && store.isTiming(item) {
-            Button("計測をやめる（完了にしない）", systemImage: "stop") { store.cancelRoutineTimer() }
-        }
-        if !item.isBlock {
-            Button(item.isDone ? "未完了に戻す" : "完了にする", systemImage: item.isDone ? "arrow.uturn.backward" : "checkmark") {
-                store.toggle(item)
-            }
-        }
-    }
 }
 
 /// Starting a routine from a row: its timer starts and its focus screen opens.

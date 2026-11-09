@@ -48,6 +48,13 @@ public struct SharedStoreState: Codable, Equatable {
         guard replica != nil, replicaInUse else { throw NotebookError.invalidData }
         try replica?.merge(records)
         notebook = try replica!.materialize()
+        let received = notebook
+        if notebook.clearCompletedContinuationNotes() {
+            // An older client may complete a task without knowing the new field. Send an explicit
+            // clear back, so a stale offline note cannot reappear if the task is later reopened.
+            try replica?.apply(before: received, after: notebook, device: deviceID)
+            hasPendingChanges = true
+        }
     }
 
     public static func decode(_ data: Data) throws -> Self {
