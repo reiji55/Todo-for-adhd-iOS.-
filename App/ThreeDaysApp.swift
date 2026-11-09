@@ -38,7 +38,7 @@ struct RootView: View {
     enum Tab: Int, CaseIterable {
         case all, week, today, ideas, board
         var title: String { ["すべて", "週", "今日", "アイデア", "ボード"][rawValue] }
-        var icon: String { ["list.bullet.rectangle", "calendar", "sun.max", "tray", "book.closed"][rawValue] }
+        var icon: String { ["square.stack.3d.up", "calendar", "house", "lightbulb", "square.grid.2x2"][rawValue] }
     }
     @EnvironmentObject private var store: TaskStore
     @Environment(\.scenePhase) private var phase
@@ -469,7 +469,7 @@ struct HormeTabBar: View {
                         .shadow(color: dark ? Color.white.opacity(0.08) : .white, radius: 7, x: -4, y: -4)
                         .overlay(Circle().strokeBorder(LinearGradient(colors: [Color.white.opacity(dark ? 0.15 : 0.7), Color.white.opacity(0)],
                                                                       startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
-                    Image(systemName: selected ? "sun.max.fill" : "sun.max").font(.system(size: 25, weight: .semibold))
+                    Image(systemName: selected ? "house.fill" : "house").font(.system(size: 25, weight: .semibold))
                         .foregroundStyle(selected ? Color.white : Palette.accent)
                 }
                 .frame(width: 60, height: 60)
