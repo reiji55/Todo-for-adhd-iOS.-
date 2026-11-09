@@ -373,7 +373,8 @@ private struct NowCard: View {
             actions
             if showingNote, let task, !working {
                 HStack(alignment: .top, spacing: 8) {
-                    TextField("次はどこから？（任意）", text: $draft, axis: .vertical)
+                    TextField("次はどこから？（任意）", text: $draft,
+                              prompt: Text("次はどこから？（任意）").foregroundColor(.white.opacity(0.65)), axis: .vertical)
                         .font(.subheadline).lineLimit(1...2)
                         .focused($noteFocused)
                         .padding(10).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
@@ -512,7 +513,8 @@ private struct NowCard: View {
     }
 
     private func complete() {
-        guard case .task(let id) = pick.item.source, store.complete(id) else { return }
+        guard case .task(let id) = pick.item.source, let current = store.task(id), !current.isComplete,
+              store.complete(id) else { return }
         onStop()
         store.offerUndo("「\(pick.item.title)」を完了にしました")
         finished += 1

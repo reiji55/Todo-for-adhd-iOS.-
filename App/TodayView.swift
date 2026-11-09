@@ -572,7 +572,7 @@ struct DaySwitcher: View {
                             .font(.caption2).lineLimit(1).minimumScaleFactor(0.8)
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 12)
-                    .foregroundStyle(selected ? Color.white : Color.primary)
+                    .foregroundStyle(selected ? Color(uiColor: .systemBackground) : Color.primary)
                     .background {
                         if selected {
                             RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Palette.accent)

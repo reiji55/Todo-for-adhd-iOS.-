@@ -14,6 +14,7 @@ group = project.main_group.new_group('UITests', 'UITests')
 target.add_file_references([group.new_file('HormeUITests.swift')])
 target.build_configurations.each do |config|
   config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'io.github.reiji55.threedays.uitests'
+  config.build_settings['PRODUCT_NAME'] = '$(TARGET_NAME)'
   config.build_settings['GENERATE_INFOPLIST_FILE'] = 'YES'
   config.build_settings['SWIFT_VERSION'] = '5.0'
   config.build_settings['TEST_TARGET_NAME'] = 'ThreeDays'

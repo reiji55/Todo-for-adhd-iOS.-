@@ -227,6 +227,7 @@ final class TaskStore: ObservableObject {
     /// finishes the children still open. What was just finished stays in place, struck through.
     @discardableResult
     func complete(_ id: UUID) -> Bool {
+        guard task(id) != nil else { return false }
         let before = notebook
         guard commit({ $0.toggleTask(id) }) else { return false }
         for task in notebook.tasks where task.isComplete && before.tasks.first(where: { $0.id == task.id })?.isComplete == false {
