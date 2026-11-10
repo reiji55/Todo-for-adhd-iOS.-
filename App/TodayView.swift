@@ -134,7 +134,7 @@ struct TodayView: View {
             UpcomingDeadlines(now: now, onOpen: onOpen)
             TimetableFolder(title: "今できそうなもの",
                             count: board.candidates(tasks, energy: energy, now: now).count,
-                            identifier: "candidateFolder") {
+                            identifier: "candidateFolder", trailingClearance: 60) {
                 CandidatePanel(energy: $energy, now: now, onOpen: onOpen)
             }
         }
@@ -147,6 +147,7 @@ private struct TimetableFolder<Content: View>: View {
     let title: String
     let count: Int
     var identifier: String
+    var trailingClearance: CGFloat = 0
     @ViewBuilder let content: () -> Content
     @State private var open = false
 
@@ -159,6 +160,7 @@ private struct TimetableFolder<Content: View>: View {
                     Text(title).font(.headline)
                     Spacer(minLength: 0)
                     Text("\(count)件").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                        .padding(.trailing, trailingClearance)
                 }
                 .foregroundStyle(.primary).padding(.horizontal, 14).frame(minHeight: 48)
                 .background(RaisedCardBackground(cornerRadius: 16)).contentShape(Rectangle())
