@@ -585,6 +585,7 @@ struct ProjectPage: View {
         let milestones = entry.project?.milestones ?? []
         let camps = milestones.map { MountainCamp(id: $0.id, label: "\($0.title) \(ProjectText.short($0, in: book))",
                                                   progress: ProjectBook.progress(of: $0, in: book)) }
+        let next = entry.project.flatMap { ProjectBook.next(of: $0, in: book) }
         return VStack(spacing: 0) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -608,23 +609,36 @@ struct ProjectPage: View {
             .padding(.horizontal, 20).padding(.top, 8)
             MountainScene(camps: camps, progress: progress ?? 0, color: color, drawn: drawn, markerShown: markerShown)
                 .frame(maxHeight: .infinity)
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
+                Group {
+                    if let next {
+                        Text("次のキャンプ：\(next.title) \(ProjectText.value(next, in: book))")
+                    } else if milestones.isEmpty {
+                        Text("通過点を足すと、山を登っていけます")
+                    } else {
+                        Text("通過点をすべて越えました。頂上はすぐそこ")
+                    }
+                }
+                .font(.footnote.weight(.bold)).foregroundStyle(color).lineLimit(1).padding(.horizontal, 20)
+                .accessibilityIdentifier("projectNextCampSummary")
                 TimelineView(.periodic(from: .now, by: 60)) { context in
                     nextStep(entry, now: context.date)
                 }
                 .padding(.horizontal, 16)
                 Button(action: onHint) {
-                    HStack(spacing: 6) {
-                        Text("道のりを見る").font(.caption)
-                        Image(systemName: "chevron.down").font(.caption.weight(.bold))
+                    VStack(spacing: 2) {
+                        Text("スワイプで道のりへ").font(.caption)
+                        Image(systemName: "chevron.down").font(.system(size: 14, weight: .bold))
                     }
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 160, minHeight: 44)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .offset(y: bob ? 6 : 0)
+                .opacity(markerShown ? 1 : 0)
             }
-            .padding(.top, 6).padding(.bottom, 4)
+            .padding(.top, 12).padding(.bottom, 10)
             .frame(maxWidth: .infinity)
             .background(MountainScene.ground)
         }

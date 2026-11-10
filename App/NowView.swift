@@ -16,7 +16,7 @@ struct NowView: View {
     @State private var passed: [String] = PassedOver.load()
     /// Picked from ほかの候補, or kept in front while its 負荷 is changed; it leads until it is done or passed over.
     @State private var chosen: String?
-    private var work: TaskWork? { store.taskWork }
+    @State private var work: TaskWork?
     @State private var timetableOpen = false
     @State private var rolloverOpen = false
     @State private var previewApplied = false
@@ -37,12 +37,19 @@ struct NowView: View {
                 }
                 .background(Palette.paper)
                 .onChange(of: store.taskStartRequest) { _, request in
-                    if request != nil { proxy.scrollTo("nowTop", anchor: .top) }
+                    if request != nil, let started = store.claimTaskStartPresentation() {
+                        work = started
+                        showRequestedTask()
+                        proxy.scrollTo("nowTop", anchor: .top)
+                    }
                 }
                 .onAppear {
-                    // TabView may keep Today's old scroll position while an idea/project is open.
-                    // A task started there must be visible when the person arrives back on Today.
-                    if work != nil { proxy.scrollTo("nowTop", anchor: .top) }
+                    // Only a fresh explicit start may change the current navigation or position.
+                    if let started = store.claimTaskStartPresentation() {
+                        work = started
+                        showRequestedTask()
+                        proxy.scrollTo("nowTop", anchor: .top)
+                    }
                 }
             }
         }
@@ -54,20 +61,19 @@ struct NowView: View {
         }
         .sheet(isPresented: $rolloverOpen) { RolloverSheet() }
         .onChange(of: store.notebook) { _, book in
+            if let work, book.hasChildren(work.taskID) || !book.tasks.contains(where: {
+                $0.id == work.taskID && !$0.isComplete && !$0.isEvent
+            }) { self.work = nil }
             if let chosen, chosen.hasPrefix("task-"),
                !book.tasks.contains(where: { "task-\($0.id.uuidString)" == chosen && !$0.isComplete }) {
                 self.chosen = nil
             }
-        }
-        .onChange(of: store.taskStartRequest) { _, request in
-            if request != nil { showRequestedTask() }
         }
         .onAppear {
             energy = EnergyMemory.load()
             chosenFor = EnergyMemory.chosenFor()
             passed = PassedOver.load()
             applyPreviewArguments()
-            if work != nil { showRequestedTask() }
         }
     }
 
@@ -107,12 +113,13 @@ struct NowView: View {
                                     let started = Date()
                                     if store.startTask(id, at: started) {
                                         chosen = current.id
+                                        work = TaskWork(taskID: id, startedAt: started)
                                         return true
                                     }
                                     return false
                                 },
                                 onStop: {
-                                    store.stopTaskWork()
+                                    work = nil
                                     chosen = current.item.isDone ? nil : current.id
                                     if case .task(let id) = current.item.source, store.task(id)?.isComplete == true { chosen = nil }
                                     if let stretch { chosenFor = stretch.key }
@@ -199,10 +206,10 @@ struct NowView: View {
 
     private func upcoming(now: Date, excluding id: String?) -> some View {
         let items = Array(laterToday(now, excluding: id).prefix(2))
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 8) {
             Button { timetableOpen = true } label: {
                 HStack {
-                    Text("このあとの流れ").font(.subheadline.weight(.bold)).foregroundStyle(.primary)
+                    Text("このあと").font(.footnote.weight(.bold)).foregroundStyle(.secondary)
                     Spacer()
                     Text("時間割を開く").font(.caption.weight(.semibold))
                     Image(systemName: "chevron.right").font(.caption.weight(.semibold))
@@ -212,10 +219,13 @@ struct NowView: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("openTimetable")
             if !items.isEmpty {
-                TimelinePanel(items: items, now: now, showsNow: false, interactiveChecks: false, onOpen: onOpen)
-            } else {
-                Text("このあとの時間が決まった予定はありません")
-                    .font(.caption).foregroundStyle(.secondary).padding(.vertical, 4)
+                VStack(spacing: 0) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        if index > 0 { Divider().padding(.leading, 72) }
+                        UpcomingRow(item: item) { onOpen(item) }
+                    }
+                }
+                .background(RaisedCardBackground(cornerRadius: 16))
             }
         }
     }
@@ -232,7 +242,7 @@ struct NowView: View {
             }
             Spacer(minLength: 0)
             Button {
-                withAnimation(.snappy) { store.closeDay(now: now) }
+                withAnimation(.snappy) { work = nil; store.closeDay(now: now) }
             } label: {
                 Text("今日を終える").font(.footnote.weight(.semibold))
                     .padding(.horizontal, 14).frame(minHeight: 36)
@@ -366,32 +376,36 @@ private struct NowCard: View {
             header
             Button { onOpen(pick.item) } label: {
                 VStack(alignment: .leading, spacing: 4) {
-                    if !project.isEmpty {
-                        Text(project).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.75))
-                    }
-                    if let parent {
-                        Label(parent.title, systemImage: "arrow.turn.down.right")
-                            .font(.caption).foregroundStyle(.white.opacity(0.8)).lineLimit(1)
-                    }
-                    if pick.isMust || !pick.label.isEmpty {
-                        Text((pick.isMust ? "★必須" : "") + (!pick.label.isEmpty ? (pick.isMust ? " ・ " : "") + pick.label : ""))
-                            .font(.caption.weight(.semibold)).foregroundStyle(mint)
-                    }
-                    Text(pick.item.title).font(.title2.weight(.bold))
+                    projectLine
+                    kicker
+                    Text(pick.item.title).font(.title.weight(.heavy))
                         .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                         .foregroundStyle(.white)
                     if let due = task?.deadline ?? parent?.deadline, !pick.label.contains("締切") {
                         Text("締切 \(ProjectText.day(due))").font(.caption).foregroundStyle(.white.opacity(0.75))
                     }
-                    ItemNotesView(item: pick.item, foreground: .white.opacity(0.85))
-                        .padding(.top, 2)
+                    if hasInlineNotes {
+                        ItemNotesView(item: pick.item, foreground: .white.opacity(0.85),
+                                      includesContinuation: !pick.item.isRoutine)
+                            .padding(.top, 2)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityHint("開いて編集します。メモの全文もここから読めます")
-            if !children.isEmpty { ChildProgressView(children: children, tint: mint) }
+            if let note = routineContinuation {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("前回の続き").font(.caption).foregroundStyle(.white.opacity(0.75))
+                    Text(note).font(.subheadline.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            if parent == nil, !children.isEmpty { ChildProgressView(children: children, tint: mint) }
             actions
             if showingNote, let task, !working {
                 HStack(alignment: .top, spacing: 8) {
@@ -413,12 +427,12 @@ private struct NowCard: View {
                 .tint(.white)
             }
             if !others.isEmpty, !pick.item.isEvent {
-                Divider().overlay(.white.opacity(0.25))
+                Divider().overlay(.white.opacity(0.25)).padding(.vertical, 2)
                 candidateChips
             }
         }
         .foregroundStyle(.white)
-        .padding(16)
+        .padding(18)
         .background(alignment: .trailing) {
             FocusLeaves().opacity(0.35).padding(.trailing, 12)
         }
@@ -516,34 +530,111 @@ private struct NowCard: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
     }
 
-    private var candidateChips: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                Text("ほかの候補").font(.caption2).foregroundStyle(.white.opacity(0.7))
-                chips
+    @ViewBuilder private var projectLine: some View {
+        if !project.isEmpty, !(pick.item.isRoutine || pick.item.isEvent) {
+            let color = ProjectColor.color(for: store.colorName(forProject: project)) ?? Palette.accent
+            HStack(spacing: 6) {
+                Circle().fill(color).frame(width: 8, height: 8)
+                Text(project).lineLimit(1)
             }
-            VStack(alignment: .leading, spacing: 6) {
-                Text("ほかの候補").font(.caption2).foregroundStyle(.white.opacity(0.7))
-                chips
+            .font(.footnote.weight(.bold)).foregroundStyle(color)
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(color.opacity(0.12), in: Capsule())
+            // The agreed card is always dark; use the existing dark project palette on it.
+            .environment(\.colorScheme, .dark)
+            .accessibilityLabel("プロジェクト：\(project)")
+        }
+    }
+
+    @ViewBuilder private var kicker: some View {
+        let labels = kickerLabels
+        if parent != nil || !labels.isEmpty {
+            HStack(spacing: 6) {
+                if let parent {
+                    Text("↳ \(parent.title)").lineLimit(1)
+                    if parent.isMust { Text("★").accessibilityLabel("必須") }
+                    // Progress occupies the original count's row, keeping the card's outer shape.
+                    ChildProgressView(children: children, tint: mint)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                if !labels.isEmpty {
+                    Text((parent == nil ? "" : "・ ") + labels.joined(separator: " ・ ")).lineLimit(1)
+                }
+            }
+            .font(.footnote.weight(.bold))
+            .foregroundStyle(kickerColor)
+            .environment(\.colorScheme, .dark)
+        }
+    }
+
+    private var kickerColor: Color {
+        if pick.item.isRoutine || pick.item.isEvent { return Palette.accent }
+        return pick.isMust || pick.label.contains("締切") ? Palette.must : Palette.accent
+    }
+
+    private var kickerLabels: [String] {
+        var parts: [String] = []
+        if pick.isMust && parent == nil { parts.append("★必須") }
+        if !pick.label.isEmpty { parts.append(pick.label) }
+        if pick.item.isRoutine || pick.item.isEvent, !pick.item.project.isEmpty { parts.append(pick.item.project) }
+        return parts
+    }
+
+    private var hasInlineNotes: Bool {
+        switch pick.item.source {
+        case .task(let id):
+            guard let task = store.task(id) else { return false }
+            return !task.memo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !task.continuationNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .routine(let id, _):
+            return !(store.routine(id)?.memo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        }
+    }
+
+    private var routineContinuation: String? {
+        guard case .routine(let id, _) = pick.item.source,
+              let note = store.routine(id)?.resumeNote, !note.isEmpty else { return nil }
+        return note
+    }
+
+    private var candidateChips: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("ほかの候補").font(.caption).foregroundStyle(.white.opacity(0.75))
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(others) { other in
+                    Button { withAnimation(.snappy) { onChoose(other.id) } } label: { chip(other) }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("これを、いまのカードにします")
+                }
             }
         }
         .disabled(working)
     }
 
-    private var chips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(others) { other in
-                    Button { withAnimation(.snappy) { onChoose(other.id) } } label: {
-                        Text(other.item.title).font(.caption).lineLimit(1)
-                            .padding(.horizontal, 10).padding(.vertical, 7)
-                            .background(.white.opacity(0.12), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("これを、いまのカードにします")
-                }
+    private func chip(_ other: NowPick) -> some View {
+        HStack(spacing: 4) {
+            if other.isMust {
+                Image(systemName: "star.fill").font(.caption2).foregroundStyle(Palette.must)
+                    .accessibilityLabel("必須")
+            }
+            Text(other.item.title).foregroundStyle(.white).lineLimit(1)
+            let otherProject = other.item.project.isEmpty
+                ? (other.parentID.flatMap { store.task($0)?.project } ?? "") : other.item.project
+            if !otherProject.isEmpty, !(other.item.isRoutine || other.item.isEvent) {
+                Circle().fill(ProjectColor.color(for: store.colorName(forProject: otherProject)) ?? Palette.accent)
+                    .frame(width: 6, height: 6).accessibilityHidden(true)
+                Text(otherProject).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+            }
+            if !other.label.isEmpty {
+                Text("・ \(other.label)")
+                    .foregroundStyle(other.label.contains("締切") ? Palette.must : Color.white.opacity(0.75))
             }
         }
+        .font(.footnote)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .environment(\.colorScheme, .dark)
+        .accessibilityElement(children: .combine)
     }
 
     private func complete() {
@@ -568,9 +659,9 @@ private struct FocusActionStyle: ButtonStyle {
     let kind: Kind
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.subheadline.weight(.bold))
+            .font(.body.weight(.bold))
             .foregroundStyle(kind == .secondary ? Color.white : Color(red: 0.08, green: 0.24, blue: 0.18))
-            .padding(.horizontal, 14).frame(minHeight: 44)
+            .padding(.horizontal, 18).frame(minHeight: 50)
             .background {
                 Capsule().fill(kind == .secondary ? Color.clear : kind == .complete
                     ? Color(red: 0.7, green: 0.95, blue: 0.52) : Color.white)

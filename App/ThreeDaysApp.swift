@@ -134,10 +134,9 @@ struct RootView: View {
         }
         .onChange(of: store.taskStartRequest) { _, request in
             guard request != nil else { return }
-            // Sheets owned by Ideas/Board dismiss at the same request. Root-owned presentations must
-            // also step aside, while an existing routine timer continues independently.
-            editor = nil; routineEditor = nil; quickAdd = nil; guide = nil
-            sorting = false; focusOpen = false; settingsOpen = false
+            // The originating creation sheets dismiss themselves. Only the idea-sorting cover
+            // must step aside here so the explicitly requested task can appear on Today.
+            sorting = false
             store.projectToOpen = nil
             selectedTab = Tab.today.rawValue
             compactColumn = .detail
@@ -200,7 +199,10 @@ struct RootView: View {
                               onPick: { quickAdd = QuickAddRoute(day: $1, kind: $0) })
             } else {
                 WeekView(onOpen: open, onAdd: { quickAdd = QuickAddRoute(day: $0) })
-                    .floatingAdd { quickAdd = QuickAddRoute(day: nil, kind: $0) }
+                    .overlay(alignment: .bottomTrailing) {
+                        FloatingAddButton { quickAdd = QuickAddRoute(day: nil, kind: $0) }
+                            .padding(.trailing, 20).padding(.bottom, 10)
+                    }
             }
         case .all:
             AllTasksView(onOpen: open, onEditRoutine: { routineEditor = $0 })

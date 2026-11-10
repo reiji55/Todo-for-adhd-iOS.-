@@ -7,18 +7,19 @@ struct ItemNotesView: View {
     @EnvironmentObject private var store: TaskStore
     let item: AgendaItem
     var foreground: Color = .secondary
+    var includesContinuation = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             switch item.source {
             case .task(let id):
                 if let task = store.task(id) {
-                    if !task.isComplete { note("前回の続き", task.continuationNote) }
+                    if includesContinuation && !task.isComplete { note("前回の続き", task.continuationNote) }
                     note("メモ", task.memo)
                 }
             case .routine(let id, _):
                 if let routine = store.routine(id) {
-                    note("前回の続き", routine.resumeNote)
+                    if includesContinuation { note("前回の続き", routine.resumeNote) }
                     note("メモ", routine.memo)
                 }
             }
