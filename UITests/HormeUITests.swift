@@ -21,10 +21,10 @@ final class HormeUITests: XCTestCase {
         add(attachment)
     }
 
-    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication, scroll: XCUIElement? = nil) {
         for _ in 0..<5 {
             if element.isHittable { return }
-            app.scrollViews.firstMatch.swipeUp()
+            (scroll ?? app.scrollViews.firstMatch).swipeUp()
         }
     }
 
@@ -225,17 +225,21 @@ final class HormeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["提出期限の確認"].waitForExistence(timeout: 5))
         required.tap()
 
-        let timed = app.buttons["時間のあるタスクを完了"]
-        reveal(timed, in: app)
+        // The hidden home/candidate view can expose another completion control for the same task.
+        // Scope the geometry check to the visible full timetable, rather than accepting a background match.
+        let schedule = app.scrollViews.containing(.button, identifier: "requiredFolder").firstMatch
+        XCTAssertTrue(schedule.exists)
+        let timed = schedule.buttons["時間のあるタスクを完了"].firstMatch
+        reveal(timed, in: app, scroll: schedule)
         XCTAssertTrue(timed.exists)
         let railX = timed.frame.midX
-        let untimed = app.buttons["洗濯物をたたむを完了"]
-        reveal(untimed, in: app)
+        let untimed = schedule.buttons["洗濯物をたたむを完了"].firstMatch
+        reveal(untimed, in: app, scroll: schedule)
         XCTAssertTrue(untimed.exists)
         XCTAssertEqual(untimed.frame.midX, railX, accuracy: 1, "untimed controls share the timed rail axis")
         capture(app, "timetable-untimed-control-outside-card")
         let deadlines = app.buttons["deadlineFolder"]
-        reveal(deadlines, in: app)
+        reveal(deadlines, in: app, scroll: schedule)
         XCTAssertTrue(deadlines.exists)
         XCTAssertEqual(deadlines.value as? String, "折りたたみ")
         deadlines.tap()
@@ -250,7 +254,8 @@ final class HormeUITests: XCTestCase {
         darkTimetable.tap()
         XCTAssertTrue(dark.buttons["requiredFolder"].waitForExistence(timeout: 10))
         capture(dark, "timetable-folded-sections-dark")
-        reveal(dark.buttons["洗濯物をたたむを完了"], in: dark)
+        let darkSchedule = dark.scrollViews.containing(.button, identifier: "requiredFolder").firstMatch
+        reveal(darkSchedule.buttons["洗濯物をたたむを完了"].firstMatch, in: dark, scroll: darkSchedule)
         capture(dark, "timetable-untimed-rail-dark")
     }
 }

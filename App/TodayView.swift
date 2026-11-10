@@ -4,9 +4,7 @@ import SwiftUI
 struct TodayView: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.refreshClock) private var refreshClock
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var energy: Energy = EnergyMemory.load()
-    @State private var drawerOpen = false
     @State private var rolloverOpen = false
     /// A fixed five-day window centered on today. Other days are for a look; reopening returns to today.
     @State private var dayOffset = 0
@@ -16,26 +14,7 @@ struct TodayView: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             let now = max(context.date, refreshClock)
-            GeometryReader { geometry in
-                if geometry.size.width >= 760 && !dynamicTypeSize.isAccessibilitySize {
-                    HStack(alignment: .top, spacing: 0) {
-                        ScrollView { main(now: now).padding(20) }.frame(maxWidth: .infinity)
-                        Divider()
-                        // Wide screens have room to keep suggestions in view.
-                        ScrollView { CandidatePanel(energy: $energy, now: now, onOpen: onOpen).padding(20) }
-                            .frame(width: min(400, geometry.size.width * 0.38))
-                    }
-                } else {
-                    ScrollView { main(now: now).padding(16) }
-                        .overlay(alignment: .trailing) {
-                            if dayOffset == 0 {
-                                CandidateDrawer(isOpen: $drawerOpen) {
-                                    CandidatePanel(energy: $energy, now: now, onOpen: onOpen)
-                                }
-                            }
-                        }
-                }
-            }
+            ScrollView { main(now: now).padding(16) }
             .background(Palette.paper)
         }
         .sheet(isPresented: $rolloverOpen) { RolloverSheet() }
@@ -153,6 +132,11 @@ struct TodayView: View {
             }
             if !musts.isEmpty { MustFolder(tasks: musts, now: now, onOpen: onOpen).padding(.top, 6) }
             UpcomingDeadlines(now: now, onOpen: onOpen)
+            TimetableFolder(title: "今できそうなもの",
+                            count: board.candidates(tasks, energy: energy, now: now).count,
+                            identifier: "candidateFolder") {
+                CandidatePanel(energy: $energy, now: now, onOpen: onOpen)
+            }
         }
         .frame(maxWidth: 760).frame(maxWidth: .infinity)
     }
@@ -356,6 +340,9 @@ struct TimelinePanel: View {
             Text(now.formatted(date: .omitted, time: .shortened)).font(.clock).foregroundStyle(.red)
                 .frame(width: timeWidth, alignment: .trailing)
             Circle().fill(Color.red).frame(width: 8, height: 8).frame(width: railWidth)
+                .background(alignment: .trailing) {
+                    Rectangle().fill(Color.red).frame(width: railWidth / 2 + 10, height: 1.5)
+                }
             Rectangle().fill(Color.red).frame(height: 1.5)
         }
         .padding(.vertical, 6)

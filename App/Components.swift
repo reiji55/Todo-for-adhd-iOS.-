@@ -180,7 +180,7 @@ struct AgendaRow: View {
             // The method of a routine (or a task) one tap away, at the end of its row.
             if let card = guide, let openGuide { GuideBookButton(card: card) { openGuide(card.id) } }
         }
-        .padding(.vertical, 9).padding(.leading, style == .timeline ? 0 : 6)
+        .padding(.vertical, 9).padding(.leading, style == .timeline ? 0 : showsCheck ? 6 : 12)
         .padding(.trailing, style == .timeline || guide != nil ? 4 : 10)
         .background { surface }
         .overlay(alignment: .leading) {

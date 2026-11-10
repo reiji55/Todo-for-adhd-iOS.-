@@ -530,6 +530,9 @@ struct ProjectPage: View {
                     hero(entry, color: color, progress: progress) {
                         withAnimation(.easeInOut(duration: 0.6)) { proxy.scrollTo("content", anchor: .top) }
                     }
+                    // The creation undo offer floats above the tabs. Keep the next action above it
+                    // while the mountain gives up the space, rather than covering a newly made project.
+                    .padding(.bottom, store.undoOffer == nil ? 0 : (dynamicTypeSize.isAccessibilitySize ? 150 : 100))
                     .containerRelativeFrame(.vertical) { height, _ in
                         max(height, dynamicTypeSize.isAccessibilitySize ? 900 : 480)
                     }
