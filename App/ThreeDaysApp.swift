@@ -132,6 +132,16 @@ struct RootView: View {
         .onChange(of: store.projectToOpen) { _, key in
             if key != nil { selectedTab = Tab.board.rawValue; compactColumn = .detail }
         }
+        .onChange(of: store.taskStartRequest) { _, request in
+            guard request != nil else { return }
+            // Sheets owned by Ideas/Board dismiss at the same request. Root-owned presentations must
+            // also step aside, while an existing routine timer continues independently.
+            editor = nil; routineEditor = nil; quickAdd = nil; guide = nil
+            sorting = false; focusOpen = false; settingsOpen = false
+            store.projectToOpen = nil
+            selectedTab = Tab.today.rawValue
+            compactColumn = .detail
+        }
         // Rows checked off stay visible on the screen they were checked on, and go once the person moves on.
         .onChange(of: selectedTab) { _, _ in store.clearRecentlyDone() }
         // Planned from the saved data, so demo mode never replaces real reminders.

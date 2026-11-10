@@ -73,14 +73,11 @@ struct IdeasView: View {
             .padding(16).frame(maxWidth: 820).frame(maxWidth: .infinity)
         }
         .background(Palette.paper)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { writing = true } label: {
-                    Image(systemName: "plus").font(.headline.weight(.bold)).foregroundStyle(StickyColor.palette[0].ink)
-                        .frame(width: 34, height: 34).background(Circle().fill(StickyColor.palette[0].paper))
-                }
-                .accessibilityLabel("付箋を書く")
-            }
+        .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
+            ContextAddButton { writing = true }
+                .accessibilityLabel("アイデアを追加")
+                .accessibilityIdentifier("addIdea")
+                .padding(.trailing, 20).padding(.bottom, 10)
         }
         .sheet(isPresented: $writing) { IdeaQuickSheet() }
         .onAppear {
@@ -96,6 +93,10 @@ struct IdeasView: View {
         }
         .sheet(item: $planning) { plan in
             IdeaToTasksSheet(idea: plan.idea, day: plan.day, slot: plan.slot, keepIdea: plan.slot != nil)
+        }
+        .onChange(of: store.taskStartRequest) { _, request in
+            guard request != nil else { return }
+            planning = nil; opened = nil; writing = false
         }
     }
 }
@@ -500,7 +501,15 @@ struct IdeaDetailSheet: View {
     var body: some View {
         NavigationStack {
             Group {
-                if let idea = store.idea(ideaID) { content(idea) } else { Color.clear.onAppear { dismiss() } }
+                if let idea = store.idea(ideaID) {
+                    content(idea)
+                } else {
+                    // Creating the task can succeed before starting it fails to save. Keep its
+                    // nested form (and retry/error state) alive until that form has been closed.
+                    Color.clear.onAppear {
+                        if planning == nil && projecting == nil { dismiss() }
+                    }
+                }
             }
             .navigationBarTitleDisplayMode(.inline)
             .keyboardDismissable()
@@ -513,11 +522,16 @@ struct IdeaDetailSheet: View {
         }
         .onAppear { store.touchIdea(ideaID) }
         .sheet(item: $editing) { IdeaEditor(idea: $0) }
-        .sheet(item: $planning) { plan in
+        .sheet(item: $planning, onDismiss: {
+            if store.idea(ideaID) == nil { dismiss() }
+        }) { plan in
             IdeaToTasksSheet(idea: plan.idea, day: plan.day, slot: plan.slot, keepIdea: plan.slot != nil)
         }
         // Made into a project: this note steps aside so the project can open on the board.
         .sheet(item: $projecting, onDismiss: { if store.projectToOpen != nil { dismiss() } }) { IdeaToProjectSheet(idea: $0) }
+        .onChange(of: store.taskStartRequest) { _, request in
+            if request != nil { planning = nil; dismiss() }
+        }
         .storeErrorAlert()
     }
 
@@ -581,9 +595,10 @@ struct IdeaDetailSheet: View {
 
                 HStack(spacing: 10) {
                     Button { planning = IdeaPlan(idea: idea) } label: {
-                        Text("タスクにする（分けて作る）").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 8)
+                        Text("タスクにする").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 8)
                     }
                     .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("convertIdeaToTask")
                     Button(role: .destructive) { confirmDelete = true } label: {
                         Text("はがす").font(.subheadline.weight(.bold)).padding(.vertical, 8).padding(.horizontal, 6)
                     }
@@ -594,6 +609,7 @@ struct IdeaDetailSheet: View {
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
                 }
                 .buttonStyle(.bordered)
+                .accessibilityIdentifier("convertIdeaToProject")
             }
             .padding(20)
         }

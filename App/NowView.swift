@@ -16,7 +16,7 @@ struct NowView: View {
     @State private var passed: [String] = PassedOver.load()
     /// Picked from ほかの候補, or kept in front while its 負荷 is changed; it leads until it is done or passed over.
     @State private var chosen: String?
-    @State private var work: TaskWork?
+    private var work: TaskWork? { store.taskWork }
     @State private var timetableOpen = false
     @State private var rolloverOpen = false
     @State private var previewApplied = false
@@ -27,13 +27,24 @@ struct NowView: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             let now = max(context.date, refreshClock)
-            ScrollView {
-                content(now: now)
-                    .padding(16)
-                    .frame(maxWidth: 620)
-                    .frame(maxWidth: .infinity)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    content(now: now)
+                        .padding(16)
+                        .frame(maxWidth: 620)
+                        .frame(maxWidth: .infinity)
+                        .id("nowTop")
+                }
+                .background(Palette.paper)
+                .onChange(of: store.taskStartRequest) { _, request in
+                    if request != nil { proxy.scrollTo("nowTop", anchor: .top) }
+                }
+                .onAppear {
+                    // TabView may keep Today's old scroll position while an idea/project is open.
+                    // A task started there must be visible when the person arrives back on Today.
+                    if work != nil { proxy.scrollTo("nowTop", anchor: .top) }
+                }
             }
-            .background(Palette.paper)
         }
         .navigationDestination(isPresented: $timetableOpen) {
             TodayView(onOpen: onOpen, onWeek: onWeek)
@@ -43,19 +54,20 @@ struct NowView: View {
         }
         .sheet(isPresented: $rolloverOpen) { RolloverSheet() }
         .onChange(of: store.notebook) { _, book in
-            if let work, book.hasChildren(work.taskID) || !book.tasks.contains(where: { $0.id == work.taskID && !$0.isComplete && !$0.isEvent }) {
-                self.work = nil
-            }
             if let chosen, chosen.hasPrefix("task-"),
                !book.tasks.contains(where: { "task-\($0.id.uuidString)" == chosen && !$0.isComplete }) {
                 self.chosen = nil
             }
+        }
+        .onChange(of: store.taskStartRequest) { _, request in
+            if request != nil { showRequestedTask() }
         }
         .onAppear {
             energy = EnergyMemory.load()
             chosenFor = EnergyMemory.chosenFor()
             passed = PassedOver.load()
             applyPreviewArguments()
+            if work != nil { showRequestedTask() }
         }
     }
 
@@ -95,13 +107,12 @@ struct NowView: View {
                                     let started = Date()
                                     if store.startTask(id, at: started) {
                                         chosen = current.id
-                                        work = TaskWork(taskID: id, startedAt: started)
                                         return true
                                     }
                                     return false
                                 },
                                 onStop: {
-                                    work = nil
+                                    store.stopTaskWork()
                                     chosen = current.item.isDone ? nil : current.id
                                     if case .task(let id) = current.item.source, store.task(id)?.isComplete == true { chosen = nil }
                                     if let stretch { chosenFor = stretch.key }
@@ -220,7 +231,7 @@ struct NowView: View {
             }
             Spacer(minLength: 0)
             Button {
-                withAnimation(.snappy) { work = nil; store.closeDay(now: now) }
+                withAnimation(.snappy) { store.closeDay(now: now) }
             } label: {
                 Text("今日を終える").font(.footnote.weight(.semibold))
                     .padding(.horizontal, 14).frame(minHeight: 36)
@@ -240,6 +251,15 @@ struct NowView: View {
             chosen = nil
         }
         PassedOver.save(passed)
+    }
+
+    /// Starting from an idea or project returns from the timetable into the shared running card.
+    private func showRequestedTask() {
+        guard let work else { return }
+        timetableOpen = false
+        rolloverOpen = false
+        chosen = "task-\(work.taskID.uuidString)"
+        if let stretch = NowPlan.freeStretch(in: store.notebook, now: Date()) { chosenFor = stretch.key }
     }
 
     private func applyPreviewArguments() {

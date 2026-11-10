@@ -50,17 +50,22 @@ struct ProjectCardRoute: Hashable, Identifiable { let id: UUID }
 struct GuideBoardView: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var search = ""
     @State private var newCard: BoardCard?
     @State private var opened: GuideRoute?
     @State private var newProject: Project?
     @State private var openedProject: ProjectRoute?
     @State private var openedProjectCard: ProjectCardRoute?
+    @State private var adding = false
+    @State private var addChoice: AddChoice?
     /// A project asked for elsewhere, about to be opened.
     @State private var pendingOpen: String?
     /// 0: projects, 1: cards. Remembered, so the board opens where the person left it.
     @AppStorage("horme.boardMode") private var mode = 0
     let onEdit: (TaskItem) -> Void
+
+    private enum AddChoice { case project, card }
 
     var body: some View {
         let cards = store.notebook.boardCards
@@ -86,14 +91,14 @@ struct GuideBoardView: View {
         }
         .background(Palette.paper)
         .searchable(text: $search, prompt: "名前・中身を検索")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button("プロジェクトを作る", systemImage: "flag") { newProject = Project(name: "") }
-                    Button("カードを書く", systemImage: "square.and.pencil") { newCard = BoardCard(title: "") }
-                } label: { Image(systemName: "plus") }
-                .accessibilityLabel("プロジェクトかカードを作る")
-            }
+        .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
+            ContextAddButton { adding = true }
+                .accessibilityIdentifier("addBoardItem")
+                .accessibilityHint("プロジェクトかカードを追加します")
+                .padding(.trailing, 20).padding(.bottom, 10)
+        }
+        .sheet(isPresented: $adding, onDismiss: presentAddChoice) {
+            boardAddSheet
         }
         .sheet(item: $newCard) { card in GuideCardEditor(card: card) }
         .sheet(item: $newProject) { project in ProjectEditor(project: project, originalKey: nil) }
@@ -117,18 +122,11 @@ struct GuideBoardView: View {
     }
 
     @ViewBuilder private func cardList(cards: [BoardCard], shown: [BoardCard]) -> some View {
-                Button { newCard = BoardCard(title: "") } label: {
-                    Label("新しいカードを書く", systemImage: "square.and.pencil")
-                        .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 14)
-                        .foregroundStyle(.white)
-                        .background(Palette.accent, in: RoundedRectangle(cornerRadius: 14))
-                }
-                .buttonStyle(.plain)
                 Text("タスクは「いま何をするか」、カードは「どうやるか」。カードをプロジェクトに入れると、そのプロジェクトのタスクやルーティンの本のマークから開けます。")
                     .font(.caption).foregroundStyle(.secondary).onlyInDemo()
                 if cards.isEmpty {
                     ContentUnavailableView("まだカードはありません", systemImage: "book.closed",
-                                           description: Text("ルーチンの手順や、案件の目的・ゴール・進め方を書いておく場所です。3日間タスクの board.json は設定から読み込めます。"))
+                                           description: Text("右下の＋から、手順や進め方のカードを追加できます。"))
                 } else if shown.isEmpty {
                     ContentUnavailableView.search(text: search)
                 }
@@ -144,6 +142,53 @@ struct GuideBoardView: View {
                         }
                     }.padding(.top, 8)
                 }
+    }
+
+    private var boardAddSheet: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+            Text("ボードに追加").font(.title2.weight(.bold)).frame(maxWidth: .infinity)
+            addRow("プロジェクト", detail: "目標とタスクをまとめる", icon: "flag", choice: .project)
+                .accessibilityIdentifier("chooseBoardProject")
+            addRow("カード", detail: "やり方や手順を書いておく", icon: "rectangle.on.rectangle", choice: .card)
+                .accessibilityIdentifier("chooseBoardCard")
+            Button("閉じる") { adding = false }
+                .font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .padding(20)
+        }
+        .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.height(400), .large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func addRow(_ title: String, detail: String, icon: String, choice: AddChoice) -> some View {
+        Button {
+            addChoice = choice
+            adding = false
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: icon).font(.title2).frame(width: 32)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.headline)
+                    Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+            }
+            .foregroundStyle(.primary).padding(14).frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+            .background(RaisedCardBackground())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func presentAddChoice() {
+        let choice = addChoice
+        addChoice = nil
+        switch choice {
+        case .project: newProject = Project(name: "")
+        case .card: newCard = BoardCard(title: "")
+        case nil: break
+        }
     }
 
     private func projectSiblings(of id: UUID) -> [UUID] {
@@ -500,7 +545,7 @@ struct GuideCardEditor: View {
                     Button("キャンセル") { if changed { confirmDiscard = true } else { dismiss() } }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("保存") {
+                    Button(store.card(card.id) == nil ? "追加" : "保存") {
                         card.title = trimmedTitle
                         if store.upsertCard(card) { dismiss() }
                     }.disabled(trimmedTitle.isEmpty)

@@ -273,7 +273,7 @@ struct RoutineEditor: View {
                     Button("キャンセル") { if changed { confirmDiscard = true } else { dismiss() } }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("保存") {
+                    Button(exists ? "保存" : "追加") {
                         routine.title = trimmedTitle
                         if routine.isBlock { routine.notify = false }
                         if store.upsertRoutine(routine) { dismiss() }

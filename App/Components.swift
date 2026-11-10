@@ -108,6 +108,7 @@ struct AgendaRow: View {
     var showsTime = true
     var style: Style = .card
     var showsCheck = true
+    var showsChildProgress = false
     let onOpen: (AgendaItem) -> Void
 
     private var task: TaskItem? {
@@ -156,7 +157,7 @@ struct AgendaRow: View {
                             if parent.isMust {
                                 Image(systemName: "star.fill").foregroundStyle(Palette.must).accessibilityLabel("必須")
                             }
-                            Text("\(pieces.filter(\.isComplete).count)/\(pieces.count)").monospacedDigit()
+                            if !showsChildProgress { Text("\(pieces.filter(\.isComplete).count)/\(pieces.count)").monospacedDigit() }
                         }
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(ProjectColor.color(for: store.colorName(forProject: parent.project)) ?? Palette.accent)
@@ -166,6 +167,11 @@ struct AgendaRow: View {
                         .strikethrough(done).foregroundStyle(done ? Color.secondary : item.isMust ? Palette.must : Color.primary)
                         .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                     ItemNotesView(item: item)
+                    if showsChildProgress, let task {
+                        let parentID = task.parentID ?? task.id
+                        let children = store.children(of: parentID)
+                        if !children.isEmpty { ChildProgressView(children: children).padding(.top, 3) }
+                    }
                     if !done, let task, let next = store.notebook.nextChild(of: task.id) {
                         Text("次：\(next.title)").font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     }

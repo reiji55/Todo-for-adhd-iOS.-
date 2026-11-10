@@ -161,7 +161,7 @@ struct TaskEditor: View {
                     Button("キャンセル") { if changed { confirmDiscard = true } else { dismiss() } }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("保存", action: save).disabled(task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button(store.task(task.id) == nil ? "追加" : "保存", action: save).disabled(task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .confirmationDialog(task.isEvent ? "このイベントを削除しますか？" : isWhole ? "このタスクと子タスクをすべて削除しますか？" : "このタスクを削除しますか？",

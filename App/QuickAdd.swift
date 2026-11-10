@@ -139,7 +139,7 @@ struct IdeaQuickSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("書き留める") {
+                    Button("追加") {
                         if store.commit({ $0.ideas.insert(Idea(text: trimmed), at: 0) }) { dismiss() }
                     }.disabled(trimmed.isEmpty)
                 }
