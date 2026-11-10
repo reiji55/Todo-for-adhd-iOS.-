@@ -34,3 +34,10 @@ TaskCore 103件、配布設定17件、UI操作9件が成功しました。シミ
 <a href="board-common-lower-right-add.png"><img src="board-common-lower-right-add.png" width="280" alt="board-common-lower-right-add"></a>
 <a href="board-contextual-add-sheet.png"><img src="board-contextual-add-sheet.png" width="280" alt="board-contextual-add-sheet"></a>
 
+
+## iPadと週画面
+
+最下部の件数を＋から離したiPad時間割と、週の追加位置も確認しています。
+
+<a href="ipad-timetable.png"><img src="ipad-timetable.png" width="400" alt="iPad時間割"></a>
+<a href="week-common-add.png"><img src="week-common-add.png" width="280" alt="週の共通追加位置"></a>
