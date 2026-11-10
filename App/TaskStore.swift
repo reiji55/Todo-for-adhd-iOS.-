@@ -24,12 +24,11 @@ final class TaskStore: ObservableObject {
         // task timer; they become child tasks as soon as they arrive.
         didSet {
             if notebook.needsStepConversion { scheduleStepConversion() }
-            // Completion, deletion, splitting and sync can invalidate a timer even while another tab
-            // is visible. The clock belongs to this app session, never to a saved notebook.
-            if let taskWork,
-               notebook.hasChildren(taskWork.taskID) || !notebook.tasks.contains(where: {
-                   $0.id == taskWork.taskID && !$0.isComplete && !$0.isEvent
-               }) { self.taskWork = nil }
+            // A task may be removed, completed or split before its external start reaches Today.
+            if let pendingTaskStart,
+               notebook.hasChildren(pendingTaskStart.taskID) || !notebook.tasks.contains(where: {
+                   $0.id == pendingTaskStart.taskID && !$0.isComplete && !$0.isEvent
+               }) { self.pendingTaskStart = nil }
         }
     }
     @Published var error: String?
@@ -44,11 +43,12 @@ final class TaskStore: ObservableObject {
     @Published private(set) var undoOffer: UndoOffer?
     /// A project to show on the board as soon as the screen in front of it closes (one just made from an idea).
     @Published var projectToOpen: String?
-    /// Ordinary task timing lasts only for this app session, but follows the person between tabs.
-    /// It is separate from the persisted routine timer and is never saved or synced.
-    @Published private(set) var taskWork: TaskWork?
+    /// A one-time handoff from an idea/project into Today's local task clock, never saved or synced.
+    private var pendingTaskStart: TaskWork?
     /// A fresh nonce for an explicit start from outside 今日; consumers dismiss their own sheets.
     @Published private(set) var taskStartRequest: UUID?
+    /// A navigation request is presented once, without changing the nonce observed by creation sheets.
+    private var presentedTaskStartRequest: UUID?
     /// Recent states in memory, only to serve the undo offer. Never written to disk or synced.
     private var history: [Notebook] = []
     private let repository: SharedStoreRepository
@@ -179,7 +179,7 @@ final class TaskStore: ObservableObject {
         guard !isDemo, !loadFailed else { return }
         scheduledSync?.cancel(); scheduledSync = nil
         history = []; recentlyDone = []; undoOffer = nil
-        taskWork = nil; taskStartRequest = nil
+        pendingTaskStart = nil; taskStartRequest = nil; presentedTaskStartRequest = nil
         notebook = .demo(now: Date())
         isDemo = true
         closedDay = nil
@@ -189,7 +189,7 @@ final class TaskStore: ObservableObject {
         guard isDemo else { return }
         isDemo = false
         history = []; recentlyDone = []; undoOffer = nil
-        taskWork = nil; taskStartRequest = nil
+        pendingTaskStart = nil; taskStartRequest = nil; presentedTaskStartRequest = nil
         notebook = state.notebook
         closedDay = UserDefaults.standard.string(forKey: Self.closedDayKey)
         // A timer started on a sample routine has nothing to finish once the samples are gone.
@@ -253,24 +253,41 @@ final class TaskStore: ObservableObject {
 
     func startTask(_ id: UUID, at now: Date) -> Bool {
         guard let task = task(id), !task.isComplete, !task.isEvent, !hasChildren(id) else { return false }
-        // Reopening the same running task keeps its clock. After interruption the next start is new.
-        if taskWork?.taskID == id { return true }
         guard commit({ $0.startTask(id, at: now) }) else { return false }
-        taskWork = TaskWork(taskID: id, startedAt: now)
+        // A direct start supersedes an older handoff. The running clock belongs to NowView;
+        // external starts set a new pending handoff immediately afterwards in requestTaskStart.
+        pendingTaskStart = nil
+        presentedTaskStartRequest = taskStartRequest
         return true
     }
 
     /// A board or newly-created idea task enters the same 今日 card, after saving succeeds.
     @discardableResult
     func requestTaskStart(_ id: UUID) -> Bool {
-        guard startTask(id, at: Date()) else { return false }
-        if closedDay == DayKey.of(Date()) { reopenDay() }
+        let now = Date()
+        guard closedDay != DayKey.of(now) else {
+            error = "今日は終了しています。今日画面の「再開する」から再開してから始めてください。"
+            return false
+        }
+        guard startTask(id, at: now) else { return false }
+        pendingTaskStart = TaskWork(taskID: id, startedAt: now)
         taskStartRequest = UUID()
         return true
     }
 
-    func stopTaskWork() {
-        taskWork = nil
+    /// Only an explicit, not-yet-presented external start may move Today to its running card.
+    /// Ordinary tab restoration must keep the person's existing position and navigation.
+    func claimTaskStartPresentation() -> TaskWork? {
+        guard let request = taskStartRequest, request != presentedTaskStartRequest,
+              let work = pendingTaskStart else { return nil }
+        presentedTaskStartRequest = request
+        pendingTaskStart = nil
+        return work
+    }
+
+    func clearPendingTaskStart() {
+        pendingTaskStart = nil
+        presentedTaskStartRequest = taskStartRequest
     }
 
     func saveTaskContinuation(_ id: UUID, note: String) -> Bool {
@@ -404,7 +421,7 @@ final class TaskStore: ObservableObject {
     /// stops announcing itself (events still do). Nothing in the data changes; leftovers are sorted the
     /// next morning as always. A routine being timed stops as with 中断.
     func closeDay(now: Date = Date()) {
-        stopTaskWork()
+        clearPendingTaskStart()
         if routineRun != nil { cancelRoutineTimer() }
         closedDay = DayKey.of(now)
         if !isDemo { UserDefaults.standard.set(closedDay, forKey: Self.closedDayKey) }
@@ -720,7 +737,7 @@ final class TaskStore: ObservableObject {
     func startOver() {
         do {
             state = try repository.startFresh(); notebook = state.notebook; loadFailed = false
-            taskWork = nil; taskStartRequest = nil
+            pendingTaskStart = nil; taskStartRequest = nil; presentedTaskStartRequest = nil
             history = []; undoOffer = nil
         } catch { self.error = "読めないデータを退避できませんでした。\(error.localizedDescription)" }
     }
@@ -728,7 +745,7 @@ final class TaskStore: ObservableObject {
     func recover() {
         do {
             state = try repository.recoverPrevious(); notebook = state.notebook; loadFailed = false
-            taskWork = nil; taskStartRequest = nil
+            pendingTaskStart = nil; taskStartRequest = nil; presentedTaskStartRequest = nil
             history = []; undoOffer = nil
         } catch { self.error = "直前の保存から復旧できませんでした。\(error.localizedDescription)" }
     }

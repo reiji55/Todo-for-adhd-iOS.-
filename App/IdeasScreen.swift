@@ -501,7 +501,7 @@ struct IdeaDetailSheet: View {
     var body: some View {
         NavigationStack {
             Group {
-                if let idea = store.idea(ideaID) {
+                if let idea = store.idea(ideaID) ?? planning?.idea {
                     content(idea)
                 } else {
                     // Creating the task can succeed before starting it fails to save. Keep its

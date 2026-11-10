@@ -1,6 +1,6 @@
 import Foundation
 
-/// Ordinary task timing is deliberately local to the current app session, not a persisted routine run
+/// Ordinary task timing is deliberately local to the current screen, not a persisted routine run
 /// or the legacy activeSession. Interruption discards it; the next start gets a fresh clock.
 public struct TaskWork: Equatable {
     public let taskID: UUID
