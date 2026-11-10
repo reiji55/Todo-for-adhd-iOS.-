@@ -11,7 +11,6 @@ TaskCore 103件、配布設定17件、UI操作9件が成功しました。シミ
 
 <a href="timetable-folded-sections-light.png"><img src="timetable-folded-sections-light.png" width="280" alt="timetable-folded-sections-light"></a>
 <a href="timetable-untimed-rail-dark.png"><img src="timetable-untimed-rail-dark.png" width="280" alt="timetable-untimed-rail-dark"></a>
-<a href="timetable-deadlines-expanded.png"><img src="timetable-deadlines-expanded.png" width="280" alt="timetable-deadlines-expanded"></a>
 <a href="timetable-five-dates-dark.png"><img src="timetable-five-dates-dark.png" width="280" alt="timetable-five-dates-dark"></a>
 
 ## アイデア
