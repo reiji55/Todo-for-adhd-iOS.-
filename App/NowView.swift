@@ -372,13 +372,20 @@ private struct NowCard: View {
     private var project: String { pick.item.project.isEmpty ? (parent?.project ?? "") : pick.item.project }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
+            focusCard
+            if !others.isEmpty, !pick.item.isEvent { candidateChips }
+        }
+    }
+
+    private var focusCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
             header
             Button { onOpen(pick.item) } label: {
                 VStack(alignment: .leading, spacing: 4) {
                     projectLine
                     kicker
-                    Text(pick.item.title).font(.title.weight(.heavy))
+                    Text(pick.item.title).font(.title2.weight(.bold))
                         .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                         .foregroundStyle(.white)
                     if let due = task?.deadline ?? parent?.deadline, !pick.label.contains("締切") {
@@ -394,6 +401,7 @@ private struct NowCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("nowTaskDetails")
             .accessibilityHint("開いて編集します。メモの全文もここから読めます")
             if let note = routineContinuation {
                 VStack(alignment: .leading, spacing: 2) {
@@ -405,7 +413,10 @@ private struct NowCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
-            if parent == nil, !children.isEmpty { ChildProgressView(children: children, tint: mint) }
+            if !children.isEmpty {
+                ChildProgressView(children: children, tint: mint)
+                    .accessibilityIdentifier("nowChildProgress")
+            }
             actions
             if showingNote, let task, !working {
                 HStack(alignment: .top, spacing: 8) {
@@ -426,13 +437,9 @@ private struct NowCard: View {
                 }
                 .tint(.white)
             }
-            if !others.isEmpty, !pick.item.isEvent {
-                Divider().overlay(.white.opacity(0.25)).padding(.vertical, 2)
-                candidateChips
-            }
         }
         .foregroundStyle(.white)
-        .padding(18)
+        .padding(14)
         .background(alignment: .trailing) {
             FocusLeaves().opacity(0.35).padding(.trailing, 12)
         }
@@ -444,6 +451,8 @@ private struct NowCard: View {
                 .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(.white.opacity(0.25)))
                 .shadow(color: Palette.accent.opacity(0.3), radius: 8, x: 4, y: 5)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("nowFocusCard")
         .sensoryFeedback(.success, trigger: finished)
         .sensoryFeedback(.selection, trigger: weighed)
     }
@@ -553,9 +562,6 @@ private struct NowCard: View {
                 if let parent {
                     Text("↳ \(parent.title)").lineLimit(1)
                     if parent.isMust { Text("★").accessibilityLabel("必須") }
-                    // Progress occupies the original count's row, keeping the card's outer shape.
-                    ChildProgressView(children: children, tint: mint)
-                        .fixedSize(horizontal: true, vertical: false)
                 }
                 if !labels.isEmpty {
                     Text((parent == nil ? "" : "・ ") + labels.joined(separator: " ・ ")).lineLimit(1)
@@ -599,7 +605,7 @@ private struct NowCard: View {
 
     private var candidateChips: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("ほかの候補").font(.caption).foregroundStyle(.white.opacity(0.75))
+            Text("ほかの候補").font(.caption).foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(others) { other in
                     Button { withAnimation(.snappy) { onChoose(other.id) } } label: { chip(other) }
@@ -609,6 +615,8 @@ private struct NowCard: View {
             }
         }
         .disabled(working)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("nowOtherCandidates")
     }
 
     private func chip(_ other: NowPick) -> some View {
@@ -617,23 +625,22 @@ private struct NowCard: View {
                 Image(systemName: "star.fill").font(.caption2).foregroundStyle(Palette.must)
                     .accessibilityLabel("必須")
             }
-            Text(other.item.title).foregroundStyle(.white).lineLimit(1)
+            Text(other.item.title).foregroundStyle(.primary).lineLimit(1)
             let otherProject = other.item.project.isEmpty
                 ? (other.parentID.flatMap { store.task($0)?.project } ?? "") : other.item.project
             if !otherProject.isEmpty, !(other.item.isRoutine || other.item.isEvent) {
                 Circle().fill(ProjectColor.color(for: store.colorName(forProject: otherProject)) ?? Palette.accent)
                     .frame(width: 6, height: 6).accessibilityHidden(true)
-                Text(otherProject).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+                Text(otherProject).foregroundStyle(.secondary).lineLimit(1)
             }
             if !other.label.isEmpty {
                 Text("・ \(other.label)")
-                    .foregroundStyle(other.label.contains("締切") ? Palette.must : Color.white.opacity(0.75))
+                    .foregroundStyle(other.label.contains("締切") ? Palette.must : Color.secondary)
             }
         }
         .font(.footnote)
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .environment(\.colorScheme, .dark)
+        .background(RaisedCardBackground(cornerRadius: 12))
         .accessibilityElement(children: .combine)
     }
 
