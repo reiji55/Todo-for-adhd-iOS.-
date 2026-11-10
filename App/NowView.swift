@@ -782,7 +782,7 @@ private struct EnergyChoices: View {
             ForEach(choices) { energy in
                 Button { onChoose(energy) } label: {
                     HStack(spacing: 8) {
-                        if let effort = energy.preferred { EffortMeter(level: effort.rank + 1, color: Color(red: 0.7, green: 0.95, blue: 0.52)) }
+                        if let effort = energy.preferred { EffortMeter(level: effort.rank + 1, color: Palette.accent) }
                         Text(energy.label).font(.body.weight(.bold))
                     }
                     .foregroundStyle(Palette.accent)
