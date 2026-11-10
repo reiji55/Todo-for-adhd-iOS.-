@@ -370,7 +370,8 @@ private struct NowCard: View {
     @State private var draft = ""
     @FocusState private var noteFocused: Bool
 
-    private let mint = Color(red: 0.7, green: 0.95, blue: 0.52)
+    /// Marks on the dark card are white, in one family with its buttons; no second accent color.
+    private let mark = Color.white
     private var task: TaskItem? {
         guard case .task(let id) = pick.item.source, let task = store.task(id), !task.isEvent else { return nil }
         return task
@@ -417,7 +418,7 @@ private struct NowCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
-            if parent == nil, !children.isEmpty { ChildProgressView(children: children, tint: mint) }
+            if parent == nil, !children.isEmpty { ChildProgressView(children: children, tint: mark) }
             actions
             if showingNote, let task, !working {
                 HStack(alignment: .top, spacing: 8) {
@@ -463,8 +464,8 @@ private struct NowCard: View {
     private var header: some View {
         headerLayout {
             Text(working ? "実行中" : pick.kind == .upcoming ? "次" : "いま")
-                .font(.caption.weight(.bold)).foregroundStyle(Color.black.opacity(0.8))
-                .padding(.horizontal, 10).padding(.vertical, 6).background(mint, in: Capsule())
+                .font(.caption.weight(.bold)).foregroundStyle(Color(red: 0.08, green: 0.24, blue: 0.18))
+                .padding(.horizontal, 10).padding(.vertical, 6).background(mark, in: Capsule())
             if working, let work {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text(ElapsedTimer.clock(work.elapsed(at: context.date)))
@@ -501,7 +502,7 @@ private struct NowCard: View {
                 Button(action: complete) {
                     Label("完了", systemImage: "checkmark").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(FocusActionStyle(kind: .complete))
+                .buttonStyle(FocusActionStyle(kind: .primary))
                 .accessibilityIdentifier("completeActiveTask")
             }
         } else if pick.item.isEvent {
@@ -566,7 +567,7 @@ private struct NowCard: View {
                     Text("↳ \(parent.title)").lineLimit(1)
                     if parent.isMust { Text("★").accessibilityLabel("必須") }
                     // Progress occupies the original count's row, keeping the card's outer shape.
-                    ChildProgressView(children: children, tint: mint)
+                    ChildProgressView(children: children, tint: mark)
                         .fixedSize(horizontal: true, vertical: false)
                 }
                 if !labels.isEmpty {
@@ -667,7 +668,7 @@ private struct NowCard: View {
 }
 
 private struct FocusActionStyle: ButtonStyle {
-    enum Kind { case primary, secondary, complete }
+    enum Kind { case primary, secondary }
     let kind: Kind
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -675,8 +676,7 @@ private struct FocusActionStyle: ButtonStyle {
             .foregroundStyle(kind == .secondary ? Color.white : Color(red: 0.08, green: 0.24, blue: 0.18))
             .padding(.horizontal, 18).frame(minHeight: 50)
             .background {
-                Capsule().fill(kind == .secondary ? Color.clear : kind == .complete
-                    ? Color(red: 0.7, green: 0.95, blue: 0.52) : Color.white)
+                Capsule().fill(kind == .secondary ? Color.clear : Color.white)
             }
             .overlay(Capsule().strokeBorder(kind == .secondary ? .white.opacity(0.7) : .clear))
             .contentShape(Capsule())
