@@ -2,8 +2,8 @@
 
 2026-11-10の実装。画像は生成モックではなく、ビルドしたアプリの実際の画面です。操作テストはDebug限定・メモリ上のサンプルデータを使い、オレンジ色の帯は既存のデモ表示です。
 
-ソース: `78b826957430c6712350edacf560fa8a2665408f`  
-[PR #2](https://github.com/reiji55/Todo-for-adhd-iOS.-/pull/2) · [検証実行](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/42758176354) · [UI操作結果9件成功](validation.json)
+ソース: `3f3349b07db4bf72dcfa32e3cf2baaaf95a4b717`  
+[PR #2](https://github.com/reiji55/Todo-for-adhd-iOS.-/pull/2) · [検証実行](https://github.com/reiji55/Todo-for-adhd-iOS.-/actions/runs/42760158297) · [UI操作結果9件成功](validation.json)
 
 TaskCore 103件、配布設定17件、UI操作9件が成功しました。シミュレーターと実機向けのビルドも成功しています。
 
