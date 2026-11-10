@@ -4,9 +4,7 @@ import SwiftUI
 struct TodayView: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.refreshClock) private var refreshClock
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var energy: Energy = EnergyMemory.load()
-    @State private var drawerOpen = false
     @State private var rolloverOpen = false
     /// A fixed five-day window centered on today. Other days are for a look; reopening returns to today.
     @State private var dayOffset = 0
@@ -16,26 +14,7 @@ struct TodayView: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             let now = max(context.date, refreshClock)
-            GeometryReader { geometry in
-                if geometry.size.width >= 760 && !dynamicTypeSize.isAccessibilitySize {
-                    HStack(alignment: .top, spacing: 0) {
-                        ScrollView { main(now: now).padding(20) }.frame(maxWidth: .infinity)
-                        Divider()
-                        // Wide screens have room to keep suggestions in view.
-                        ScrollView { CandidatePanel(energy: $energy, now: now, onOpen: onOpen).padding(20) }
-                            .frame(width: min(400, geometry.size.width * 0.38))
-                    }
-                } else {
-                    ScrollView { main(now: now).padding(16) }
-                        .overlay(alignment: .trailing) {
-                            if dayOffset == 0 {
-                                CandidateDrawer(isOpen: $drawerOpen) {
-                                    CandidatePanel(energy: $energy, now: now, onOpen: onOpen)
-                                }
-                            }
-                        }
-                }
-            }
+            ScrollView { main(now: now).padding(16) }
             .background(Palette.paper)
         }
         .sheet(isPresented: $rolloverOpen) { RolloverSheet() }
@@ -67,7 +46,7 @@ struct TodayView: View {
             }
             if !untimed.isEmpty {
                 Text("時間を決めていない").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, timed.isEmpty ? 0 : 8)
-                ForEach(untimed) { item in AgendaRow(item: item, style: .loose, onOpen: onOpen) }
+                ForEach(untimed) { item in UntimedAgendaRow(item: item, onOpen: onOpen) }
             }
             if dayOffset < 0 {
                 Text("やり残したものは、今日の画面の「前の日から残っているタスク」から振り分けられます。")
@@ -125,13 +104,14 @@ struct TodayView: View {
                 }.buttonStyle(.plain).foregroundStyle(Palette.must)
             }
             if !required.isEmpty {
-                SectionHeading(title: "今日中に必要なもの", color: Palette.must)
-                ForEach(required) { task in
-                    let current = store.task(task.id) ?? task
-                    if store.hasChildren(task.id) {
-                        ParentTaskCard(parent: current, reason: board.obligationReason(task, now: now)) { onOpen(AgendaItem(task: $0)) }
-                    } else {
-                        AgendaRow(item: AgendaItem(task: current), reason: board.obligationReason(task, now: now), onOpen: onOpen)
+                TimetableFolder(title: "今日中に必要なもの", count: required.count, identifier: "requiredFolder") {
+                    ForEach(required) { task in
+                        let current = store.task(task.id) ?? task
+                        if store.hasChildren(task.id) {
+                            ParentTaskCard(parent: current, reason: board.obligationReason(task, now: now)) { onOpen(AgendaItem(task: $0)) }
+                        } else {
+                            AgendaRow(item: AgendaItem(task: current), reason: board.obligationReason(task, now: now), onOpen: onOpen)
+                        }
                     }
                 }
             }
@@ -148,12 +128,48 @@ struct TodayView: View {
             }
             if !untimed.isEmpty {
                 Text("時間を決めていない").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, timed.isEmpty ? 0 : 8)
-                ForEach(untimed) { item in AgendaRow(item: item, style: .loose, onOpen: onOpen) }
+                ForEach(untimed) { item in UntimedAgendaRow(item: item, onOpen: onOpen) }
             }
             if !musts.isEmpty { MustFolder(tasks: musts, now: now, onOpen: onOpen).padding(.top, 6) }
             UpcomingDeadlines(now: now, onOpen: onOpen)
+            TimetableFolder(title: "今できそうなもの",
+                            count: board.candidates(tasks, energy: energy, now: now).count,
+                            identifier: "candidateFolder", trailingClearance: 60) {
+                CandidatePanel(energy: $energy, now: now, onOpen: onOpen)
+            }
         }
         .frame(maxWidth: 760).frame(maxWidth: .infinity)
+    }
+}
+
+/// Secondary sections start closed without hiding their counts or removing existing actions.
+private struct TimetableFolder<Content: View>: View {
+    let title: String
+    let count: Int
+    var identifier: String
+    var trailingClearance: CGFloat = 0
+    @ViewBuilder let content: () -> Content
+    @State private var open = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button { withAnimation(.snappy) { open.toggle() } } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "chevron.down").font(.subheadline.weight(.semibold))
+                        .rotationEffect(.degrees(open ? 180 : 0))
+                    Text(title).font(.headline)
+                    Spacer(minLength: 0)
+                    Text("\(count)件").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                        .padding(.trailing, trailingClearance)
+                }
+                .foregroundStyle(.primary).padding(.horizontal, 14).frame(minHeight: 48)
+                .background(RaisedCardBackground(cornerRadius: 16)).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).accessibilityIdentifier(identifier)
+            .accessibilityValue(open ? "展開中" : "折りたたみ")
+            .accessibilityHint(open ? "たたみます" : "広げます")
+            if open { content() }
+        }
     }
 }
 
@@ -171,22 +187,23 @@ private struct MustFolder: View {
         VStack(alignment: .leading, spacing: 10) {
             Button { withAnimation(.snappy) { open.toggle() } } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "star.fill").font(.subheadline).foregroundStyle(Palette.must)
+                    Image(systemName: "chevron.down").font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary).rotationEffect(.degrees(open ? 180 : 0))
                     Text("必須").font(.headline).foregroundStyle(Palette.must)
                     Text("\(tasks.count)件").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary).monospacedDigit()
                     Spacer(minLength: 6)
                     if let nearest {
                         Text(nearest).font(.caption.weight(.semibold)).foregroundStyle(.secondary).lineLimit(1)
                     }
-                    Image(systemName: "chevron.down").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(open ? 180 : 0))
                 }
-                .padding(.horizontal, 14).frame(minHeight: 52)
+                .padding(.horizontal, 14).frame(minHeight: 48)
                 .background(RaisedCardBackground(cornerRadius: 16))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("必須 \(tasks.count)件。\(nearest ?? "")")
+            .accessibilityIdentifier("mustFolder")
+            .accessibilityValue(open ? "展開中" : "折りたたみ")
             .accessibilityHint(open ? "たたみます" : "広げます")
             if open {
                 ForEach(tasks) { task in
@@ -221,98 +238,148 @@ private struct MustFolder: View {
     }
 }
 
-/// Today's timed items as a timeline: start and end times on the left, a rail with a mark per item,
-/// and the current time crossing it, on a soft raised panel.
+/// Cards share a rail, but each connector stops before the control so an empty circle stays empty.
 @MainActor
 struct TimelinePanel: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.colorScheme) private var scheme
+    @ScaledMetric(relativeTo: .subheadline) private var timeWidth: CGFloat = 52
     let items: [AgendaItem]
     let now: Date
-    /// The red line for now; off for days other than today.
     var showsNow = true
-    /// The home overview opens details only, as its old upcoming rows did. The full timetable keeps
-    /// the existing completion and routine-start controls on its rail.
     var interactiveChecks = true
     let onOpen: (AgendaItem) -> Void
 
-    private let timeWidth: CGFloat = 46
-    private var railWidth: CGFloat { interactiveChecks ? 44 : 20 }
+    private var railWidth: CGFloat { interactiveChecks ? 44 : 24 }
+    private var minute: Int { NowView.minute(of: now) }
+    private var nowIndex: Int {
+        showsNow ? (items.firstIndex { ($0.slot?.start ?? Int.max) > minute } ?? items.count) : -1
+    }
 
     var body: some View {
-        let calendar = Calendar.current
-        let minute = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
-        let nowIndex = showsNow ? (items.firstIndex { ($0.slot?.start ?? Int.max) > minute } ?? items.count) : -1
         VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                if index == nowIndex {
-                    nowRow
-                } else if index > 0 {
-                    Color.clear.frame(height: 10)
-                }
+                if index == nowIndex { nowRow(first: index == 0, last: false) }
                 row(item)
+                    .padding(.bottom, index == items.count - 1 && nowIndex != items.count ? 0 : 12)
+                    .background {
+                        rail(first: index == 0 && nowIndex != 0,
+                             last: index == items.count - 1 && nowIndex != items.count,
+                             bottomInset: index == items.count - 1 && nowIndex != items.count ? 0 : 12)
+                    }
             }
-            if nowIndex == items.count { nowRow }
+            if nowIndex == items.count { nowRow(first: items.isEmpty, last: true) }
         }
-        .padding(.vertical, 6)
-        .background(alignment: .leading) {
-            Rectangle().fill(Palette.accent.opacity(0.22)).frame(width: 2).frame(maxHeight: .infinity)
-                .padding(.vertical, 26).padding(.leading, 8 + timeWidth + railWidth / 2 - 1)
-        }
-        .background { RaisedPanel() }
     }
 
     private func row(_ item: AgendaItem) -> some View {
-        return HStack(alignment: .center, spacing: 0) {
-            VStack(alignment: .trailing, spacing: 1) {
+        HStack(alignment: .center, spacing: 0) {
+            VStack(alignment: .trailing, spacing: 2) {
                 if let slot = item.slot {
                     Text(slot.startLabel).font(.system(.subheadline, design: .rounded).weight(.bold)).monospacedDigit()
-                    Text(TimeSlot.clock(slot.end)).font(.system(.caption2, design: .rounded)).monospacedDigit().foregroundStyle(.secondary)
+                    Text(TimeSlot.clock(slot.end)).font(.system(.caption, design: .rounded)).monospacedDigit().foregroundStyle(.secondary)
                 }
             }
             .frame(width: timeWidth, alignment: .trailing)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(item.slot?.label ?? "")
+            .accessibilityElement(children: .ignore).accessibilityLabel(item.slot?.label ?? "")
             if interactiveChecks {
                 AgendaCheck(item: item).frame(width: railWidth)
             } else {
                 Group {
-                    if item.isEvent {
-                        RoundedRectangle(cornerRadius: 3).strokeBorder(Palette.accent, lineWidth: 2)
-                    } else {
-                        Circle().strokeBorder(Palette.accent, lineWidth: 2)
-                    }
+                    if item.isEvent { RoundedRectangle(cornerRadius: 3).strokeBorder(Palette.accent, lineWidth: 2) }
+                    else { Circle().strokeBorder(Palette.accent, lineWidth: 2) }
                 }
-                .frame(width: 11, height: 11).frame(width: railWidth)
-                .accessibilityHidden(true)
+                .frame(width: 13, height: 13).frame(width: railWidth).accessibilityHidden(true)
             }
-            AgendaRow(item: item, showsTime: false, style: .timeline, showsCheck: false, onOpen: onOpen)
-                .padding(.horizontal, 6)
+            AgendaRow(item: item, showsTime: false, style: .timeline, showsCheck: false,
+                      showsChildProgress: true, onOpen: onOpen)
+                .padding(.horizontal, 12).padding(.vertical, 3)
                 .background {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(Color(uiColor: .secondarySystemGroupedBackground))
                         .overlay {
-                            if showsNow, !item.isDone, let slot = item.slot,
-                               slot.start <= NowView.minute(of: now), NowView.minute(of: now) < slot.end {
-                                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Palette.accent.opacity(0.08))
+                            if isCurrent(item) {
+                                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.accent.opacity(0.09))
                             }
                         }
-                        .shadow(color: .black.opacity(scheme == .dark ? 0.3 : 0.07), radius: 4, x: 2, y: 3)
+                        .shadow(color: .black.opacity(scheme == .dark ? 0.25 : 0.07), radius: 5, x: 2, y: 3)
+                }
+                .overlay(alignment: .leading) {
+                    if isCurrent(item) {
+                        UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 16)
+                            .fill(Palette.accent).frame(width: 4).padding(.vertical, 5)
+                    }
                 }
         }
-        .padding(.leading, 8).padding(.trailing, 8)
     }
 
-    private var nowRow: some View {
+    private func isCurrent(_ item: AgendaItem) -> Bool {
+        guard showsNow, !item.isDone, let slot = item.slot else { return false }
+        return slot.start <= minute && minute < slot.end
+    }
+
+    private func rail(first: Bool, last: Bool, bottomInset: CGFloat) -> some View {
+        GeometryReader { geometry in
+            let center = (geometry.size.height - bottomInset) / 2
+            let gap: CGFloat = interactiveChecks ? 17 : 9
+            Path { path in
+                let x = timeWidth + railWidth / 2
+                if !first {
+                    path.move(to: CGPoint(x: x, y: 0))
+                    path.addLine(to: CGPoint(x: x, y: max(0, center - gap)))
+                }
+                if !last {
+                    path.move(to: CGPoint(x: x, y: center + gap))
+                    path.addLine(to: CGPoint(x: x, y: geometry.size.height))
+                }
+            }
+            .stroke(Palette.accent.opacity(0.24), lineWidth: 1.5)
+        }.allowsHitTesting(false).accessibilityHidden(true)
+    }
+
+    private func nowRow(first: Bool, last: Bool) -> some View {
         HStack(spacing: 0) {
             Text(now.formatted(date: .omitted, time: .shortened)).font(.clock).foregroundStyle(.red)
                 .frame(width: timeWidth, alignment: .trailing)
-            Circle().fill(Color.red).frame(width: 9, height: 9).frame(width: railWidth)
+            Circle().fill(Color.red).frame(width: 8, height: 8).frame(width: railWidth)
+                .background(alignment: .trailing) {
+                    Rectangle().fill(Color.red).frame(width: railWidth / 2 + 10, height: 1.5)
+                }
             Rectangle().fill(Color.red).frame(height: 1.5)
         }
-        .padding(.leading, 8).padding(.trailing, 12).padding(.vertical, 3)
+        .padding(.vertical, 6)
+        .background {
+            GeometryReader { geometry in
+                Path { path in
+                    let x = timeWidth + railWidth / 2
+                    let center = geometry.size.height / 2
+                    if !first {
+                        path.move(to: CGPoint(x: x, y: 0)); path.addLine(to: CGPoint(x: x, y: center - 5))
+                    }
+                    if !last {
+                        path.move(to: CGPoint(x: x, y: center + 5)); path.addLine(to: CGPoint(x: x, y: geometry.size.height))
+                    }
+                }.stroke(Palette.accent.opacity(0.24), lineWidth: 1.5)
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("現在 \(now.formatted(date: .omitted, time: .shortened))")
+    }
+}
+
+/// The untimed control stays on the same axis as the timed controls, outside its dotted card.
+@MainActor
+private struct UntimedAgendaRow: View {
+    @ScaledMetric(relativeTo: .subheadline) private var timeWidth: CGFloat = 52
+    let item: AgendaItem
+    let onOpen: (AgendaItem) -> Void
+    var body: some View {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: timeWidth).accessibilityHidden(true)
+            AgendaCheck(item: item).frame(width: 44)
+            AgendaRow(item: item, showsTime: false, style: .loose, showsCheck: false,
+                      showsChildProgress: true, onOpen: onOpen)
+        }.accessibilityIdentifier("untimed-" + item.id)
     }
 }
 
@@ -348,7 +415,7 @@ private struct UpcomingDeadlines: View {
             return calendar.startOfDay(for: due) > calendar.startOfDay(for: now)
         }.sorted { ($0.deadline ?? .distantFuture) < ($1.deadline ?? .distantFuture) }
         if !upcoming.isEmpty {
-            SectionHeading(title: "これからの締切")
+            TimetableFolder(title: "これからの締切", count: upcoming.count, identifier: "deadlineFolder") {
             ForEach(upcoming.prefix(5)) { task in
                 Button { onOpen(AgendaItem(task: task)) } label: {
                     HStack(spacing: 8) {
@@ -363,6 +430,7 @@ private struct UpcomingDeadlines: View {
                         Image(systemName: "chevron.right").foregroundStyle(.secondary)
                     }.font(.subheadline).frame(minHeight: 40)
                 }
+            }
             }
         }
     }

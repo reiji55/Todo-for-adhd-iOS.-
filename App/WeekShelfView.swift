@@ -65,6 +65,10 @@ struct WeekShelfView: View {
             content(now: max(context.date, refreshClock))
         }
         .background(Palette.paper)
+        .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
+            FloatingAddButton { onPick($0, detent == .peek ? nil : selectedDay) }
+                .padding(.trailing, 20).padding(.bottom, 10)
+        }
         // All the way up, the sheet takes the title bar's place too.
         .toolbar(detent == .full ? .hidden : .visible, for: .navigationBar)
         .onAppear {
@@ -109,10 +113,6 @@ struct WeekShelfView: View {
                 sheet(now: now, width: geometry.size.width, full: full)
                     .frame(height: top, alignment: .top)
                     .offset(y: full - visible)
-            }
-            .overlay(alignment: .bottomTrailing) {
-                FloatingAddButton { onPick($0, detent == .peek ? nil : selectedDay) }
-                    .padding(.trailing, 14).padding(.bottom, Self.peekHeight + 10)
             }
             .clipped()
         }

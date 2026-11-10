@@ -138,6 +138,7 @@ struct ProjectFolder: View {
                         .background(face, in: UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12))
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("openProjectTab-\(entry.key)")
             }
             .frame(height: cards.isEmpty ? 32 : 48, alignment: .bottomLeading)
             .zIndex(0)
@@ -148,6 +149,7 @@ struct ProjectFolder: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("openProject-\(entry.key)")
             .shadow(color: .black.opacity(0.18), radius: 6, y: -2)
             .zIndex(1)
         }
@@ -255,7 +257,7 @@ struct ProjectFolderList: View {
                 ContentUnavailableView.search
             } else {
                 ContentUnavailableView("プロジェクトはまだありません", systemImage: "flag",
-                                       description: Text("右上の＋から作るか、タスクやルーティンにプロジェクト名を付けると、ここにまとまります。"))
+                                       description: Text("右下の＋から作るか、タスクやルーティンにプロジェクト名を付けると、ここにまとまります。"))
             }
         } else if sizeClass == .regular {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 340), spacing: 16)], spacing: 14) {
@@ -453,6 +455,7 @@ struct ProjectPage: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var key: String
     let onEdit: (TaskItem) -> Void
     @State private var editingProject: Project?
@@ -465,6 +468,7 @@ struct ProjectPage: View {
     @State private var bob = false
     @State private var animated = false
     @State private var pastHero = false
+    @State private var addingStep = false
 
     struct MilestoneRoute: Identifiable {
         let milestone: Milestone
@@ -505,6 +509,12 @@ struct ProjectPage: View {
         }
         .sheet(item: $editingRoutine) { RoutineEditor(routine: $0) }
         .sheet(item: $newCard) { GuideCardEditor(card: $0) }
+        .sheet(isPresented: $addingStep) {
+            if let entry = store.projectEntry(key) { TaskStepSheet(project: entry.name) }
+        }
+        .onChange(of: store.taskStartRequest) { _, request in
+            if request != nil { addingStep = false }
+        }
         .navigationDestination(item: $openedCard) { route in
             GuidePager(startID: route.id, cardIDs: store.projectCards(key).map(\.id))
         }
@@ -520,7 +530,12 @@ struct ProjectPage: View {
                     hero(entry, color: color, progress: progress) {
                         withAnimation(.easeInOut(duration: 0.6)) { proxy.scrollTo("content", anchor: .top) }
                     }
-                    .containerRelativeFrame(.vertical)
+                    // The creation undo offer floats above the tabs. Keep the next action above it
+                    // while the mountain gives up the space, rather than covering a newly made project.
+                    .padding(.bottom, store.undoOffer == nil ? 0 : (dynamicTypeSize.isAccessibilitySize ? 150 : 100))
+                    .containerRelativeFrame(.vertical) { height, _ in
+                        max(height, dynamicTypeSize.isAccessibilitySize ? 900 : 480)
+                    }
                     // The scroll view runs under the bar, so the mountain is past once its foot is above the bar.
                     .onGeometryChange(for: Bool.self) { $0.frame(in: .global).maxY < 150 } action: { past in
                         if past != pastHero { pastHero = past }
@@ -570,7 +585,6 @@ struct ProjectPage: View {
         let milestones = entry.project?.milestones ?? []
         let camps = milestones.map { MountainCamp(id: $0.id, label: "\($0.title) \(ProjectText.short($0, in: book))",
                                                   progress: ProjectBook.progress(of: $0, in: book)) }
-        let next = entry.project.flatMap { ProjectBook.next(of: $0, in: book) }
         return VStack(spacing: 0) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -594,35 +608,83 @@ struct ProjectPage: View {
             .padding(.horizontal, 20).padding(.top, 8)
             MountainScene(camps: camps, progress: progress ?? 0, color: color, drawn: drawn, markerShown: markerShown)
                 .frame(maxHeight: .infinity)
-            VStack(spacing: 10) {
-                Group {
-                    if let next {
-                        Text("次のキャンプ：\(next.title) \(ProjectText.value(next, in: book))")
-                    } else if milestones.isEmpty {
-                        Text("通過点を足すと、山を登っていけます")
-                    } else {
-                        Text("通過点をすべて越えました。頂上はすぐそこ")
-                    }
+            VStack(spacing: 8) {
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    nextStep(entry, now: context.date)
                 }
-                .font(.footnote.weight(.bold)).foregroundStyle(color).lineLimit(1).padding(.horizontal, 20)
+                .padding(.horizontal, 16)
                 Button(action: onHint) {
-                    VStack(spacing: 2) {
-                        Text("スワイプで道のりへ").font(.caption)
-                        Image(systemName: "chevron.down").font(.system(size: 14, weight: .bold))
+                    HStack(spacing: 6) {
+                        Text("道のりを見る").font(.caption)
+                        Image(systemName: "chevron.down").font(.caption.weight(.bold))
                     }
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 160, minHeight: 44)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .offset(y: bob ? 6 : 0)
-                .opacity(markerShown ? 1 : 0)
             }
-            .padding(.top, 12).padding(.bottom, 10)
+            .padding(.top, 6).padding(.bottom, 4)
             .frame(maxWidth: .infinity)
             .background(MountainScene.ground)
         }
         .background(MountainScene.sky)
+    }
+
+    /// The project supplies context; ordinary task work still runs in Today's existing card.
+    private func nextStep(_ entry: ProjectBook.Entry, now: Date) -> some View {
+        let next = ProjectBook.nextTask(entry.key, in: store.notebook, now: now)
+        let open = ProjectBook.tasks(entry.key, in: store.notebook).filter { !$0.isComplete && !$0.isEvent }
+        let scheduled = open.flatMap { task in
+            store.hasChildren(task.id) ? store.children(of: task.id).filter { !$0.isComplete } : [task]
+        }.sorted { ($0.plannedAt ?? .distantFuture, $0.createdAt) < ($1.plannedAt ?? .distantFuture, $1.createdAt) }.first
+        return VStack(alignment: .leading, spacing: 9) {
+            Text(next == nil && scheduled != nil ? "予定しているタスク" : "次の一手")
+                .font(.caption.weight(.bold)).foregroundStyle(Palette.accent)
+            if let task = next ?? scheduled {
+                Button { onEdit(task) } label: {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(task.title).font(.headline).foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                        if !task.continuationNote.isEmpty {
+                            Text("前回の続き：\(task.continuationNote)")
+                                .font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                        }
+                        if next == nil {
+                            Text(GuideSummary.place(task) + (task.slot.map { " · \($0.label)" } ?? ""))
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if next != nil {
+                    Button {
+                        _ = store.requestTaskStart(task.id)
+                    } label: {
+                        Label("始める", systemImage: "play.fill")
+                            .font(.body.weight(.bold)).frame(maxWidth: .infinity, minHeight: 44)
+                            .foregroundStyle(.white).background(Palette.accent, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("startProjectNextTask")
+                } else {
+                    Button("内容を見る") { onEdit(task) }
+                        .font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 44)
+                }
+            } else {
+                Button { addingStep = true } label: {
+                    Label("最初の一手を追加", systemImage: "plus")
+                        .font(.body.weight(.bold)).frame(maxWidth: .infinity, minHeight: 44)
+                        .foregroundStyle(.white).background(Palette.accent, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("addProjectFirstStep")
+            }
+        }
+        .padding(14).frame(maxWidth: 620, alignment: .leading)
+        .background(RaisedCardBackground(cornerRadius: 20))
+        .frame(maxWidth: .infinity)
     }
 
     private func summitLine(_ entry: ProjectBook.Entry) -> String {
@@ -745,7 +807,7 @@ struct ProjectPage: View {
             .filter { !$0.isComplete || store.recentlyDone.contains(AgendaItem(task: $0).id) }
             .sorted { ($0.plannedAt ?? .distantFuture, $0.createdAt) < ($1.plannedAt ?? .distantFuture, $1.createdAt) }
         return VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("近いうちにやること", add: "タスク") { onEdit(TaskItem(title: "", project: entry.name)) }
+            sectionTitle("近いうちにやること", add: "タスク") { addingStep = true }
             if open.isEmpty {
                 Text("まだタスクはありません。").font(.subheadline).foregroundStyle(.secondary).padding(.horizontal, 4)
             }
@@ -1036,7 +1098,7 @@ struct ProjectEditor: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(originalKey == nil ? "作る" : "保存", action: save).disabled(trimmedName.isEmpty || collides)
+                    Button(originalKey == nil ? "追加" : "保存", action: save).disabled(trimmedName.isEmpty || collides)
                 }
             }
             .confirmationDialog("このプロジェクトを外しますか？", isPresented: $confirmDelete, titleVisibility: .visible) {
@@ -1248,6 +1310,7 @@ struct IdeaToProjectSheet: View {
                 }
                 Section {
                     TextField("名前", text: $name).font(.headline)
+                        .accessibilityIdentifier("ideaProjectName")
                     TextField("到達点（任意）例：10本作って通勤中に回す", text: $goal, axis: .vertical).lineLimit(1...3)
                     Toggle("期限を決める", isOn: $hasDeadline.animation())
                     if hasDeadline { DatePicker("期限", selection: $deadline, displayedComponents: .date) }
@@ -1267,7 +1330,10 @@ struct IdeaToProjectSheet: View {
             .keyboardDismissable()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("キャンセル") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("作る", action: make).disabled(trimmedName.isEmpty) }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("追加", action: make).disabled(trimmedName.isEmpty)
+                        .accessibilityIdentifier("addIdeaProject")
+                }
             }
         }
         .storeErrorAlert()

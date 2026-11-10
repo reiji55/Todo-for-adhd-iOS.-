@@ -10,6 +10,26 @@ enum InterfacePreviewData {
         let minute = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
         let ongoing = TimeSlot(start: max(0, minute - 5), duration: 30).label
         let later = TimeSlot(start: min(23 * 60, minute + 90), duration: 30).label
+        if scenario == "idea" {
+            return Notebook(ideas: [Idea(text: "机を窓際に移したい", createdAt: now,
+                                         notes: [IdeaNote(text: "まず机の上を空ける", createdAt: now)])])
+        }
+        if scenario == "project" {
+            var next = TaskItem(title: "予想問題を1回分解く", project: "TOEIC", memo: "公式問題集を使う", createdAt: now)
+            next.continuationNote = "Part7の3問目から"
+            return Notebook(tasks: [next], projects: [Project(name: "TOEIC", goal: "本番で500点", createdAt: now)])
+        }
+        if scenario == "timetable" {
+            let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+            return Notebook(tasks: [
+                TaskItem(title: "時間のあるタスク", plannedAt: now, scheduledTime: ongoing, memo: "資料を準備する", createdAt: now),
+                TaskItem(title: "歯医者の予約", plannedAt: now, scheduledTime: later, createdAt: now, isEvent: true),
+                TaskItem(title: "洗濯物をたたむ", plannedAt: now, createdAt: now),
+                TaskItem(title: "提出期限の確認", deadline: now, createdAt: now),
+                TaskItem(title: "必須の確認", isMust: true, createdAt: now),
+                TaskItem(title: "来週の資料", deadline: tomorrow, createdAt: now)
+            ])
+        }
         let parent = TaskItem(title: "案内メールを送る", deadline: now, isMust: true, project: "仕事", createdAt: now.addingTimeInterval(-1000))
         let titles = ["本文を下書きする", "送信先をそろえる", "PDFを用意する", "宛先と添付を確認する"]
         var children: [TaskItem] = []
