@@ -4,7 +4,9 @@ import SwiftUI
 struct TodayView: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.refreshClock) private var refreshClock
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var energy: Energy = EnergyMemory.load()
+    @State private var drawerOpen = false
     @State private var rolloverOpen = false
     /// A fixed five-day window centered on today. Other days are for a look; reopening returns to today.
     @State private var dayOffset = 0
@@ -14,7 +16,26 @@ struct TodayView: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             let now = max(context.date, refreshClock)
-            ScrollView { main(now: now).padding(16) }
+            GeometryReader { geometry in
+                if geometry.size.width >= 760 && !dynamicTypeSize.isAccessibilitySize {
+                    HStack(alignment: .top, spacing: 0) {
+                        ScrollView { main(now: now).padding(20) }.frame(maxWidth: .infinity)
+                        Divider()
+                        // Wide screens have room to keep suggestions in view.
+                        ScrollView { CandidatePanel(energy: $energy, now: now, onOpen: onOpen).padding(20) }
+                            .frame(width: min(400, geometry.size.width * 0.38))
+                    }
+                } else {
+                    ScrollView { main(now: now).padding(16) }
+                        .overlay(alignment: .trailing) {
+                            if dayOffset == 0 {
+                                CandidateDrawer(isOpen: $drawerOpen) {
+                                    CandidatePanel(energy: $energy, now: now, onOpen: onOpen)
+                                }
+                            }
+                        }
+                }
+            }
             .background(Palette.paper)
         }
         .sheet(isPresented: $rolloverOpen) { RolloverSheet() }
@@ -132,11 +153,7 @@ struct TodayView: View {
             }
             if !musts.isEmpty { MustFolder(tasks: musts, now: now, onOpen: onOpen).padding(.top, 6) }
             UpcomingDeadlines(now: now, onOpen: onOpen)
-            TimetableFolder(title: "今できそうなもの",
-                            count: board.candidates(tasks, energy: energy, now: now).count,
-                            identifier: "candidateFolder", trailingClearance: 60) {
-                CandidatePanel(energy: $energy, now: now, onOpen: onOpen)
-            }
+
         }
         .frame(maxWidth: 760).frame(maxWidth: .infinity)
     }
@@ -147,7 +164,6 @@ private struct TimetableFolder<Content: View>: View {
     let title: String
     let count: Int
     var identifier: String
-    var trailingClearance: CGFloat = 0
     @ViewBuilder let content: () -> Content
     @State private var open = false
 
@@ -160,7 +176,6 @@ private struct TimetableFolder<Content: View>: View {
                     Text(title).font(.headline)
                     Spacer(minLength: 0)
                     Text("\(count)件").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
-                        .padding(.trailing, trailingClearance)
                 }
                 .foregroundStyle(.primary).padding(.horizontal, 14).frame(minHeight: 48)
                 .background(RaisedCardBackground(cornerRadius: 16)).contentShape(Rectangle())
@@ -458,6 +473,7 @@ struct CandidatePanel: View {
                 ForEach(Energy.allCases) { Text($0.label).tag($0) }
             } label: { Text("今の調子") }
             .pickerStyle(.segmented)
+            .accessibilityIdentifier("candidateEnergy")
             .accessibilityHint("候補だけを変えます。今日が締切のものや全件一覧には影響しません。")
             Text("今の調子：\(energy.label)。選んだ調子より重いものは出さず、重いものから順に出します。")
                 .font(.caption).foregroundStyle(.secondary).onlyInDemo()
@@ -517,6 +533,7 @@ struct CandidateDrawer<Content: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isOpen ? "候補を閉じる" : "今できそうなものを開く")
+        .accessibilityIdentifier("toggleCandidateDrawer")
     }
 
     private func drag(width: CGFloat) -> some Gesture {

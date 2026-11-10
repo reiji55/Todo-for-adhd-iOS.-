@@ -130,6 +130,7 @@ struct NowView: View {
                     }
                     upcoming(now: now, excluding: current?.id)
                 }
+                DayFlow(now: now) { timetableOpen = true }
                 footer(now: now)
             }
         }
@@ -883,5 +884,183 @@ private struct DayClosedView: View {
             return "ルーティン"
         }
         return NowView.duration(seconds / 60)
+    }
+}
+
+/// Today on a horizontal time axis, an hour to 64 points, scrolled so that now sits near the left edge.
+/// Each block is as long as its time and carries its name; one too short for its name has it beside it.
+/// Blocks share a row unless their names would collide. Held time (sleep, work) is shaded, what is past
+/// is dimmed, and a red line marks the minute. A tap opens the timetable.
+@MainActor
+private struct DayFlow: View {
+    @EnvironmentObject private var store: TaskStore
+    let now: Date
+    let onOpen: () -> Void
+
+    static let hourWidth: CGFloat = 64
+    static let laneHeight: CGFloat = 54
+    static let axisHeight: CGFloat = 20
+
+    struct Placed: Identifiable {
+        let item: AgendaItem
+        let lane: Int
+        let x: CGFloat
+        let width: CGFloat
+        /// The name fits inside the block; otherwise it sits to the right of it.
+        let inside: Bool
+        let labelWidth: CGFloat
+        var id: String { item.id }
+    }
+
+    var body: some View {
+        let items = Agenda.items(on: now, tasks: store.notebook.tasks, routines: store.notebook.routines)
+        let held = items.filter(\.isBlock).compactMap(\.slot)
+        let timed = items.filter { !$0.isBlock && $0.slot != nil }
+        let range = Agenda.hourRange(for: timed)
+        let placed = Self.place(timed, fromHour: range.lowerBound)
+        let lanes = max(1, (placed.map(\.lane).max() ?? 0) + 1)
+        let width = CGFloat(range.upperBound - range.lowerBound) * Self.hourWidth
+        let height = Self.axisHeight + CGFloat(lanes) * Self.laneHeight + 4
+        let nowX = Self.x(NowView.minute(of: now), fromHour: range.lowerBound)
+        VStack(alignment: .leading, spacing: 10) {
+            Button(action: onOpen) {
+                HStack {
+                    Text("今日の流れ").font(.subheadline.weight(.bold)).foregroundStyle(.primary)
+                    Spacer()
+                    HStack(spacing: 3) {
+                        Text("時間割を開く")
+                        Image(systemName: "chevron.right").font(.caption.weight(.bold))
+                    }
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(Palette.accent)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("openDayFlowTimetable")
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    ZStack(alignment: .topLeading) {
+                        ForEach(Array(held.enumerated()), id: \.offset) { _, slot in
+                            let start = max(0, Self.x(slot.start, fromHour: range.lowerBound))
+                            let end = min(width, Self.x(slot.end, fromHour: range.lowerBound))
+                            if end > start {
+                                Rectangle().fill(Color.primary.opacity(0.06))
+                                    .frame(width: end - start, height: height).offset(x: start)
+                            }
+                        }
+                        if nowX > 0 {
+                            Rectangle().fill(Color.primary.opacity(0.035)).frame(width: min(width, nowX), height: height)
+                        }
+                        ForEach(range.lowerBound..<range.upperBound, id: \.self) { hour in
+                            let x = CGFloat(hour - range.lowerBound) * Self.hourWidth
+                            Rectangle().fill(Color.primary.opacity(0.08)).frame(width: 1, height: height).offset(x: x)
+                            Text("\(hour % 24)").font(.system(size: 10, weight: .semibold)).monospacedDigit()
+                                .foregroundStyle(.secondary).offset(x: x + 4, y: 3)
+                        }
+                        ForEach(placed) { block in
+                            FlowBlock(block: block)
+                                .offset(x: block.x, y: Self.axisHeight + CGFloat(block.lane) * Self.laneHeight)
+                        }
+                        if nowX >= 0 && nowX <= width {
+                            Capsule().fill(Color.red).frame(width: 2, height: height - 12).offset(x: nowX - 1, y: 12)
+                            Circle().fill(Color.red).frame(width: 9, height: 9).offset(x: nowX - 4.5, y: 8)
+                        }
+                        // Where the view scrolls to: an hour before now.
+                        HStack(spacing: 0) {
+                            Color.clear.frame(width: max(0, min(width - 1, nowX - Self.hourWidth)), height: 1)
+                            Color.clear.frame(width: 1, height: 1).id("now")
+                        }
+                    }
+                    .frame(width: width, height: height, alignment: .topLeading)
+                }
+                .onAppear {
+                    DispatchQueue.main.async { proxy.scrollTo("now", anchor: .leading) }
+                }
+            }
+            .background(Palette.paper, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onOpen)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(spoken(timed))
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { onOpen() }
+            .accessibilityIdentifier("dayFlowTimeline")
+        }
+        .padding(14)
+        .background(RaisedCardBackground(cornerRadius: 16))
+    }
+
+    static func x(_ minute: Int, fromHour hour: Int) -> CGFloat {
+        CGFloat(minute - hour * 60) / 60 * hourWidth
+    }
+
+    /// Rows for the blocks: each goes in the first row where it and its name clear the one before;
+    /// with three rows full, in the row that frees up first.
+    static func place(_ items: [AgendaItem], fromHour hour: Int) -> [Placed] {
+        var ends: [CGFloat] = []
+        var result: [Placed] = []
+        for item in items.sorted(by: { ($0.slot?.start ?? 0) < ($1.slot?.start ?? 0) }) {
+            guard let slot = item.slot else { continue }
+            let x = Self.x(slot.start, fromHour: hour)
+            let width = max(6, CGFloat(slot.duration) / 60 * hourWidth)
+            let inside = width >= 60
+            let labelWidth = min(170, CGFloat(item.title.count) * 12 + 14)
+            let reach = inside ? x + width : x + width + 4 + labelWidth
+            let lane: Int
+            if let free = ends.firstIndex(where: { $0 <= x - 4 }) {
+                lane = free
+            } else if ends.count < 3 {
+                lane = ends.count
+            } else {
+                lane = ends.indices.min { ends[$0] < ends[$1] } ?? 0
+            }
+            if lane == ends.count { ends.append(reach) } else { ends[lane] = max(ends[lane], reach) }
+            result.append(Placed(item: item, lane: lane, x: x, width: width, inside: inside, labelWidth: labelWidth))
+        }
+        return result
+    }
+
+    private func spoken(_ timed: [AgendaItem]) -> String {
+        let open = timed.filter { !$0.isDone }
+        let list = open.prefix(4).map { "\($0.slot?.startLabel ?? "") \($0.title)" }.joined(separator: "、")
+        return "今日の流れ。" + (open.isEmpty ? "時間の決まった予定はありません。" : "\(list)。") + "時間割を開く"
+    }
+}
+
+/// One block on the axis: filled in its project's color, outlined for an event, faded once done.
+@MainActor
+private struct FlowBlock: View {
+    @EnvironmentObject private var store: TaskStore
+    let block: DayFlow.Placed
+
+    var body: some View {
+        let item = block.item
+        let color = ProjectColor.color(for: store.colorName(forProject: item.project)) ?? Palette.accent
+        HStack(alignment: .top, spacing: 4) {
+            ZStack(alignment: .topLeading) {
+                if item.isEvent {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color(uiColor: .secondarySystemGroupedBackground))
+                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(color, lineWidth: 1.5))
+                } else {
+                    RoundedRectangle(cornerRadius: block.inside ? 7 : 3, style: .continuous).fill(color.opacity(block.inside ? 0.3 : 0.75))
+                }
+                if block.inside { label(color).padding(.horizontal, 6).padding(.vertical, 4) }
+            }
+            .frame(width: block.width, height: DayFlow.laneHeight - 6)
+            if !block.inside { label(color).frame(width: block.labelWidth, alignment: .leading).padding(.top, 4) }
+        }
+        .opacity(item.isDone ? 0.5 : 1)
+    }
+
+    private func label(_ color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(block.item.slot?.startLabel ?? "").font(.system(size: 10, weight: .semibold)).monospacedDigit()
+                .foregroundStyle(.secondary)
+            Text(block.item.title).font(.system(size: 12, weight: .bold)).lineLimit(2)
+                .strikethrough(block.item.isDone)
+                .foregroundStyle(block.item.isEvent ? color : Color.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

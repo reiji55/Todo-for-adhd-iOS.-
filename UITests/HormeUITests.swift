@@ -1,4 +1,5 @@
 import XCTest
+import CoreGraphics
 
 @MainActor
 final class HormeUITests: XCTestCase {
@@ -22,10 +23,43 @@ final class HormeUITests: XCTestCase {
     }
 
     private func reveal(_ element: XCUIElement, in app: XCUIApplication, scroll: XCUIElement? = nil) {
-        for _ in 0..<5 {
-            if element.isHittable { return }
-            (scroll ?? app.scrollViews.firstMatch).swipeUp()
+        let identifier = element.exists ? element.identifier : ""
+        let matchingScroll = identifier.isEmpty ? app.scrollViews.firstMatch
+            : app.scrollViews.containing(.any, identifier: identifier).firstMatch
+        let container = scroll ?? (matchingScroll.exists ? matchingScroll : app.scrollViews.firstMatch)
+        for attempt in 0..<9 {
+            var viewport = container.frame.intersection(app.frame)
+            let scrollBottom = viewport.maxY
+            for bar in app.navigationBars.allElementsBoundByIndex where bar.isHittable {
+                if bar.frame.maxY < viewport.maxY { viewport.origin.y = max(viewport.minY, bar.frame.maxY) }
+            }
+            // SwiftUI can report a covered element as hittable and synthesize a point on a root tab.
+            // Require its complete frame above the raised Today button, not merely an AX hit point.
+            let todayTabs = app.buttons.matching(NSPredicate(format: "label == %@", "今日")).allElementsBoundByIndex
+            let bottom = todayTabs.filter {
+                $0.frame.height >= 60 && $0.frame.maxY > app.frame.maxY - 24 && $0.isHittable
+            }.map { $0.frame.minY }.min()
+            var visibleBottom = min(scrollBottom, bottom ?? scrollBottom)
+            let keyboard = app.keyboards.firstMatch
+            if keyboard.exists { visibleBottom = min(visibleBottom, keyboard.frame.minY) }
+            viewport.size.height = max(0, visibleBottom - viewport.minY)
+            viewport = viewport.insetBy(dx: 4, dy: 8)
+            let present = element.exists
+            let frame = present ? element.frame : .zero
+            if present && element.isHittable && !frame.isEmpty && viewport.contains(frame) { return }
+            guard viewport.width > 40 && viewport.height > 80 else {
+                XCTFail("No unobstructed scroll viewport for \(element.identifier)")
+                return
+            }
+            let needsEarlierContent = present && frame.midY < viewport.minY
+            let down = needsEarlierContent || (!present && attempt >= 5)
+            let startY = viewport.minY + viewport.height * (down ? 0.3 : 0.7)
+            let endY = viewport.minY + viewport.height * (down ? 0.7 : 0.3)
+            let origin = app.coordinate(withNormalizedOffset: .zero)
+            origin.withOffset(CGVector(dx: viewport.midX, dy: startY))
+                .press(forDuration: 0.02, thenDragTo: origin.withOffset(CGVector(dx: viewport.midX, dy: endY)))
         }
+        XCTFail("Could not reveal \(element.identifier) within the unobstructed viewport")
     }
 
     private func input(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
@@ -58,7 +92,7 @@ final class HormeUITests: XCTestCase {
         reveal(save, in: app)
         save.tap()
         XCTAssertFalse(editor.exists)
-        for _ in 0..<3 where !start.isHittable { app.scrollViews.firstMatch.swipeDown() }
+        reveal(start, in: app)
         start.tap()
         XCTAssertTrue(interrupt.waitForExistence(timeout: 5))
         capture(app, "task-restarted-with-note")
@@ -216,19 +250,22 @@ final class HormeUITests: XCTestCase {
         XCTAssertTrue(timetable.waitForExistence(timeout: 30))
         reveal(timetable, in: app)
         timetable.tap()
-        let required = app.buttons["requiredFolder"]
-        XCTAssertTrue(required.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["requiredFolder"].waitForExistence(timeout: 10))
+        let schedule = app.scrollViews.containing(.button, identifier: "requiredFolder").firstMatch
+        XCTAssertTrue(schedule.exists)
+        let required = schedule.buttons["requiredFolder"]
         XCTAssertEqual(required.value as? String, "折りたたみ")
-        XCTAssertFalse(app.staticTexts["提出期限の確認"].exists)
+        XCTAssertFalse(schedule.staticTexts["提出期限の確認"].exists)
         capture(app, "timetable-folded-sections-light")
+        reveal(required, in: app, scroll: schedule)
         required.tap()
-        XCTAssertTrue(app.staticTexts["提出期限の確認"].waitForExistence(timeout: 5))
+        XCTAssertEqual(required.value as? String, "展開中")
+        XCTAssertTrue(schedule.staticTexts["提出期限の確認"].waitForExistence(timeout: 5))
+        reveal(required, in: app, scroll: schedule)
         required.tap()
 
         // The hidden home/candidate view can expose another completion control for the same task.
         // Scope the geometry check to the visible full timetable, rather than accepting a background match.
-        let schedule = app.scrollViews.containing(.button, identifier: "requiredFolder").firstMatch
-        XCTAssertTrue(schedule.exists)
         let timed = schedule.buttons["時間のあるタスクを完了"].firstMatch
         reveal(timed, in: app, scroll: schedule)
         XCTAssertTrue(timed.exists)
@@ -238,12 +275,15 @@ final class HormeUITests: XCTestCase {
         XCTAssertTrue(untimed.exists)
         XCTAssertEqual(untimed.frame.midX, railX, accuracy: 1, "untimed controls share the timed rail axis")
         capture(app, "timetable-untimed-control-outside-card")
-        let deadlines = app.buttons["deadlineFolder"]
+        let deadlines = schedule.buttons["deadlineFolder"]
         reveal(deadlines, in: app, scroll: schedule)
         XCTAssertTrue(deadlines.exists)
         XCTAssertEqual(deadlines.value as? String, "折りたたみ")
         deadlines.tap()
-        XCTAssertTrue(app.staticTexts["来週の資料"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["時間割"].exists, "expanding deadlines must stay on the timetable")
+        XCTAssertEqual(deadlines.value as? String, "展開中")
+        XCTAssertTrue(schedule.staticTexts["来週の資料"].waitForExistence(timeout: 5))
+        reveal(schedule.staticTexts["来週の資料"], in: app, scroll: schedule)
         capture(app, "timetable-deadlines-expanded")
         app.terminate()
 
@@ -257,5 +297,52 @@ final class HormeUITests: XCTestCase {
         let darkSchedule = dark.scrollViews.containing(.button, identifier: "requiredFolder").firstMatch
         reveal(darkSchedule.buttons["洗濯物をたたむを完了"].firstMatch, in: dark, scroll: darkSchedule)
         capture(dark, "timetable-untimed-rail-dark")
+    }
+
+    func testDayFlowScrollsOpensTimetableAndCandidateDrawerFiltersAndEdits() {
+        let app = launch("timetable")
+        let dayFlow = app.descendants(matching: .any).matching(identifier: "dayFlowTimeline").firstMatch
+        XCTAssertTrue(dayFlow.waitForExistence(timeout: 30))
+        let home = app.scrollViews.containing(.button, identifier: "openDayFlowTimetable").firstMatch
+        reveal(dayFlow, in: app, scroll: home)
+        let before = dayFlow.screenshot().pngRepresentation
+        capture(app, "restored-day-flow-before-horizontal-scroll")
+        dayFlow.swipeLeft()
+        XCTAssertFalse(app.navigationBars["時間割"].exists, "horizontal scrolling must stay on Today")
+        XCTAssertNotEqual(dayFlow.screenshot().pngRepresentation, before, "the horizontal time axis must visibly move")
+        capture(app, "restored-day-flow-after-horizontal-scroll")
+        dayFlow.tap()
+        XCTAssertTrue(app.navigationBars["時間割"].waitForExistence(timeout: 10))
+
+        let drawer = app.buttons["toggleCandidateDrawer"]
+        XCTAssertTrue(drawer.waitForExistence(timeout: 5))
+        XCTAssertEqual(drawer.label, "今できそうなものを開く")
+        drawer.tap()
+        XCTAssertEqual(drawer.label, "候補を閉じる")
+        let energy = app.segmentedControls["candidateEnergy"].firstMatch
+        XCTAssertTrue(energy.waitForExistence(timeout: 5))
+        let panel = app.scrollViews.containing(.segmentedControl, identifier: "candidateEnergy").firstMatch
+        XCTAssertTrue(panel.exists)
+        let laundry = panel.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND NOT label CONTAINS %@",
+                                                         "洗濯物をたたむ", "を完了")).firstMatch
+        energy.buttons["軽めから"].tap()
+        XCTAssertTrue(energy.buttons["軽めから"].isSelected)
+        XCTAssertFalse(laundry.exists, "the medium-effort task must be excluded by the light filter")
+        capture(app, "restored-candidate-drawer-light-filter")
+        energy.buttons["いつも通り"].tap()
+        XCTAssertTrue(energy.buttons["いつも通り"].isSelected)
+        XCTAssertTrue(laundry.waitForExistence(timeout: 5))
+        reveal(laundry, in: app, scroll: panel)
+        capture(app, "restored-candidate-drawer-open")
+        laundry.tap()
+        XCTAssertTrue(app.navigationBars["タスクを編集"].waitForExistence(timeout: 10))
+        let title = NSPredicate(format: "value == %@", "洗濯物をたたむ")
+        XCTAssertTrue(app.textFields.matching(title).firstMatch.exists || app.textViews.matching(title).firstMatch.exists)
+        capture(app, "restored-candidate-task-editor")
+        app.buttons["キャンセル"].firstMatch.tap()
+        XCTAssertTrue(drawer.waitForExistence(timeout: 5))
+        drawer.tap()
+        XCTAssertEqual(drawer.label, "今できそうなものを開く")
+        XCTAssertTrue(app.navigationBars["時間割"].exists)
     }
 }
