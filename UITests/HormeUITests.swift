@@ -300,16 +300,18 @@ final class HormeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["requiredFolder"].waitForExistence(timeout: 10))
         let schedule = app.scrollViews.containing(.button, identifier: "requiredFolder").firstMatch
         XCTAssertTrue(schedule.exists)
+        // What is due today starts open, so it cannot be missed; it still folds and opens again.
         let required = schedule.buttons["requiredFolder"]
+        XCTAssertEqual(required.value as? String, "展開中")
+        XCTAssertTrue(schedule.staticTexts["提出期限の確認"].waitForExistence(timeout: 5))
+        capture(app, "timetable-required-open-light")
+        reveal(required, in: app, scroll: schedule)
+        tapVisible(required, in: app, scroll: schedule)
         XCTAssertEqual(required.value as? String, "折りたたみ")
         XCTAssertFalse(schedule.staticTexts["提出期限の確認"].exists)
-        capture(app, "timetable-folded-sections-light")
         reveal(required, in: app, scroll: schedule)
         tapVisible(required, in: app, scroll: schedule)
         XCTAssertEqual(required.value as? String, "展開中")
-        XCTAssertTrue(schedule.staticTexts["提出期限の確認"].waitForExistence(timeout: 5))
-        reveal(required, in: app, scroll: schedule)
-        tapVisible(required, in: app, scroll: schedule)
 
         // The hidden home/candidate view can expose another completion control for the same task.
         // Scope the geometry check to the visible full timetable, rather than accepting a background match.

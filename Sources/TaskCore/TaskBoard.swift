@@ -117,18 +117,25 @@ public struct TaskBoard {
         }
         func due(_ task: TaskItem) -> Date? { task.deadline ?? task.parentID.flatMap { byID[$0]?.deadline } }
         func must(_ task: TaskItem) -> Bool { task.isMust || (task.parentID.flatMap { byID[$0]?.isMust } ?? false) }
+        // Interrupted with a note of where to pick up: it comes back first after what is due, so the
+        // next start is from where the last one stopped.
+        func interrupted(_ task: TaskItem) -> Bool {
+            !task.continuationNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
         func tier(_ task: TaskItem) -> Int {
             if let date = due(task), calendar.startOfDay(for: date) <= tomorrow { return 0 }
-            if task.plannedAt.map({ calendar.isDate($0, inSameDayAs: now) }) == true { return 1 }
-            if must(task) { return 2 }
-            if let parent = task.parentID, underway.contains(parent) { return 3 }
-            return 4
+            if interrupted(task) { return 1 }
+            if task.plannedAt.map({ calendar.isDate($0, inSameDayAs: now) }) == true { return 2 }
+            if must(task) { return 3 }
+            if let parent = task.parentID, underway.contains(parent) { return 4 }
+            return 5
         }
         let ordered = pool.sorted { a, b in
             if wanted != nil, a.effort.rank != b.effort.rank { return a.effort.rank > b.effort.rank }
             if tier(a) != tier(b) { return tier(a) < tier(b) }
             let ad = a.lastStartedAt ?? a.createdAt, bd = b.lastStartedAt ?? b.createdAt
-            if ad != bd { return ad < bd }
+            // Among interrupted ones the latest comes first; elsewhere the longest untouched does.
+            if ad != bd { return tier(a) == 1 ? ad > bd : ad < bd }
             return stableOrder(a, b)
         }
         return ordered.prefix(max(0, limit)).map { task in
@@ -140,9 +147,10 @@ public struct TaskBoard {
                 let date = calendar.startOfDay(for: due(task) ?? tomorrow)
                 label = date < today ? "締切を過ぎた" : date == today ? "今日が締切" : "明日が締切"
                 reason = label
-            case 1: reason = "今日やる予定"; label = "今日の予定"
-            case 2: reason = "落とせないもの（★必須）"; label = ""
-            case 3: reason = "途中まで進んでいるタスクの続き"; label = "続き"
+            case 1: reason = "中断したところから"; label = "続き"
+            case 2: reason = "今日やる予定"; label = "今日の予定"
+            case 3: reason = "落とせないもの（★必須）"; label = ""
+            case 4: reason = "途中まで進んでいるタスクの続き"; label = "続き"
             default:
                 reason = wanted == task.effort ? "今の調子に合う負荷" : "しばらく手をつけていないもの"
                 // A task written down this week has not been waiting long.

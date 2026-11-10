@@ -125,7 +125,8 @@ struct TodayView: View {
                 }.buttonStyle(.plain).foregroundStyle(Palette.must)
             }
             if !required.isEmpty {
-                TimetableFolder(title: "今日中に必要なもの", count: required.count, identifier: "requiredFolder") {
+                // What is due today starts open: folded, it would be easy to miss.
+                TimetableFolder(title: "今日中に必要なもの", count: required.count, identifier: "requiredFolder", startsOpen: true) {
                     ForEach(required) { task in
                         let current = store.task(task.id) ?? task
                         if store.hasChildren(task.id) {
@@ -159,13 +160,19 @@ struct TodayView: View {
     }
 }
 
-/// Secondary sections start closed without hiding their counts or removing existing actions.
+/// Secondary sections start closed (what is due today starts open) without hiding their counts or removing existing actions.
 private struct TimetableFolder<Content: View>: View {
     let title: String
     let count: Int
     var identifier: String
     @ViewBuilder let content: () -> Content
-    @State private var open = false
+    @State private var open: Bool
+
+    init(title: String, count: Int, identifier: String, startsOpen: Bool = false, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title; self.count = count; self.identifier = identifier
+        self.content = content
+        _open = State(initialValue: startsOpen)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -262,10 +269,9 @@ struct TimelinePanel: View {
     let items: [AgendaItem]
     let now: Date
     var showsNow = true
-    var interactiveChecks = true
     let onOpen: (AgendaItem) -> Void
 
-    private var railWidth: CGFloat { interactiveChecks ? 44 : 24 }
+    private let railWidth: CGFloat = 44
     private var minute: Int { NowView.minute(of: now) }
     private var nowIndex: Int {
         showsNow ? (items.firstIndex { ($0.slot?.start ?? Int.max) > minute } ?? items.count) : -1
@@ -297,15 +303,7 @@ struct TimelinePanel: View {
             }
             .frame(width: timeWidth, alignment: .trailing)
             .accessibilityElement(children: .ignore).accessibilityLabel(item.slot?.label ?? "")
-            if interactiveChecks {
-                AgendaCheck(item: item).frame(width: railWidth)
-            } else {
-                Group {
-                    if item.isEvent { RoundedRectangle(cornerRadius: 3).strokeBorder(Palette.accent, lineWidth: 2) }
-                    else { Circle().strokeBorder(Palette.accent, lineWidth: 2) }
-                }
-                .frame(width: 13, height: 13).frame(width: railWidth).accessibilityHidden(true)
-            }
+            AgendaCheck(item: item).frame(width: railWidth)
             AgendaRow(item: item, showsTime: false, style: .timeline, showsCheck: false,
                       showsChildProgress: true, onOpen: onOpen)
                 .padding(.horizontal, 12).padding(.vertical, 3)
@@ -336,7 +334,7 @@ struct TimelinePanel: View {
     private func rail(first: Bool, last: Bool, bottomInset: CGFloat) -> some View {
         GeometryReader { geometry in
             let center = (geometry.size.height - bottomInset) / 2
-            let gap: CGFloat = interactiveChecks ? 17 : 9
+            let gap: CGFloat = 17
             Path { path in
                 let x = timeWidth + railWidth / 2
                 if !first {

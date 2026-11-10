@@ -70,6 +70,18 @@ final class TaskBoardTests: XCTestCase {
         XCTAssertEqual(candidates.map(\.reason), ["明日が締切", "今日やる予定", "途中まで進んでいるタスクの続き"])
     }
 
+    func testInterruptedTaskComesBackAsContinuationAfterWhatIsDue() {
+        let plan = TaskItem(title: "今日", plannedAt: now, createdAt: day(-3))
+        let due = TaskItem(title: "明日締切", deadline: day(1))
+        let older = TaskItem(title: "前に中断", createdAt: day(-9), lastStartedAt: day(-2), continuationNote: "2章から")
+        let latest = TaskItem(title: "さっき中断", createdAt: day(-8), lastStartedAt: day(0), continuationNote: "宛先は確認済み")
+        let startedOnly = TaskItem(title: "メモなし", createdAt: day(-7), lastStartedAt: day(0))
+        let candidates = board.candidates([startedOnly, plan, older, due, latest], energy: .any, now: now, limit: 9)
+        XCTAssertEqual(candidates.map(\.task.title), ["明日締切", "さっき中断", "前に中断", "今日", "メモなし"],
+                       "an interrupted task with a note returns before today's plan, the latest first")
+        XCTAssertEqual(candidates[1].label, "続き")
+    }
+
     func testAConditionOffersNothingHeavierAndStartsFromTheHeaviest() {
         let heavy = TaskItem(title: "設計", effort: .heavy, createdAt: day(-5))
         let medium = TaskItem(title: "資料", effort: .medium, createdAt: day(-4))

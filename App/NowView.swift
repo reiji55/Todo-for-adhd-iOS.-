@@ -90,17 +90,19 @@ struct NowView: View {
                     .transition(.opacity)
             } else {
                 let book = store.notebook
+                // A task started on an earlier day is not still running this morning.
+                let running = work.flatMap { Calendar.current.isDate($0.startedAt, inSameDayAs: now) ? $0 : nil }
                 let stretch = NowPlan.freeStretch(in: book, now: now)
                 let picks = NowPlan.picks(in: book, energy: energy, now: now, passed: passed)
                 // Whether there is anything to offer at all, whatever the condition.
                 let offers = (energy == .any ? picks : NowPlan.picks(in: book, energy: .any, now: now))
                     .contains { $0.kind == .obligation || $0.kind == .candidate }
-                if let stretch, stretch.key != chosenFor, offers, work == nil, chosen == nil {
+                if let stretch, stretch.key != chosenFor, offers, running == nil, chosen == nil {
                     FreeStretchCard(stretch: stretch, now: now) { setEnergy($0) }
                         .transition(.opacity)
                     upcoming(now: now, excluding: nil)
                 } else {
-                    let current = resolve(work.map { "task-\($0.taskID.uuidString)" } ?? chosen, in: picks, book: book)
+                    let current = resolve(running.map { "task-\($0.taskID.uuidString)" } ?? chosen, in: picks, book: book)
                     if let current, !(current.kind == .upcoming && offers) {
                         let rest = picks.filter { $0.id != current.id }
                         NowCard(pick: current,
@@ -108,7 +110,7 @@ struct NowView: View {
                                 canPass: !rest.isEmpty,
                                 stretch: stretch,
                                 now: now,
-                                work: work,
+                                work: running,
                                 onStart: { id in
                                     let started = Date()
                                     if store.startTask(id, at: started) {
@@ -122,7 +124,7 @@ struct NowView: View {
                                     work = nil
                                     chosen = current.item.isDone ? nil : current.id
                                     if case .task(let id) = current.item.source, store.task(id)?.isComplete == true { chosen = nil }
-                                    if let stretch { chosenFor = stretch.key }
+                                    if let stretch { remember(stretch.key) }
                                 },
                                 onPass: { pass(current.id) },
                                 onChoose: { chosen = $0 },
@@ -179,6 +181,12 @@ struct NowView: View {
         PassedOver.save([])
     }
 
+    /// The free stretch is settled: its question is not asked again, also after the app is reopened.
+    private func remember(_ key: String) {
+        chosenFor = key
+        EnergyMemory.markChosen(key)
+    }
+
     /// The pick to show: one picked or kept in front, else the first. One kept in front stays even when a
     /// change to its 負荷 takes it out of the condition, until it is done or passed over.
     private func resolve(_ id: String?, in picks: [NowPick], book: Notebook) -> NowPick? {
@@ -197,11 +205,15 @@ struct NowView: View {
         return picks.first
     }
 
-    /// Timed things later today, not done yet, in order.
+    /// Timed things not done yet that are going on now or come later today, in order. One already going
+    /// on is listed while something else holds the card (a task being worked on, or one picked).
     private func laterToday(_ now: Date, excluding id: String?) -> [AgendaItem] {
         let minute = Self.minute(of: now)
         return Agenda.items(on: now, tasks: store.notebook.tasks, routines: store.notebook.routines)
-            .filter { !$0.isBlock && !$0.isDone && $0.id != id && ($0.slot?.start ?? -1) > minute }
+            .filter { item in
+                guard !item.isBlock, !item.isDone, item.id != id, let slot = item.slot else { return false }
+                return slot.start > minute || slot.end > minute
+            }
     }
 
     private func upcoming(now: Date, excluding id: String?) -> some View {
@@ -222,7 +234,7 @@ struct NowView: View {
                 VStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                         if index > 0 { Divider().padding(.leading, 72) }
-                        UpcomingRow(item: item) { onOpen(item) }
+                        UpcomingRow(item: item, ongoing: (item.slot?.start ?? 0) <= Self.minute(of: now)) { onOpen(item) }
                     }
                 }
                 .background(RaisedCardBackground(cornerRadius: 16))
@@ -270,7 +282,7 @@ struct NowView: View {
         timetableOpen = false
         rolloverOpen = false
         chosen = "task-\(work.taskID.uuidString)"
-        if let stretch = NowPlan.freeStretch(in: store.notebook, now: Date()) { chosenFor = stretch.key }
+        if let stretch = NowPlan.freeStretch(in: store.notebook, now: Date()) { remember(stretch.key) }
     }
 
     private func applyPreviewArguments() {
@@ -681,7 +693,7 @@ private struct EffortBadge: View {
         Button(action: onCycle) {
             HStack(spacing: 6) {
                 Text("負荷").font(.caption2.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
-                EffortMeter(level: effort.rank + 1, color: Color(red: 0.7, green: 0.95, blue: 0.52))
+                EffortMeter(level: effort.rank + 1, color: .white)
                 Text(effort.label).font(.caption.weight(.bold)).foregroundStyle(.white)
             }
             .padding(.horizontal, 10).frame(minHeight: 30)
@@ -835,6 +847,7 @@ private struct NowButtonStyle: ButtonStyle {
 /// One timed thing later today: its time, what kind it is, and its name. A tap opens it.
 private struct UpcomingRow: View {
     let item: AgendaItem
+    var ongoing = false
     let onOpen: () -> Void
     var body: some View {
         Button(action: onOpen) {
@@ -845,12 +858,16 @@ private struct UpcomingRow: View {
                     .font(.subheadline).foregroundStyle(Palette.accent).frame(width: 22)
                 Text(item.title).font(.subheadline).foregroundStyle(.primary).lineLimit(2).multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
+                if ongoing {
+                    Text("\(TimeSlot.clock(item.slot?.end ?? 0))まで").font(.caption.weight(.semibold))
+                        .foregroundStyle(Palette.accent).monospacedDigit()
+                }
             }
             .padding(.horizontal, 14).frame(minHeight: 48)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(item.slot?.startLabel ?? "") \(item.title)")
+        .accessibilityLabel(ongoing ? "\(item.title)、\(TimeSlot.clock(item.slot?.end ?? 0))まで" : "\(item.slot?.startLabel ?? "") \(item.title)")
     }
 }
 

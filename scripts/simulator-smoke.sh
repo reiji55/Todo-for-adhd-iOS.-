@@ -43,6 +43,18 @@ launch() {
   return 1
 }
 
+# A capture taken before the app has drawn (a slow simulator, often the iPad just after it boots) is blank;
+# it is taken again after a short wait, up to five times.
+shot() {
+  local file="$RESULT_DIR/$1.png" attempt
+  for attempt in 1 2 3 4 5; do
+    xcrun simctl io "$SIMULATOR_ID" screenshot "$file"
+    python3 -I scripts/screen_is_blank.py "$file" || return 0
+    echo "::warning::$1 was captured before the app drew (attempt $attempt)" >&2
+    sleep 3
+  done
+}
+
 cleanup() { xcrun simctl shutdown "$SIMULATOR_ID" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 xcrun simctl boot "$SIMULATOR_ID" || true
@@ -167,7 +179,7 @@ path.write_text(json.dumps(dict(version=1, tasks=tasks, ideas=ideas, boardCards=
 PY
 launch -uiNoPrompt | tee "$RESULT_DIR/launch.txt"
 sleep 5
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/today.png"
+shot today
 python3 - "$SIMULATOR_DATA" <<'PY'
 from pathlib import Path
 import json, sys, time
@@ -205,7 +217,7 @@ PY
 # The いま card once a condition is chosen (the first capture asks for it when the time is free).
 launch -uiTab 2 -uiEnergy high >/dev/null
 sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/now-card.png"
+shot now-card
 # Where the main thread is while the いま screen shows, to catch a stuck layout.
 pid=$(pgrep -f 'ThreeDays.app/ThreeDays' | head -1 || true)
 if [ -n "$pid" ]; then
@@ -214,59 +226,59 @@ if [ -n "$pid" ]; then
 fi
 launch -horme-settings-preview
 sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/sharing-settings.png"
+shot sharing-settings
 # -uiTab and -uiOpenFirstCard exist only in Debug builds, for these captures.
 launch -uiTab 1 >/dev/null
 sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/week.png"
+shot week
 launch -uiTab 1 -uiWeekSheetOpen >/dev/null
 sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/week-sheet.png"
+shot week-sheet
 launch -uiTab 1 -uiWeekSheetFull >/dev/null
 sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/week-sheet-full.png"
+shot week-sheet-full
 launch -uiTab 0 >/dev/null
 sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/all.png"
+shot all
 launch -uiTab 3 >/dev/null
 sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/ideas.png"
+shot ideas
 launch -uiTab 3 -uiOpenFirstIdea >/dev/null
 sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/idea-open.png"
+shot idea-open
 launch -uiTab 3 -uiSortIdeas >/dev/null
 sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/sort-ideas.png"
+shot sort-ideas
 launch -uiTab 4 >/dev/null
 sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board.png"
+shot board
 launch -uiTab 4 -uiOpenFirstCard >/dev/null
 sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/board-card.png"
+shot board-card
 launch -uiTab 4 -uiOpenFirstProject >/dev/null
 sleep 5
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/project.png"
+shot project
 launch -uiTab 4 -uiOpenFirstProject -uiProjectWay >/dev/null
 sleep 5
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/project-way.png"
+shot project-way
 launch -uiTab 2 -uiOpenRoutine >/dev/null
 sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/routine-edit.png"
+shot routine-edit
 launch -uiTab 2 -uiQuickAdd >/dev/null
 sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/quick-add.png"
+shot quick-add
 launch -uiTab 2 -uiOpenTask >/dev/null
 sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/task-edit.png"
+shot task-edit
 launch -uiTab 2 -uiTimetable >/dev/null
 sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/timetable.png"
+shot timetable
 # Shown as ended without saving it, so the launches after this one start open.
 launch -uiTab 2 -uiDayClosed >/dev/null
 sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/day-closed.png"
+shot day-closed
 # Last: starting a task leaves it running in the saved sample data.
 launch -uiTab 2 -uiFocus >/dev/null
 sleep 4
-xcrun simctl io "$SIMULATOR_ID" screenshot "$RESULT_DIR/focus.png"
+shot focus
 # Screenshots and launch logs verify startup and layout, not every interaction.
