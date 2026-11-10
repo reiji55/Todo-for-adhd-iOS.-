@@ -1,0 +1,42 @@
+{
+  "devicesAndConfigurations" : [
+    {
+      "device" : {
+        "architecture" : "arm64",
+        "deviceId" : "781A2D4E-070C-46E2-9817-A12044EF1A30",
+        "deviceName" : "Horme Interface Tests",
+        "modelName" : "iPhone SE (3rd generation)",
+        "osBuildNumber" : "22F77",
+        "osVersion" : "18.5",
+        "platform" : "iOS Simulator"
+      },
+      "expectedFailures" : 0,
+      "failedTests" : 0,
+      "passedTests" : 9,
+      "skippedTests" : 0,
+      "testPlanConfiguration" : {
+        "configurationId" : "1",
+        "configurationName" : "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription" : "ThreeDays · Built with macOS 15.8.2",
+  "expectedFailures" : 0,
+  "failedTests" : 0,
+  "finishTime" : 1794286569.566,
+  "passedTests" : 9,
+  "result" : "Passed",
+  "skippedTests" : 0,
+  "startTime" : 1794286282.954,
+  "statistics" : [
+
+  ],
+  "testFailures" : [
+
+  ],
+  "title" : "Test - ThreeDays",
+  "topInsights" : [
+
+  ],
+  "totalTestCount" : 9
+}
