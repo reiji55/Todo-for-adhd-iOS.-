@@ -308,6 +308,8 @@ final class HormeUITests: XCTestCase {
         let before = dayFlow.screenshot().pngRepresentation
         capture(app, "restored-day-flow-before-horizontal-scroll")
         dayFlow.swipeLeft()
+        // At the end of the day the initial position can already be at the rightmost limit.
+        if dayFlow.screenshot().pngRepresentation == before { dayFlow.swipeRight() }
         XCTAssertFalse(app.navigationBars["時間割"].exists, "horizontal scrolling must stay on Today")
         XCTAssertNotEqual(dayFlow.screenshot().pngRepresentation, before, "the horizontal time axis must visibly move")
         capture(app, "restored-day-flow-after-horizontal-scroll")
