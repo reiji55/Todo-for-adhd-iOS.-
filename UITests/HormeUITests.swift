@@ -413,6 +413,12 @@ final class HormeUITests: XCTestCase {
         alert.buttons["閉じる"].firstMatch.tap()
         let creation = app.navigationBars["タスクにする"]
         XCTAssertTrue(creation.exists, "the saved task must remain available after the rejected start")
+        XCTAssertTrue(app.staticTexts["1件のタスクを追加しました"].exists)
+        tapVisible(app.buttons["createIdeaTaskAndStart"], in: app)
+        XCTAssertTrue(alert.waitForExistence(timeout: 10))
+        XCTAssertTrue(alert.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "今日は終了しています")).firstMatch.exists)
+        alert.buttons["閉じる"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["1件のタスクを追加しました"].exists, "retrying a rejected start must not add a second task")
         creation.buttons["閉じる"].firstMatch.tap()
         let todayTab = app.buttons.matching(NSPredicate(format: "label == %@", "今日")).firstMatch
         XCTAssertTrue(todayTab.waitForExistence(timeout: 10))

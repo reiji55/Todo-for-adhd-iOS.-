@@ -12,6 +12,7 @@ struct TaskStepSheet: View {
     @State private var detailed: TaskItem?
     @State private var pendingID: UUID?
     @State private var savedID: UUID?
+    @State private var startError: String?
     @FocusState private var focused: Bool
 
     private var trimmed: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -60,6 +61,9 @@ struct TaskStepSheet: View {
                 TaskEditor(task: task, original: store.task(task.id))
             }
         }
+        .alert("開始できません", isPresented: Binding(
+            get: { startError != nil }, set: { if !$0 { startError = nil } }
+        )) { Button("閉じる", role: .cancel) { startError = nil } } message: { Text(startError ?? "") }
         .storeErrorAlert()
     }
 
@@ -112,7 +116,11 @@ struct TaskStepSheet: View {
         savedID = task.id
         if start {
             let target = store.notebook.nextChild(of: task.id)?.id ?? task.id
-            guard store.requestTaskStart(target) else { return }
+            guard store.requestTaskStart(target) else {
+                startError = store.error ?? "タスクを開始できませんでした。保存したタスクを確認してください。"
+                store.error = nil
+                return
+            }
             dismiss()
             onStarted()
         } else {

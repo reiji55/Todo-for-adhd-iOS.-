@@ -29,6 +29,7 @@ struct IdeaToTasksSheet: View {
     @State private var detailedDraft: UUID?
     @State private var detailedTask: UUID?
     @State private var savedTaskIDs: [UUID] = []
+    @State private var startError: String?
     @FocusState private var focused: UUID?
 
     /// With a day and time from the free-time suggestion, the first task starts there, and the idea
@@ -101,6 +102,9 @@ struct IdeaToTasksSheet: View {
             .sheet(item: $detailed, onDismiss: afterEditor) { task in TaskEditor(task: task, original: nil) }
             .sheet(item: $guide) { route in GuideSheet(cardID: route.id) }
         }
+        .alert("開始できません", isPresented: Binding(
+            get: { startError != nil }, set: { if !$0 { startError = nil } }
+        )) { Button("閉じる", role: .cancel) { startError = nil } } message: { Text(startError ?? "") }
         .storeErrorAlert()
     }
 
@@ -309,7 +313,12 @@ struct IdeaToTasksSheet: View {
         }
         if start, let firstID {
             let target = store.notebook.nextChild(of: firstID)?.id ?? firstID
-            guard store.requestTaskStart(target) else { return }
+            guard store.requestTaskStart(target) else {
+                // This nested form owns the failure. Parent alerts must not dismiss the saved form.
+                startError = store.error ?? "タスクを開始できませんでした。保存したタスクを確認してください。"
+                store.error = nil
+                return
+            }
         }
         dismiss()
     }
