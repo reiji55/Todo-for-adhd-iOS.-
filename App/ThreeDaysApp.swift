@@ -200,9 +200,7 @@ struct RootView: View {
                               onPick: { quickAdd = QuickAddRoute(day: $1, kind: $0) })
             } else {
                 WeekView(onOpen: open, onAdd: { quickAdd = QuickAddRoute(day: $0) })
-                    .overlay(alignment: .bottomTrailing) {
-                        FloatingAddButton { quickAdd = QuickAddRoute(day: nil, kind: $0) }.padding(.trailing, 14).padding(.bottom, 10)
-                    }
+                    .floatingAdd { quickAdd = QuickAddRoute(day: nil, kind: $0) }
             }
         case .all:
             AllTasksView(onOpen: open, onEditRoutine: { routineEditor = $0 })
