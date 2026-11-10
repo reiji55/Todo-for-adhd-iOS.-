@@ -1,0 +1,92 @@
+{
+  "implementation_commit": "b8b37b2d8d2702c16256dd79fc8a3af7521f6386",
+  "implementation_tree": "6086a7cb034e31bdf5d2ba68c1f7b4f65ce11c90",
+  "ci_run": 42805177966,
+  "ci_result": "success",
+  "core_tests": {
+    "passed": 103,
+    "failed": 0
+  },
+  "release_script_tests": {
+    "passed": 17,
+    "failed": 0
+  },
+  "interface_tests": {
+    "passed": 12,
+    "failed": 0,
+    "skipped": 0
+  },
+  "builds": [
+    "iOS Simulator Debug",
+    "universal iOS Release"
+  ],
+  "smoke_and_atomic_migration": {
+    "iPhone": "passed",
+    "iPad": "passed"
+  },
+  "source_artifacts": {
+    "full_screens": 13761812454,
+    "interface_tests": 13761055552
+  },
+  "image_source_override": {
+    "current/iPad-now-card.png": {
+      "commit": "833aa2c9c18a0c13d80e8071d21d4828e01a3efd",
+      "run": 42802031075,
+      "reason": "Final capture contains launch background; prior completed render uses byte-identical NowView, TaskPresentation, Components, TaskStore, ThreeDaysApp and TodayView code. Final iPad card capture itself cannot verify the card."
+    }
+  },
+  "baseline": {
+    "screenshot_commit": "eca86a73f5a54c6d35a7162da3b41e21460fa452",
+    "source_commit": "ee99673bddae71286eef6a063d104c6d3dd22f83",
+    "restore_reference": "3990d1bc88a6fdf81a2ee398aee37a5a409521b1"
+  },
+  "card_fill_dimensions_points": {
+    "iPhone": {
+      "before": [
+        343,
+        324.5
+      ],
+      "restored": [
+        343,
+        326.5
+      ]
+    },
+    "iPad": {
+      "before": [
+        588,
+        324.5
+      ],
+      "restored": [
+        588,
+        326.5
+      ]
+    }
+  },
+  "measurement": "Native 2x PNG flat-fill bounds, excluding shadow and partially antialiased border.",
+  "png_sha256": {
+    "baseline/iPad-now-card.png": "fc97a407539010d8ab60adff9e86bbd19412002d887f94ae92b4734df1a69f31",
+    "baseline/iPad-project.png": "72d6f0f4b6d01a6eea9cc7cf5c4278285bb14dd5a38e7f32db2a725adb9d85c9",
+    "baseline/iPad-week.png": "6101b619515eb3f6a3511a45e883cb27f4a01d36855f6f43c3f8ce4d1df16b01",
+    "baseline/iPhone-now-card.png": "7c48955e1760185b048ec53080194a5552028827d7acbf41acc36c8055b2e494",
+    "baseline/iPhone-project.png": "d3434acafebf2145adf05416828fb5188837d0c0061eadadd01c7a2655b2cffc",
+    "baseline/iPhone-week.png": "3a5da980cf616ae3bfbd8f3b2655a0237130e8fea30e66edf1dbfa06281aa46b",
+    "current/iPad-now-card.png": "3b26c102de3236dccda2c548031382b99c3cdf330bf184f10cbd7c4c3f32089e",
+    "current/iPad-project.png": "8ef75cba91c6058f3ea85638c39b533cf07f160ea588bf3eed365bef14d2da4b",
+    "current/iPad-timetable.png": "e32379d7059ef49aaed483e4d305246d2882c8ce79bbe907391aa1b738c822ce",
+    "current/iPad-week.png": "1b188b1527553bfdf55feafb2022fcc31ba67b24470fa6b513192b41af014a4c",
+    "current/iPhone-now-card.png": "b8eea9c9bec5e0bf5eaca0c5cbc3cb7bc5028c9143d3c0fc3fa150d7f813a645",
+    "current/iPhone-project.png": "9bd23735881b7470ca5f55a51f80cc28d19b9e1d9c2a29b9267572387b993053",
+    "current/iPhone-timetable.png": "811eed3c5b5593d6af75c830353b63111cb80a9dda557785111ea7134cb1956f",
+    "current/iPhone-week.png": "d665ed8e0ff6e3d9801e5cd866fd9b4e612070c943160c8f1e44f8130d52c1ec",
+    "diagnostics/iPad-now-card-launch-capture-b8b37b2.png": "64c70c56ceea011238d79092f0980d5480f5ee833a369061546308263826420a",
+    "ui/closed-day-remains-closed-after-idea-start.png": "25d6e4a8aab3178e6ec06a7bd414f22ae660644111c8ec41690156dddb22772b",
+    "ui/closed-day-start-keeps-existing-reopen-choice.png": "323aca32c1d65aa94924599c89afa2f95a75e7b2e76650069969c95cad6f744a",
+    "ui/ordinary-today-return-keeps-timetable-navigation.png": "61c41f60dc271ccf4c574ee5cccfa3ede84a202dd5b850d593f6196506fcb0d5",
+    "ui/restored-candidate-drawer-light-filter.png": "9fe46359429dc82a9159cc2072d83ea9376d3e9006a4b461074125997b0864ba",
+    "ui/restored-candidate-drawer-open.png": "eef1d95dcef666b1b97cd30da3e705d32460d2d0767541f1e1016eb7630736b8",
+    "ui/restored-day-flow-after-horizontal-scroll.png": "58f765a40c20908623511234605dc55f78ad0c2354ca217a54a59d29246c7062",
+    "ui/restored-day-flow-before-horizontal-scroll.png": "5b99de3861e0d7166deef91d3395713884cc836761f4d732488e01fd1eea7282",
+    "ui/timetable-deadlines-expanded.png": "3c19f2faeb9e653a2cc0c0feb03d69096e1faefaca2533898d9fd5c2dc2a6649",
+    "ui/timetable-folded-sections-light.png": "2656e16808deed131db03b3e5721ab283f5bc678d51b53cfabd4e1c05ca45059"
+  }
+}
