@@ -44,6 +44,8 @@ public extension Notebook {
     /// undoing reopens the children it finished that way (or, if the last child finished it, that child).
     mutating func toggleTask(_ id: UUID, at now: Date = Date()) {
         guard let i = tasks.firstIndex(where: { $0.id == id }) else { return }
+        let before = tasks
+        defer { settleListItems(after: before) }
         let kids = tasks.indices.filter { tasks[$0].parentID == id }
         if !kids.isEmpty {
             if let finished = tasks[i].completedAt {

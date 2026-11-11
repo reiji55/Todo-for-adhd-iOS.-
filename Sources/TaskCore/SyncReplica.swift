@@ -36,7 +36,7 @@ public struct SyncRecord: Codable, Equatable {
     public static func decode(_ data: Data, expectedID: String) throws -> Self {
         let record = try JSONDecoder().decode(Self.self, from: data)
         guard record.id == expectedID, record.version == 1,
-              record.id == "session" || ["task_", "idea_", "card_", "routine_", "project_"].contains(where: record.id.hasPrefix) else {
+              record.id == "session" || ["task_", "idea_", "card_", "routine_", "project_", "list_", "item_"].contains(where: record.id.hasPrefix) else {
             throw NotebookError.unsupportedVersion
         }
         guard record.fields["alive"] != nil else { throw NotebookError.invalidData }
@@ -101,6 +101,8 @@ public struct SyncReplica: Codable, Equatable {
         var cards: [(rank: Int, card: BoardCard)] = []
         var routines: [Routine] = []
         var projects: [Project] = []
+        var lists: [StockList] = []
+        var items: [ListItem] = []
         var session: Session?
         for record in records.values {
             guard try Self.object(record.fields["alive"]?.value) as? Bool == true else { continue }
@@ -168,6 +170,14 @@ public struct SyncReplica: Codable, Equatable {
                 let project: Project = try Self.decodeObject(object)
                 guard record.id == "project_\(project.id.uuidString)" else { throw NotebookError.invalidData }
                 projects.append(project)
+            } else if record.id.hasPrefix("list_") {
+                let list: StockList = try Self.decodeObject(object)
+                guard record.id == "list_\(list.id.uuidString)" else { throw NotebookError.invalidData }
+                lists.append(list)
+            } else if record.id.hasPrefix("item_") {
+                let item: ListItem = try Self.decodeObject(object)
+                guard record.id == "item_\(item.id.uuidString)" else { throw NotebookError.invalidData }
+                items.append(item)
             } else if record.id == "session" {
                 // A session is one field to keep its task/step/time together.
                 if let data = record.fields["value"]?.value { session = try Self.decoder().decode(Session.self, from: data) }
@@ -180,8 +190,10 @@ public struct SyncReplica: Codable, Equatable {
         cards.sort { $0.rank == $1.rank ? $0.card.id.uuidString < $1.card.id.uuidString : $0.rank < $1.rank }
         routines.sort { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
         projects.sort { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
+        lists.sort { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
+        items.sort { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
         let book = Notebook(tasks: tasks, ideas: ideas, boardCards: cards.map(\.card), routines: routines, activeSession: session,
-                            projects: projects)
+                            projects: projects, lists: lists, listItems: items)
         // Validate remote data before replacing a user's local view.
         _ = try NotebookCodec.decode(NotebookCodec.encode(book))
         return book
@@ -241,6 +253,9 @@ public struct SyncReplica: Codable, Equatable {
             }
             result["project_\(project.id.uuidString)"] = fields
         }
+        // Each thing on a list is its own record, so two people checking off a shopping list both count.
+        for list in book.lists { result["list_\(list.id.uuidString)"] = try fieldsFor(list) }
+        for item in book.listItems { result["item_\(item.id.uuidString)"] = try fieldsFor(item) }
         if let session = book.activeSession { result["session"] = ["value": try encoder().encode(session)] }
         return result
     }
@@ -319,6 +334,30 @@ public struct ShareMergePreview {
                 project.id = UUID()
             }
             combined.projects.append(project)
+        }
+        var copiedLists: Set<UUID> = []
+        for var list in local.lists {
+            if let existing = remote.lists.first(where: { $0.id == list.id }) {
+                if Self.samePersistedContents(Notebook(lists: [existing]), Notebook(lists: [list])) { continue }
+                let originalID = list.id
+                copiedLists.insert(originalID)
+                list.id = UUID()
+                // Its things go with the copy.
+                for item in local.listItems where item.listID == originalID {
+                    var copy = item; copy.id = UUID(); copy.listID = list.id
+                    combined.listItems.append(copy)
+                }
+                combined.lists.append(list)
+                continue
+            }
+            combined.lists.append(list)
+        }
+        for var item in local.listItems where !copiedLists.contains(item.listID) {
+            if let existing = remote.listItems.first(where: { $0.id == item.id }) {
+                if Self.samePersistedContents(Notebook(listItems: [existing]), Notebook(listItems: [item])) { continue }
+                item.id = UUID()
+            }
+            combined.listItems.append(item)
         }
         if combined.activeSession == nil, var active = local.activeSession {
             active.taskID = remappedTasks[active.taskID] ?? active.taskID
