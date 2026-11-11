@@ -166,7 +166,6 @@ struct AgendaRow: View {
                     Text(item.title).font(.body.weight(item.isMust && !done ? .bold : .medium))
                         .strikethrough(done).foregroundStyle(done ? Color.secondary : item.isMust ? Palette.must : Color.primary)
                         .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
-                    ItemNotesView(item: item)
                     if showsChildProgress, let task {
                         let parentID = task.parentID ?? task.id
                         let children = store.children(of: parentID)
