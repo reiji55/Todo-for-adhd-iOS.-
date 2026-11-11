@@ -373,11 +373,24 @@ final class HormeUITests: XCTestCase {
         XCTAssertTrue(dayFlow.waitForExistence(timeout: 30))
         let home = app.scrollViews.containing(.button, identifier: "openDayFlowTimetable").firstMatch
         reveal(dayFlow, in: app, scroll: home)
+        // Bring the bottom overview clear of the root tabs before capturing and dragging it.
+        home.swipeUp()
+        reveal(dayFlow, in: app, scroll: home)
+        guard let touch = visiblePoint(dayFlow, in: app, scroll: home) else {
+            XCTFail("No unobstructed timeline touch point")
+            return
+        }
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let frame = dayFlow.frame
+        let left = origin.withOffset(CGVector(dx: frame.minX + frame.width * 0.2, dy: touch.y))
+        let right = origin.withOffset(CGVector(dx: frame.minX + frame.width * 0.8, dy: touch.y))
         let before = dayFlow.screenshot().pngRepresentation
         capture(app, "restored-day-flow-before-horizontal-scroll")
-        dayFlow.swipeLeft()
+        right.press(forDuration: 0.02, thenDragTo: left)
         // At the end of the day the initial position can already be at the rightmost limit.
-        if dayFlow.screenshot().pngRepresentation == before { dayFlow.swipeRight() }
+        if dayFlow.screenshot().pngRepresentation == before {
+            left.press(forDuration: 0.02, thenDragTo: right)
+        }
         XCTAssertFalse(app.navigationBars["時間割"].exists, "horizontal scrolling must stay on Today")
         XCTAssertNotEqual(dayFlow.screenshot().pngRepresentation, before, "the horizontal time axis must visibly move")
         capture(app, "restored-day-flow-after-horizontal-scroll")
