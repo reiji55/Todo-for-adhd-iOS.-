@@ -80,8 +80,9 @@ struct TodayView: View {
     @ViewBuilder private func today(now: Date) -> some View {
         let board = TaskBoard()
         let tasks = store.notebook.tasks
-        // Something checked off a moment ago keeps its place until the person leaves this screen.
-        let placement = tasks.map { task -> TaskItem in
+        // Something checked off a moment ago keeps its place until the person leaves this screen. A task without
+        // its own deadline goes by its project's.
+        let placement = store.notebook.tasksWithProjectDeadlines.map { task -> TaskItem in
             var copy = task
             if store.recentlyDone.contains(AgendaItem(task: task).id) { copy.completedAt = nil }
             return copy
@@ -423,13 +424,40 @@ private struct UpcomingDeadlines: View {
     let onOpen: (AgendaItem) -> Void
     var body: some View {
         let calendar = Calendar.current
-        let upcoming = store.notebook.tasks.filter { task in
+        let book = store.notebook
+        let later = { (due: Date) in calendar.startOfDay(for: due) > calendar.startOfDay(for: now) }
+        let upcoming = book.tasks.filter { task in
             guard !task.isComplete, let due = task.deadline else { return false }
-            return calendar.startOfDay(for: due) > calendar.startOfDay(for: now)
-        }.sorted { ($0.deadline ?? .distantFuture) < ($1.deadline ?? .distantFuture) }
-        if !upcoming.isEmpty {
-            TimetableFolder(title: "これからの締切", count: upcoming.count, identifier: "deadlineFolder") {
-            ForEach(upcoming.prefix(5)) { task in
+            return later(due)
+        }
+        // A project's deadline counts once for all its open tasks that have none of their own.
+        let projects: [(project: Project, open: Int)] = book.projects.compactMap { project in
+            guard let due = project.deadline, later(due) else { return nil }
+            let open = book.tasks.filter { !$0.isComplete && book.projectDeadline(for: $0) != nil
+                && ProjectBook.key($0.project) == ProjectBook.key(project.name) }.count
+            return open > 0 ? (project, open) : nil
+        }
+        let rows: [DeadlineRow] = (upcoming.map { DeadlineRow.task($0) } + projects.map { DeadlineRow.project($0.project, open: $0.open) })
+            .sorted { $0.due < $1.due }
+        if !rows.isEmpty {
+            TimetableFolder(title: "これからの締切", count: rows.count, identifier: "deadlineFolder") {
+            ForEach(rows.prefix(5)) { row in
+                switch row {
+                case .project(let project, let open):
+                    Button { store.projectToOpen = ProjectBook.key(project.name) } label: {
+                        HStack(spacing: 8) {
+                            Text(project.deadline?.shortDay ?? "").font(.clock).foregroundStyle(Palette.must)
+                            Image(systemName: "flag.fill").font(.caption)
+                                .foregroundStyle(ProjectColor.color(for: store.colorName(forProject: project.name)) ?? Palette.accent)
+                                .frame(width: 14).accessibilityHidden(true)
+                            Text(project.name).lineLimit(1)
+                            Text("\(open)件").foregroundStyle(.secondary).monospacedDigit()
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                        }.font(.subheadline).frame(minHeight: 40)
+                    }
+                    .accessibilityLabel("プロジェクト「\(project.name)」の期限 \(project.deadline?.shortDay ?? "")、締切のないタスク\(open)件")
+                case .task(let task):
                 Button { onOpen(AgendaItem(task: task)) } label: {
                     HStack(spacing: 8) {
                         Text(task.deadline?.shortDay ?? "").font(.clock).foregroundStyle(Palette.must)
@@ -443,7 +471,25 @@ private struct UpcomingDeadlines: View {
                         Image(systemName: "chevron.right").foregroundStyle(.secondary)
                     }.font(.subheadline).frame(minHeight: 40)
                 }
+                }
             }
+            }
+        }
+    }
+
+    private enum DeadlineRow: Identifiable {
+        case task(TaskItem)
+        case project(Project, open: Int)
+        var id: String {
+            switch self {
+            case .task(let task): return "task-\(task.id.uuidString)"
+            case .project(let project, _): return "project-\(project.id.uuidString)"
+            }
+        }
+        var due: Date {
+            switch self {
+            case .task(let task): return task.deadline ?? .distantFuture
+            case .project(let project, _): return project.deadline ?? .distantFuture
             }
         }
     }
@@ -458,7 +504,7 @@ struct CandidatePanel: View {
     let onOpen: (AgendaItem) -> Void
 
     var body: some View {
-        let placement = store.notebook.tasks.map { task -> TaskItem in
+        let placement = store.notebook.tasksWithProjectDeadlines.map { task -> TaskItem in
             var copy = task
             if store.recentlyDone.contains(AgendaItem(task: task).id) { copy.completedAt = nil }
             return copy

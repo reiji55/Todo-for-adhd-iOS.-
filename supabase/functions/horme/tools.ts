@@ -154,15 +154,26 @@ function leftovers(book: Book, today: string) {
     .map((t) => ({ ...taskItem(t, book), plannedDay: dayKey(t.plannedAt!) }));
 }
 
+/** Mirrors Notebook.projectDeadline: a top-level task without its own deadline goes by its project's. */
+function projectDeadline(book: Book, t: Task): string | undefined {
+  if (t.deadline || t.parentID || t.isEvent || !t.project) return undefined;
+  return book.projects.find((p) => sameKey(p.name, t.project))?.deadline ?? undefined;
+}
+
 /** Due today or earlier and not planned for today (those are already in today's list). ★ alone never
- * makes a task due: it marks what cannot be dropped, as in the app. */
+ * makes a task due: it marks what cannot be dropped, as in the app. A task without its own deadline goes by
+ * its project's (marked `projectDeadline`). */
 function required(book: Book, today: string) {
   return book.tasks.filter((t) => {
     if (t.completedAt || t.isEvent || (t.plannedAt && dayKey(t.plannedAt) === today)) return false;
     // A task in pieces with a piece today is already in today's list.
     if (hasPieces(book, t) && firstPieceDay(book, t) === today) return false;
-    return t.deadline ? dayKey(t.deadline) <= today : false;
-  }).map((t) => taskItem(t, book));
+    const due = t.deadline ?? projectDeadline(book, t);
+    return due ? dayKey(due) <= today : false;
+  }).map((t) => {
+    const fromProject = projectDeadline(book, t);
+    return fromProject ? { ...taskItem(t, book), deadline: dayKey(fromProject), projectDeadline: true } : taskItem(t, book);
+  });
 }
 
 /** ★ tasks still open and not due yet, nearest deadline first: kept together below today's plan in the app. */

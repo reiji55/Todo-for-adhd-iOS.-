@@ -252,3 +252,30 @@ public enum ProjectBook {
         }
     }
 }
+
+/// A project's deadline stands for its tasks that have none of their own. Nothing is written into the tasks:
+/// a task's own deadline always wins, changing the project's moves them all, and notifications go by a
+/// task's own deadline only, so a project does not set off a morning of reminders.
+public extension Notebook {
+    /// The deadline a task takes from its project: top-level tasks without their own (a piece goes by its
+    /// task), not events. Nil otherwise.
+    func projectDeadline(for task: TaskItem) -> Date? {
+        guard task.deadline == nil, task.parentID == nil, !task.isEvent,
+              let project = ProjectBook.project(named: task.project, in: self) else { return nil }
+        return project.deadline
+    }
+
+    /// The tasks as the board weighs them for what is due, upcoming and suggested.
+    var tasksWithProjectDeadlines: [TaskItem] {
+        let deadlines = Dictionary(projects.compactMap { project in project.deadline.map { (ProjectBook.key(project.name), $0) } },
+                                   uniquingKeysWith: min)
+        guard !deadlines.isEmpty else { return tasks }
+        return tasks.map { task in
+            guard task.deadline == nil, task.parentID == nil, !task.isEvent, !task.project.isEmpty,
+                  let due = deadlines[ProjectBook.key(task.project)] else { return task }
+            var copy = task
+            copy.deadline = due
+            return copy
+        }
+    }
+}

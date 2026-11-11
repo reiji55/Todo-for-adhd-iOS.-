@@ -18,6 +18,10 @@ struct TaskEditor: View {
     @State private var showDelete = false
     @State private var confirmDiscard = false
     @State private var guide: GuideRoute?
+    /// The project page opened from the name above the title.
+    @State private var openedProject: ProjectRoute?
+    /// A task opened from that project page, edited over this one.
+    @State private var otherTask: TaskItem?
     /// What the form showed when it opened, to tell whether anything was typed.
     private let initial: TaskItem
     private let initialPieces: [TaskItem]
@@ -32,6 +36,41 @@ struct TaskEditor: View {
     }
 
     private var isPiece: Bool { task.parentID != nil }
+
+    /// The project the task (or the task it is a piece of) belongs to, as it is being edited.
+    private var projectName: String {
+        let name = isPiece ? (task.parentID.flatMap { store.task($0) }?.project ?? task.project) : task.project
+        return name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The project's deadline, when the task would go by it.
+    private var projectDeadline: Date? {
+        guard task.deadline == nil, !isPiece, !task.isEvent else { return nil }
+        return ProjectBook.project(named: projectName, in: store.notebook)?.deadline
+    }
+
+    /// The project's name above the title, a little raised; a tap opens the project.
+    @ViewBuilder private var projectHeader: some View {
+        let key = ProjectBook.key(projectName)
+        if !key.isEmpty, store.projectEntry(key) != nil {
+            let color = ProjectColor.color(for: store.colorName(forProject: projectName)) ?? Palette.accent
+            Button { openedProject = ProjectRoute(key: key) } label: {
+                HStack(spacing: 6) {
+                    Circle().fill(color).frame(width: 8, height: 8)
+                    Text(projectName).lineLimit(1)
+                    Image(systemName: "chevron.right").font(.caption2.weight(.bold))
+                }
+                .font(.footnote.weight(.bold)).foregroundStyle(color)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(color.opacity(0.12), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .textCase(nil)
+            .accessibilityLabel("プロジェクト：\(projectName)")
+            .accessibilityHint("プロジェクトの詳細を開きます")
+            .padding(.bottom, 2)
+        }
+    }
     private var isWhole: Bool { !pieces.isEmpty }
 
     var body: some View {
@@ -60,6 +99,8 @@ struct TaskEditor: View {
                             .accessibilityHint("落とせないものの印です。時間割の下の「必須」にまとまり、候補で先に出ます")
                         }
                     }
+                } header: {
+                    projectHeader
                 } footer: {
                     if task.isMust && !isPiece { Text("★必須：落とせないものの印。今日の上段には出さず、時間割の下の「必須」にまとめます。締切の日が来たら上段に出ます。").onlyInDemo() }
                 }
@@ -85,7 +126,9 @@ struct TaskEditor: View {
                         }
                     }
                     if !task.isEvent && !isPiece {
-                        OptionalDateRow(title: "締切", date: $task.deadline)
+                        // Without its own, the task goes by its project's deadline; the row says which.
+                        OptionalDateRow(title: "締切", date: $task.deadline,
+                                        placeholder: projectDeadline.map { "プロジェクトの期限 \($0.shortDay)" } ?? "未定")
                     }
                 }
                 ListChecklistSection(task: task)
@@ -176,6 +219,10 @@ struct TaskEditor: View {
             // A swipe down must not silently drop what was typed.
             .interactiveDismissDisabled(changed)
             .sheet(item: $guide) { route in GuideSheet(cardID: route.id) }
+            .navigationDestination(item: $openedProject) { route in
+                ProjectPage(key: route.key) { otherTask = $0 }
+            }
+            .sheet(item: $otherTask) { TaskEditor(task: $0, original: store.task($0.id)) }
             .sheet(item: $timing) { ref in
                 PieceWhenSheet(piece: Binding(
                     get: { pieces.first { $0.id == ref.id } ?? TaskItem(title: "") },
@@ -187,6 +234,12 @@ struct TaskEditor: View {
                 task.milestoneID = MilestonePicker.fitting(task.milestoneID, project: project, in: store.notebook)
             }
             .onChange(of: task.plannedAt) { _, day in if day == nil { task.scheduledTime = "" } }
+            // Started from the project page opened here: the card is on 今日, so step aside (unless something
+            // typed here would be lost, then only the project page closes).
+            .onChange(of: store.taskStartRequest) { _, request in
+                guard request != nil, openedProject != nil else { return }
+                if changed { openedProject = nil } else { dismiss() }
+            }
         }
         .confirmationDialog("編集した内容を破棄しますか？", isPresented: $confirmDiscard, titleVisibility: .visible) {
             Button("破棄して閉じる", role: .destructive) { dismiss() }

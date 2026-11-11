@@ -124,4 +124,31 @@ final class ProjectTests: XCTestCase {
         XCTAssertEqual(book.projects, [])
         XCTAssertEqual(book.boardCards[0].project, "")
     }
+
+    func testAProjectDeadlineStandsForTasksWithoutTheirOwn() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let due = now.addingTimeInterval(3 * 86_400)
+        let project = Project(name: "来客準備", deadline: due)
+        let plain = TaskItem(title: "居間を片付ける", project: "来客準備")
+        let own = TaskItem(title: "布団を干す", deadline: now.addingTimeInterval(86_400), project: "来客準備")
+        let parent = TaskItem(title: "台所", project: "来客準備")
+        let piece = TaskItem(title: "シンク", project: "来客準備", parentID: parent.id)
+        let event = TaskItem(title: "到着", plannedAt: due, project: "来客準備", isEvent: true)
+        let other = TaskItem(title: "電話", project: "仕事")
+        let book = Notebook(tasks: [plain, own, parent, piece, event, other], projects: [project])
+        let weighed = Dictionary(uniqueKeysWithValues: book.tasksWithProjectDeadlines.map { ($0.id, $0.deadline) })
+        XCTAssertEqual(weighed[plain.id], due)
+        XCTAssertEqual(weighed[own.id], own.deadline, "a task's own deadline wins")
+        XCTAssertEqual(weighed[parent.id], due, "the task in pieces carries it; its pieces go by it")
+        XCTAssertEqual(weighed[piece.id], .some(nil))
+        XCTAssertEqual(weighed[event.id], .some(nil), "events have no deadline")
+        XCTAssertEqual(weighed[other.id], .some(nil))
+        XCTAssertEqual(book.projectDeadline(for: plain), due)
+        XCTAssertNil(book.projectDeadline(for: own))
+        XCTAssertNil(book.tasks.first { $0.id == plain.id }?.deadline, "nothing is written into the task")
+        // On the project's day the remaining tasks are due, through the board.
+        let board = TaskBoard()
+        XCTAssertFalse(board.obligations(book.tasksWithProjectDeadlines, now: now).contains { $0.id == plain.id })
+        XCTAssertTrue(board.obligations(book.tasksWithProjectDeadlines, now: due).contains { $0.id == plain.id })
+    }
 }

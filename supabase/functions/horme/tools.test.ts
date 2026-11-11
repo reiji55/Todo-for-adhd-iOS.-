@@ -306,3 +306,15 @@ test("lists: a plan made from a thing takes it into the history when done, and b
   await call(store, "update_list_item", { id: added.added[0], remove: true }, now);
   assert.equal(materialize(store.records).items.length, 0);
 });
+
+test("a task without its own deadline is due on its project's", async () => {
+  const store = memoryStore([]);
+  const now = new Date("2026-11-11T01:00:00Z");
+  const project = payload(await call(store, "set_project", { name: "来客準備", deadline: "2026-11-21" }, now));
+  await call(store, "add_tasks", { tasks: [{ title: "居間を片付ける", date: "anytime", project: "来客準備" },
+    { title: "布団を干す", date: "anytime", project: "来客準備", deadline: "2026-11-25" }] }, now);
+  assert.equal(payload(await call(store, "get_today", {}, now)).required.length, 0);
+  const due = payload(await call(store, "get_today", {}, new Date("2026-11-21T01:00:00Z"))).required;
+  assert.deepEqual(due.map((t: any) => [t.title, t.deadline, t.projectDeadline]), [["居間を片付ける", "2026-11-21", true]]);
+  assert.ok(project.added);
+});

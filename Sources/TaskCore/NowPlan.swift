@@ -69,7 +69,9 @@ public enum NowPlan {
             guard let slot = item.slot, slot.start <= minute, minute < slot.end else { continue }
             add(NowPick(item: item, kind: .inSlot, label: timeLabel(item), parentID: parentID(of: item, in: book), isMust: must(item)))
         }
-        for task in board.obligations(book.tasks, now: now) {
+        // A task without its own deadline goes by its project's.
+        let weighed = book.tasksWithProjectDeadlines
+        for task in board.obligations(weighed, now: now) {
             let label = obligationLabel(task, now: now, calendar: calendar)
             if book.hasChildren(task.id) {
                 // A task in pieces is done piece by piece; the next open piece stands for it.
@@ -79,7 +81,7 @@ public enum NowPlan {
                 add(NowPick(item: AgendaItem(task: task), kind: .obligation, label: label, isMust: task.isMust))
             }
         }
-        for candidate in board.candidates(book.tasks, energy: energy, now: now, limit: 50) where !waits(candidate.task) {
+        for candidate in board.candidates(weighed, energy: energy, now: now, limit: 50) where !waits(candidate.task) {
             add(NowPick(item: AgendaItem(task: candidate.task), kind: .candidate, label: candidate.label,
                         parentID: candidate.task.parentID, isMust: candidate.isMust))
         }
