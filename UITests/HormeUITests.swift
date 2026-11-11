@@ -106,16 +106,37 @@ final class HormeUITests: XCTestCase {
         return app.textFields[identifier].exists ? app.textFields[identifier] : app.textViews[identifier]
     }
 
+    /// The agreed compact card keeps progress below all task text and alternatives outside its frame.
+    private func assertCompactNowCard(in app: XCUIApplication, action: XCUIElement) {
+        let card = app.descendants(matching: .any).matching(identifier: "nowFocusCard").firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        let details = card.buttons["nowTaskDetails"]
+        let progress = card.descendants(matching: .any).matching(identifier: "nowChildProgress").firstMatch
+        let candidates = app.descendants(matching: .any).matching(identifier: "nowOtherCandidates").firstMatch
+        XCTAssertTrue(details.exists)
+        XCTAssertTrue(progress.exists)
+        XCTAssertTrue(candidates.exists)
+        XCTAssertGreaterThanOrEqual(progress.frame.minY, details.frame.maxY - 0.5)
+        XCTAssertLessThanOrEqual(progress.frame.maxY, action.frame.minY + 0.5)
+        XCTAssertGreaterThanOrEqual(candidates.frame.minY, card.frame.maxY - 0.5)
+        XCTAssertFalse(card.descendants(matching: .any).matching(identifier: "nowOtherCandidates").firstMatch.exists)
+        // Default text size on SE, with a project, memo and ten child tasks; never a product height cap.
+        XCTAssertLessThanOrEqual(card.frame.height, 280)
+        XCTAssertEqual(card.frame.width, app.frame.width - 32, accuracy: 1)
+    }
+
     func testInlineStartInterruptNoteRestartCompleteUndo() {
         let app = launch("task")
         let start = app.buttons["startNowItem"]
         XCTAssertTrue(start.waitForExistence(timeout: 30))
         reveal(start, in: app)
+        assertCompactNowCard(in: app, action: start)
         capture(app, "task-before-start-light")
         tapVisible(start, in: app)
         let interrupt = app.buttons["interruptTask"]
         XCTAssertTrue(interrupt.waitForExistence(timeout: 5))
         XCTAssertFalse(app.navigationBars["始める"].exists, "work stays inside the existing card")
+        assertCompactNowCard(in: app, action: interrupt)
         capture(app, "task-working-light")
         tapVisible(interrupt, in: app)
         let input = app.textFields["taskContinuationInput"]
@@ -354,11 +375,24 @@ final class HormeUITests: XCTestCase {
         XCTAssertTrue(dayFlow.waitForExistence(timeout: 30))
         let home = app.scrollViews.containing(.button, identifier: "openDayFlowTimetable").firstMatch
         reveal(dayFlow, in: app, scroll: home)
+        // Bring the bottom overview clear of the root tabs before capturing and dragging it.
+        home.swipeUp()
+        reveal(dayFlow, in: app, scroll: home)
+        guard let touch = visiblePoint(dayFlow, in: app, scroll: home) else {
+            XCTFail("No unobstructed timeline touch point")
+            return
+        }
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let frame = dayFlow.frame
+        let left = origin.withOffset(CGVector(dx: frame.minX + frame.width * 0.2, dy: touch.y))
+        let right = origin.withOffset(CGVector(dx: frame.minX + frame.width * 0.8, dy: touch.y))
         let before = dayFlow.screenshot().pngRepresentation
         capture(app, "restored-day-flow-before-horizontal-scroll")
-        dayFlow.swipeLeft()
+        right.press(forDuration: 0.02, thenDragTo: left)
         // At the end of the day the initial position can already be at the rightmost limit.
-        if dayFlow.screenshot().pngRepresentation == before { dayFlow.swipeRight() }
+        if dayFlow.screenshot().pngRepresentation == before {
+            left.press(forDuration: 0.02, thenDragTo: right)
+        }
         XCTAssertFalse(app.navigationBars["時間割"].exists, "horizontal scrolling must stay on Today")
         XCTAssertNotEqual(dayFlow.screenshot().pngRepresentation, before, "the horizontal time axis must visibly move")
         capture(app, "restored-day-flow-after-horizontal-scroll")
