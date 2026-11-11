@@ -37,7 +37,7 @@ struct RootView: View {
     /// 今日 sits in the middle, where the thumb rests; the app always opens on it.
     enum Tab: Int, CaseIterable {
         case all, week, today, ideas, board
-        var title: String { ["すべて", "週", "今日", "アイデア", "ボード"][rawValue] }
+        var title: String { ["すべて", "週", "今日", "ストック", "ボード"][rawValue] }
         var icon: String { ["square.3.layers.3d", "calendar", "sun.max", "lightbulb", "rectangle.split.2x2"][rawValue] }
     }
     @EnvironmentObject private var store: TaskStore
@@ -209,7 +209,7 @@ struct RootView: View {
                 .floatingAdd { quickAdd = QuickAddRoute(day: nil, kind: $0) }
         case .ideas:
             // Ideas and the board have their own way to add, so the ⊕ would only confuse there.
-            IdeasView(onEditTask: edit, onSort: { sorting = true })
+            StockView(onEditTask: edit, onSort: { sorting = true })
         case .board:
             GuideBoardView(onEdit: edit)
         }

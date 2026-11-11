@@ -1,8 +1,8 @@
 // Horme's MCP tools. Each call reads the records, writes only the fields it changes (stamped as "claude"),
 // and lets the database merge them, so the app's own edits made at the same time survive.
 
-import { addDays, agenda, dayKey, dayToISO, isAlive, materialize, newID, nowISO, piecesOf, taskItem, todayKey, Writer } from "./records.ts";
-import type { Book, Milestone, Project, SyncRecord, Task } from "./records.ts";
+import { addDays, agenda, dayKey, dayToISO, isAlive, listProgress, materialize, newID, nowISO, piecesOf, taskItem, todayKey, Writer } from "./records.ts";
+import type { Book, ListItem, Milestone, Project, StockList, SyncRecord, Task } from "./records.ts";
 
 export interface RecordStore {
   load(): Promise<SyncRecord[]>;
@@ -90,6 +90,59 @@ function settle(writer: Writer, book: Book, parentID: string, done: Map<string, 
   const was = done.get(parent.id.toUpperCase()) ?? !!parent.completedAt;
   if (all && !was) writer.set(`task_${parent.id}`, { completedAt: nowISO(now) });
   if (!all && was) writer.set(`task_${parent.id}`, { completedAt: null });
+}
+
+function findList(book: Book, id: string): StockList {
+  const list = book.lists.find((l) => sameID(l.id, id));
+  if (!list) throw new Error(`リストが見つかりません: ${id}。先に get_lists で id を確かめてください。`);
+  return list;
+}
+
+function findItem(book: Book, id: string): ListItem {
+  const item = book.items.find((i) => sameID(i.id, id));
+  if (!item) throw new Error(`リストの項目が見つかりません: ${id}。先に get_lists で id を確かめてください。`);
+  return item;
+}
+
+/** Mirrors Notebook.setItemDone in Lists.swift. A trip made from the whole list is done when the last open
+ *  thing is checked off, and opens again if that check is undone. `doneNow` carries this batch's checks. */
+function checkItem(writer: Writer, book: Book, item: ListItem, done: boolean, now: Date, doneNow: Map<string, string | null>) {
+  const previous = doneNow.has(item.id.toUpperCase()) ? doneNow.get(item.id.toUpperCase()) : item.doneAt ?? null;
+  if (!!previous === done) return;
+  const stamp = done ? nowISO(now) : null;
+  writer.set(`item_${item.id}`, { doneAt: stamp });
+  doneNow.set(item.id.toUpperCase(), stamp);
+  const trips = book.tasks.filter((t) => sameID(t.listID, item.listID));
+  if (done) {
+    const open = book.items.some((i) => sameID(i.listID, item.listID)
+      && !(doneNow.has(i.id.toUpperCase()) ? doneNow.get(i.id.toUpperCase()) : i.doneAt));
+    if (open) return;
+    for (const t of trips) if (!t.completedAt && t.createdAt <= stamp!) writer.set(`task_${t.id}`, { completedAt: stamp });
+  } else if (previous) {
+    for (const t of trips) if (t.completedAt === previous) writer.set(`task_${t.id}`, { completedAt: null });
+  }
+}
+
+function listView(book: Book, list: StockList, history: boolean) {
+  const mine = book.items.filter((i) => sameID(i.listID, list.id));
+  const plan = (item: ListItem) => {
+    const t = book.tasks.filter((t) => sameID(t.listItemID, item.id) && !t.completedAt)
+      .sort((a, b) => (a.plannedAt ?? "9999").localeCompare(b.plannedAt ?? "9999"))[0];
+    return t ? { id: t.id, kind: t.isEvent ? "event" : "task", date: t.plannedAt ? dayKey(t.plannedAt) : "anytime" } : undefined;
+  };
+  const brief = (item: ListItem) => ({
+    id: item.id, title: item.title, memo: item.memo || undefined, link: item.link || undefined, place: item.place || undefined,
+    plan: plan(item),
+  });
+  const trip = book.tasks.find((t) => sameID(t.listID, list.id) && !t.completedAt);
+  const done = mine.filter((i) => i.doneAt).sort((a, b) => b.doneAt!.localeCompare(a.doneAt!));
+  return {
+    id: list.id, name: list.name,
+    open: mine.filter((i) => !i.doneAt).map(brief),
+    trip: trip ? { id: trip.id, date: trip.plannedAt ? dayKey(trip.plannedAt) : "anytime", ...listProgress(book, trip) } : undefined,
+    doneCount: done.length,
+    done: history ? done.slice(0, 30).map((i) => ({ id: i.id, title: i.title, doneDay: dayKey(i.doneAt!) })) : undefined,
+  };
 }
 
 function day(book: Book, key: string) {
@@ -188,6 +241,8 @@ export const tools: Tool[] = [
               memo: { type: "string", description: "本人用のメモ" },
               handoff: { type: "string", description: "Claude への引き継ぎ" },
               parent: { type: "string", description: "子タスクにするときの親タスクの id" },
+              from_item: { type: "string", description: "リストの項目から予定にするときのその項目の id。予定が済むと項目は履歴に移る" },
+              from_list: { type: "string", description: "リスト全体をチェックしながら進めるタスク（買い物など）にするときのリストの id。全部チェックすると完了（タスクのみ）" },
             },
             required: ["title"],
           },
@@ -217,14 +272,19 @@ export const tools: Tool[] = [
         validDate(date); validTime(time);
         if (isEvent && date === "anytime") throw new Error("イベントには日付が必要です。");
         if (input.deadline) validDate(input.deadline);
+        const item = input.from_item ? findItem(book, input.from_item) : undefined;
+        const list = input.from_list ? findList(book, input.from_list) : undefined;
+        if (list && (isEvent || parent)) throw new Error("リスト全体からはタスク（子タスクでないもの）だけを作れます。");
         const id = newID();
         const values: Args = {
           alive: true, id, title, scheduledTime: date === "anytime" ? "" : String(time).trim(),
           isMust: isEvent || parent ? false : !!input.must, isEvent, effort: "medium",
-          project: parent ? parent.project ?? "" : input.project ?? "", memo: input.memo ?? "",
+          project: parent ? parent.project ?? "" : input.project ?? "", memo: input.memo ?? item?.memo ?? "",
           handoff: input.handoff ?? "", resumeNote: "", createdAt: nowISO(now), notify: true,
         };
         if (date !== "anytime") values.plannedAt = dayToISO(date);
+        if (item) values.listItemID = item.id;
+        if (list) values.listID = list.id;
         if (!isEvent && !parent && input.deadline && input.deadline !== "anytime") values.deadline = dayToISO(input.deadline);
         if (parent) {
           values.parentID = parent.id;
@@ -326,6 +386,14 @@ export const tools: Tool[] = [
         if (task.parentID) parents.add(task.parentID);
       }
       for (const parent of parents) settle(writer, book, parent, state, new Set(), now);
+      // Mirrors Notebook.settleListItems: a thing a plan was made from follows it into the list's history.
+      for (const [key, isDone] of state) {
+        const task = book.tasks.find((t) => t.id.toUpperCase() === key);
+        const item = task?.listItemID ? book.items.find((i) => sameID(i.id, task.listItemID!)) : undefined;
+        if (!task || !item || isDone === !!task.completedAt) continue;
+        if (isDone && !item.doneAt) writer.set(`item_${item.id}`, { doneAt: nowISO(now) });
+        if (!isDone && item.doneAt && item.doneAt === task.completedAt) writer.set(`item_${item.id}`, { doneAt: null });
+      }
       return { result: { updated: ids.length }, changes: writer.changes };
     },
   },
@@ -591,6 +659,114 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: "get_lists",
+    title: "リストを読む",
+    description:
+      "ストックのリスト（行きたいところ・読みたい本・買うものなど、予定ではない具体的なもののストック）を読む。" +
+      "open にまだの項目、plan にその項目から作った予定、trip にリスト全体から作ったタスク（買い物など）とチェックの進み具合が入る。" +
+      "list に id を渡すと、そのリストの済んだ項目（履歴）も入る。",
+    inputSchema: { type: "object", properties: { list: { type: "string", description: "履歴まで読みたいリストの id" } } },
+    run: ({ list }, { book }) => ({
+      result: { lists: book.lists.map((l) => listView(book, l, !!list && sameID(l.id, list))) },
+    }),
+  },
+  {
+    name: "add_list_items",
+    title: "リストに項目を足す",
+    description:
+      "リストに項目を足す。list にリストの id、または new_list に新しいリストの名前（同じ名前のリストがあればそこに足す）。" +
+      "項目は title（必須）と memo・link（URL）・place（店名や住所）。同じものを二重に足さないよう、先に get_lists で確認する。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        list: { type: "string" }, new_list: { type: "string" },
+        items: {
+          type: "array", minItems: 1,
+          items: {
+            type: "object",
+            properties: { title: { type: "string" }, memo: { type: "string" }, link: { type: "string" }, place: { type: "string" } },
+            required: ["title"],
+          },
+        },
+      },
+      required: ["items"],
+    },
+    run: ({ list, new_list, items }, { records, book, now }) => {
+      const writer = new Writer(records, "claude", now.getTime());
+      let target: StockList | undefined = list ? findList(book, list) : undefined;
+      let created = false;
+      if (!target) {
+        const name = String(new_list ?? "").trim();
+        if (!name) throw new Error("list（リストの id）か new_list（新しいリストの名前）を渡してください。");
+        target = book.lists.find((l) => sameKey(l.name, name));
+        if (!target) {
+          target = { id: newID(), name, createdAt: nowISO(now) };
+          writer.set(`list_${target.id}`, { alive: true, ...target });
+          created = true;
+        }
+      }
+      const added: string[] = [];
+      (items as Args[]).forEach((input, index) => {
+        const title = String(input.title ?? "").trim();
+        if (!title) throw new Error("title が空の項目があります。");
+        const id = newID();
+        // A second apart keeps them in the order given (the app reads whole seconds).
+        writer.set(`item_${id}`, {
+          alive: true, id, listID: target!.id, title, memo: String(input.memo ?? ""), link: String(input.link ?? "").trim(),
+          place: String(input.place ?? "").trim(), createdAt: nowISO(new Date(now.getTime() + index * 1000)),
+        });
+        added.push(id);
+      });
+      return { result: { list: target.id, createdList: created || undefined, added }, changes: writer.changes };
+    },
+  },
+  {
+    name: "update_list_item",
+    title: "リストの項目を直す・消す",
+    description:
+      "リストの項目の名前・メモ・リンク・場所を書き換える。渡した欄だけ変わる。remove=true で項目を消す（本人に頼まれたときだけ。" +
+      "済んだものは消さずに check_list_items で済みにする）。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" }, title: { type: "string" }, memo: { type: "string" }, link: { type: "string" }, place: { type: "string" },
+        remove: { type: "boolean" },
+      },
+      required: ["id"],
+    },
+    run: (args, { records, book, now }) => {
+      const item = findItem(book, args.id);
+      const writer = new Writer(records, "claude", now.getTime());
+      if (args.remove) {
+        writer.set(`item_${item.id}`, { alive: false });
+        return { result: { removed: item.id }, changes: writer.changes };
+      }
+      const values: Args = {};
+      if (args.title !== undefined) {
+        if (!String(args.title).trim()) throw new Error("名前は空にできません。");
+        values.title = String(args.title).trim();
+      }
+      for (const key of ["memo", "link", "place"]) if (args[key] !== undefined) values[key] = String(args[key]).trim();
+      if (!Object.keys(values).length) return { result: { changed: false } };
+      writer.set(`item_${item.id}`, values);
+      return { result: { changed: true, id: item.id }, changes: writer.changes };
+    },
+  },
+  {
+    name: "check_list_items",
+    title: "リストの項目を済みにする・戻す",
+    description:
+      "リストの項目を済み（done=true、履歴に移る）にするか、リストに戻す。複数まとめて渡せる。" +
+      "リスト全体から作ったタスク（買い物など）は、まだの項目がなくなると完了になる。",
+    inputSchema: { type: "object", properties: { ids: IDS, done: { type: "boolean" } }, required: ["ids", "done"] },
+    run: ({ ids, done }, { records, book, now }) => {
+      const writer = new Writer(records, "claude", now.getTime());
+      const doneNow = new Map<string, string | null>();
+      for (const id of ids as string[]) checkItem(writer, book, findItem(book, id), !!done, now, doneNow);
+      return { result: { updated: ids.length }, changes: writer.changes };
+    },
+  },
+  {
     name: "add_idea",
     title: "アイデアを書き留める",
     description: "アイデア（まだタスクにしない思いつき）を足す。",
@@ -608,11 +784,12 @@ export const tools: Tool[] = [
 
 export const instructions =
   "Horme（本人のタスク管理アプリ）の中身を読み書きする。種類はタスク（その日にやる・単発で終わる）、イベント（その日にある予定。済んだら印を付けられるが、やり残しにはならない）、" +
-  "ルーティン（くり返し）、アイデア（まだ決めていない思いつき）。ほかにボード（やり方の書き置き）と、プロジェクト（到達点・期限・途中の到達点を持つ大きな枠）がある。" +
+  "ルーティン（くり返し）、アイデア（まだ決めていない思いつき）、リスト（行きたいところ・読みたい本・買うものなど、予定ではない具体的なもののストック。" +
+  "予定にするときは add_tasks の from_item / from_list でつなぐ）。ほかにボード（やり方の書き置き）と、プロジェクト（到達点・期限・途中の到達点を持つ大きな枠）がある。" +
   "大きなタスクは子タスクに分かれていることがある（pieces / parent）。日付と時間は子タスクが持ち、親タスクは締切と必須だけを持つ。子タスクがすべて済むと親も完了になる。" +
   "日付は日本時間。書き換える前に get_today / get_days で id と現状を確かめる。" +
   "handoff は本人が「Claude にやってほしい」と残した依頼で、対応したら memo に結果を書いて handoff を空にする。" +
-  "変更はアプリと iCloud に数十秒以内に反映される。タスク・イベント・ルーティン・プロジェクトの追加や変更は本人に頼まれたときに行う。頼まれていないのに必須にしたり消したりはしない。";
+  "変更はアプリと iCloud に数十秒以内に反映される。タスク・イベント・ルーティン・プロジェクト・リストの追加や変更は本人に頼まれたときに行う。頼まれていないのに必須にしたり消したりはしない。";
 
 /** Minimal MCP over HTTP (JSON responses, no sessions), enough for Claude's custom connectors. */
 export async function handleMcp(message: any, store: RecordStore, now = new Date()): Promise<any | null> {

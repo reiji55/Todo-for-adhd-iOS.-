@@ -147,6 +147,11 @@ struct AgendaRow: View {
                             Text("締切 \(deadline.shortDay)").font(.caption2.weight(.semibold)).foregroundStyle(Palette.must)
                         }
                         if !item.project.isEmpty { ProjectTag(name: item.project) }
+                        if let task, let progress = store.notebook.listProgress(of: task) {
+                            Label("\(progress.done)/\(progress.total)", systemImage: "checklist")
+                                .font(.caption2.weight(.semibold)).monospacedDigit().foregroundStyle(Palette.accent)
+                                .accessibilityLabel("リスト \(progress.done)/\(progress.total)")
+                        }
                     }
                     // A piece of a bigger task says which, and how far that task has come.
                     if let parent = task?.parentID.flatMap({ store.task($0) }) {

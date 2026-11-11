@@ -43,7 +43,7 @@ final class HormeUITests: XCTestCase {
         for bar in app.navigationBars.allElementsBoundByIndex where bar.isHittable {
             viewport.origin.y = max(viewport.minY, bar.frame.maxY)
         }
-        let tabNames = ["すべて", "週", "アイデア", "ボード"]
+        let tabNames = ["すべて", "週", "ストック", "ボード"]
         let regularTabs = app.buttons.matching(NSPredicate(format: "label IN %@", tabNames))
             .allElementsBoundByIndex.filter {
             $0.isHittable && $0.frame.height >= 40
@@ -400,7 +400,7 @@ final class HormeUITests: XCTestCase {
         // Open Today first so the existing Debug preview closes this day before moving to Ideas.
         let app = launch("idea", arguments: ["-uiDayClosed", "-uiOpenFirstIdea"])
         XCTAssertTrue(app.buttons["再開する"].waitForExistence(timeout: 30))
-        let ideasTab = app.buttons.matching(NSPredicate(format: "label == %@", "アイデア")).firstMatch
+        let ideasTab = app.buttons.matching(NSPredicate(format: "label == %@", "ストック")).firstMatch
         XCTAssertTrue(ideasTab.exists)
         ideasTab.tap()
         let convert = app.buttons["convertIdeaToTask"]

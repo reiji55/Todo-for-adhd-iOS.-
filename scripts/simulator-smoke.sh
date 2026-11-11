@@ -175,7 +175,25 @@ ideas = [
     idea('TOEICの単語、通勤中にアプリで回せないか', 4),
     idea('誕生日プレゼント、イヤホンケースはどうか', 16),
 ]
-path.write_text(json.dumps(dict(version=1, tasks=tasks, ideas=ideas, boardCards=cards, routines=routines, projects=projects), ensure_ascii=False))
+# Lists: a place to go (already planned), and groceries with a trip made from them.
+L_GO = str(uuid.uuid4()).upper()
+L_SHOP = str(uuid.uuid4()).upper()
+lists = [dict(id=L_GO, name='行きたいところ', createdAt=date(now - timedelta(days=10))),
+         dict(id=L_SHOP, name='スーパー', createdAt=date(now - timedelta(days=9)))]
+def item(list_id, title, ago, **changes):
+    value = dict(id=str(uuid.uuid4()).upper(), listID=list_id, title=title, memo='', link='', place='',
+                 createdAt=date(now - timedelta(days=ago)))
+    value.update(changes)
+    return value
+museum = item(L_GO, '国立西洋美術館', 9, place='上野公園', link='https://www.nmwa.go.jp/')
+list_items = [museum, item(L_GO, '海の見えるカフェ', 5, memo='週末の朝が空いている'), item(L_GO, '古書店街', 3),
+              item(L_SHOP, '卵', 1), item(L_SHOP, '牛乳', 1), item(L_SHOP, '食パン', 1),
+              item(L_SHOP, '洗剤', 4, doneAt=date(now - timedelta(days=3)))]
+tasks += [task('国立西洋美術館', plannedAt=date(now + timedelta(days=3)), scheduledTime='10:00-12:00', isEvent=True,
+               listItemID=museum['id']),
+          task('買い物：スーパー', plannedAt=date(now + timedelta(days=1)), scheduledTime='17:30-18:00', listID=L_SHOP)]
+path.write_text(json.dumps(dict(version=1, tasks=tasks, ideas=ideas, boardCards=cards, routines=routines, projects=projects,
+                                lists=lists, listItems=list_items), ensure_ascii=False))
 PY
 launch -uiNoPrompt | tee "$RESULT_DIR/launch.txt"
 sleep 5
@@ -255,6 +273,12 @@ shot board
 launch -uiTab 4 -uiOpenFirstCard >/dev/null
 sleep 4
 shot board-card
+launch -uiTab 3 -uiStockLists >/dev/null
+sleep 4
+shot stock-lists
+launch -uiTab 3 -uiStockLists -uiOpenFirstList >/dev/null
+sleep 4
+shot list-page
 launch -uiTab 4 -uiOpenFirstProject >/dev/null
 sleep 5
 shot project

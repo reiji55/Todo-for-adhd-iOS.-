@@ -88,7 +88,9 @@ struct TaskEditor: View {
                         OptionalDateRow(title: "締切", date: $task.deadline)
                     }
                 }
-                if !task.isEvent && !isPiece { piecesSection }
+                ListChecklistSection(task: task)
+                ListSourceSection(task: task)
+                if !task.isEvent && !isPiece && task.listID == nil { piecesSection }
                 if (!isWhole && task.plannedAt != nil && task.slot != nil) || (!task.isEvent && task.deadline != nil) {
                     Section {
                         Toggle("通知", isOn: $task.notify)

@@ -496,6 +496,8 @@ struct IdeaDetailSheet: View {
     @State private var planning: IdeaPlan?
     @State private var projecting: Idea?
     @State private var confirmDelete = false
+    @State private var namingList = false
+    @State private var listName = ""
     @FocusState private var noteFocused: Bool
 
     var body: some View {
@@ -610,10 +612,30 @@ struct IdeaDetailSheet: View {
                 }
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("convertIdeaToProject")
+                // Something concrete to keep (a place, a book): onto a list, where it waits without cooling.
+                Menu {
+                    ForEach(store.notebook.lists) { list in
+                        Button(list.name) { if store.moveIdea(idea.id, toList: list.id) { dismiss() } }
+                    }
+                    Button("新しいリスト…", systemImage: "plus") { namingList = true }
+                } label: {
+                    Label("リストに移す", systemImage: "list.bullet").font(.subheadline.weight(.bold))
+                        .frame(maxWidth: .infinity).padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("moveIdeaToList")
             }
             .padding(20)
         }
         .scrollDismissesKeyboard(.interactively)
+        .alert("新しいリスト", isPresented: $namingList) {
+            TextField("名前（例：読みたい本）", text: $listName)
+            Button("追加") {
+                if let list = store.addList(listName), store.moveIdea(idea.id, toList: list) { dismiss() }
+                listName = ""
+            }
+            Button("キャンセル", role: .cancel) { listName = "" }
+        }
         .confirmationDialog("この付箋をはがしますか？", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("はがす", role: .destructive) {
                 store.deleteIdea(idea.id)

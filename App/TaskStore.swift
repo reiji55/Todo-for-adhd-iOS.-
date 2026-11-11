@@ -582,6 +582,92 @@ final class TaskStore: ObservableObject {
         }
     }
 
+    // MARK: Lists
+
+    func list(_ id: UUID) -> StockList? { notebook.list(id) }
+
+    func listItem(_ id: UUID) -> ListItem? { notebook.listItem(id) }
+
+    @discardableResult
+    func addList(_ name: String) -> UUID? {
+        let text = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        let list = StockList(name: text)
+        return commit({ $0.lists.append(list) }) ? list.id : nil
+    }
+
+    func renameList(_ id: UUID, to name: String) {
+        let text = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        commit { book in
+            if let i = book.lists.firstIndex(where: { $0.id == id }) { book.lists[i].name = text }
+        }
+    }
+
+    func deleteList(_ id: UUID) {
+        guard let list = list(id) else { return }
+        if commit({ $0.removeList(id) }) { offerUndo("リスト「\(list.name)」を削除しました") }
+    }
+
+    @discardableResult
+    func duplicateList(_ id: UUID) -> UUID? {
+        guard let list = list(id) else { return nil }
+        var copy: UUID?
+        let saved = commit { copy = $0.duplicateList(id, name: "\(list.name)のコピー") }
+        return saved ? copy : nil
+    }
+
+    @discardableResult
+    func addItem(_ title: String, to listID: UUID) -> Bool {
+        let text = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return false }
+        guard list(listID) != nil else { error = "このリストは別の端末で削除されました。"; return false }
+        return commit { $0.listItems.append(ListItem(listID: listID, title: text)) }
+    }
+
+    /// Saves the text of a thing on a list, leaving whether it is done as it now is.
+    func saveItem(_ item: ListItem) -> Bool {
+        let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return false }
+        guard listItem(item.id) != nil else {
+            error = "この項目は別の端末で削除されました。入力した内容をコピーしてから閉じてください。"
+            return false
+        }
+        return commit { book in
+            guard let i = book.listItems.firstIndex(where: { $0.id == item.id }) else { return }
+            book.listItems[i].title = title
+            book.listItems[i].memo = item.memo
+            book.listItems[i].link = item.link.trimmingCharacters(in: .whitespacesAndNewlines)
+            book.listItems[i].place = item.place.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    /// Checks a thing off its list or puts it back. A trip made from the list that this finishes is
+    /// struck through in place, like any task just done.
+    func setItemDone(_ id: UUID, _ done: Bool) {
+        let before = notebook
+        guard commit({ $0.setItemDone(id, done) }) else { return }
+        for task in notebook.tasks where task.isComplete && before.tasks.first(where: { $0.id == task.id })?.isComplete == false {
+            recentlyDone.insert("task-\(task.id.uuidString)")
+        }
+    }
+
+    func deleteItem(_ id: UUID) {
+        guard let item = listItem(id) else { return }
+        if commit({ $0.listItems.removeAll { $0.id == id } }) { offerUndo("「\(item.title)」を削除しました") }
+    }
+
+    func moveIdea(_ ideaID: UUID, toList listID: UUID) -> Bool {
+        guard idea(ideaID) != nil else {
+            error = "このアイデアはすでに削除またはタスク化されています。最新の一覧を確認してください。"
+            return false
+        }
+        var moved = false
+        let saved = commit { moved = $0.moveIdea(ideaID, toList: listID) }
+        if saved && moved, let list = list(listID) { offerUndo("リスト「\(list.name)」に移しました") }
+        return saved && moved
+    }
+
     func card(_ id: UUID) -> BoardCard? { notebook.boardCards.first { $0.id == id } }
 
     /// A task's or routine's cards are those of its project.

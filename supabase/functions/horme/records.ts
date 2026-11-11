@@ -18,6 +18,17 @@ export type Task = {
   parentID?: string | null;
   /** Order among the pieces of one parent. */
   rank?: number;
+  /** Made from a whole list (a shopping trip): done when nothing on the list is left open. */
+  listID?: string | null;
+  /** Made from one thing on a list: when done, that thing moves to the list's history. */
+  listItemID?: string | null;
+};
+/** A list of concrete things kept for later (places, books, groceries). Not a plan. */
+export type StockList = { id: string; name: string; createdAt: string };
+/** One thing on a list. Each is its own record (`item_<id>`). Done ones are the list's history. */
+export type ListItem = {
+  id: string; listID: string; title: string; memo: string; link: string; place: string; createdAt: string;
+  doneAt?: string | null;
 };
 export type Idea = { id: string; text: string; createdAt: string };
 export type Card = { id: string; title: string; purpose: string; goal: string; detail: string; createdAt: string; rank: number };
@@ -36,7 +47,9 @@ export type Project = {
   id: string; name: string; goal: string; deadline?: string | null; overview: string; origin: string; createdAt: string;
   milestones: Milestone[];
 };
-export type Book = { tasks: Task[]; ideas: Idea[]; cards: Card[]; routines: Routine[]; projects: Project[] };
+export type Book = {
+  tasks: Task[]; ideas: Idea[]; cards: Card[]; routines: Routine[]; projects: Project[]; lists: StockList[]; items: ListItem[];
+};
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -58,7 +71,7 @@ export function decodeValue(value: string | undefined): unknown {
 export const isAlive = (r: SyncRecord) => decodeValue(r.fields.alive?.value) === true;
 
 export function materialize(records: SyncRecord[]): Book {
-  const book: Book = { tasks: [], ideas: [], cards: [], routines: [], projects: [] };
+  const book: Book = { tasks: [], ideas: [], cards: [], routines: [], projects: [], lists: [], items: [] };
   for (const record of records) {
     if (!isAlive(record)) continue;
     const plain: Record<string, unknown> = {};
@@ -78,6 +91,10 @@ export function materialize(records: SyncRecord[]): Book {
       book.tasks.push({ ...(plain as Task), steps: steps.map(({ rank: _, ...s }) => s) });
     } else if (record.id.startsWith("idea_")) {
       book.ideas.push(plain as Idea);
+    } else if (record.id.startsWith("list_")) {
+      book.lists.push(plain as StockList);
+    } else if (record.id.startsWith("item_")) {
+      book.items.push({ memo: "", link: "", place: "", ...(plain as ListItem) });
     } else if (record.id.startsWith("card_")) {
       book.cards.push({ purpose: "", goal: "", detail: "", rank: 0, ...(plain as Card) });
     } else if (record.id.startsWith("project_")) {
@@ -105,6 +122,8 @@ export function materialize(records: SyncRecord[]): Book {
   }
   book.tasks.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   book.cards.sort((a, b) => a.rank - b.rank || a.id.localeCompare(b.id));
+  book.lists.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  book.items.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   return book;
 }
 
@@ -157,9 +176,22 @@ export type AgendaItem = {
   parent?: { id: string; title: string };
   /** For a task in pieces: its pieces, in order. */
   pieces?: Piece[];
+  /** For a task made from a whole list: the list and how much of it is checked off since. */
+  list?: { id: string; name: string; done: number; total: number };
+  /** For a task or event made from one thing on a list: that thing. */
+  fromItem?: { id: string; title: string; list: string };
 };
 
 const same = (a: string | null | undefined, b: string) => !!a && a.toUpperCase() === b.toUpperCase();
+
+/** Mirrors Notebook.listProgress in Lists.swift: checked off since the task was made, of those plus what is open. */
+export function listProgress(book: Book, t: Task): { done: number; total: number } | undefined {
+  if (!t.listID || !book.lists.some((l) => same(l.id, t.listID!))) return undefined;
+  const mine = book.items.filter((i) => same(i.listID, t.listID!));
+  const open = mine.filter((i) => !i.doneAt).length;
+  const done = mine.filter((i) => i.doneAt && i.doneAt >= t.createdAt).length;
+  return { done, total: done + open };
+}
 
 /** The pieces of a task, in order. */
 export function piecesOf(book: Book, id: string): Task[] {
@@ -200,6 +232,16 @@ export function taskItem(t: Task, book?: Book): AgendaItem {
     project: t.project ?? "", deadline: t.deadline ? dayKey(t.deadline) : undefined, nextStep: next,
     resumeNote: t.resumeNote || undefined, memo: t.memo || undefined, handoff: t.handoff || undefined,
     parent: parent ? { id: parent.id, title: parent.title } : undefined,
+    list: book && t.listID ? (() => {
+      const list = book.lists.find((l) => same(l.id, t.listID!));
+      const progress = listProgress(book, t);
+      return list && progress ? { id: list.id, name: list.name, ...progress } : undefined;
+    })() : undefined,
+    fromItem: book && t.listItemID ? (() => {
+      const item = book.items.find((i) => same(i.id, t.listItemID!));
+      const list = item && book.lists.find((l) => same(l.id, item.listID));
+      return item ? { id: item.id, title: item.title, list: list?.name ?? "" } : undefined;
+    })() : undefined,
     pieces: pieces.length ? pieces.map((p) => ({
       id: p.id, title: p.title, done: !!p.completedAt, date: p.plannedAt ? dayKey(p.plannedAt) : "anytime",
       time: p.scheduledTime || undefined,

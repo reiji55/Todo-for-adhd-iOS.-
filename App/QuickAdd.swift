@@ -44,12 +44,20 @@ struct QuickAddSheet: View {
     @State private var details: TaskItem?
     @State private var pendingID: UUID?
     @State private var detent: PresentationDetent = .medium
+    /// The thing on a list this plans; it moves to the list's history when the plan is done.
+    @State private var source: ListItem?
+    /// The whole list this plans (a shopping trip): the task shows the list to check off.
+    @State private var wholeList: StockList?
+    @State private var picking = false
     @FocusState private var focused: Bool
 
-    init(day: Date? = nil, isEvent: Bool = false) {
+    init(day: Date? = nil, isEvent: Bool = false, item: ListItem? = nil, list: StockList? = nil) {
         _isEvent = State(initialValue: isEvent)
         // An event always happens on some day; a task can wait without one.
         _day = State(initialValue: day.map { Calendar.current.startOfDay(for: $0) } ?? (isEvent ? Calendar.current.startOfDay(for: Date()) : nil))
+        _source = State(initialValue: item)
+        _wholeList = State(initialValue: list)
+        _title = State(initialValue: item?.title ?? list?.name ?? "")
     }
 
     private var trimmed: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -69,6 +77,7 @@ struct QuickAddSheet: View {
                         TimeDialRow(slot: $slot, placeholder: isEvent ? "終日" : "未定", onExpand: { detent = .large })
                     }
                 }
+                listSection
                 Section {
                     Button("くわしく書く", systemImage: "square.and.pencil") { details = makeTask() }
                         .font(.subheadline)
@@ -90,7 +99,13 @@ struct QuickAddSheet: View {
                 if event && day == nil { day = Calendar.current.startOfDay(for: Date()) }
             }
             .onChange(of: day) { _, day in if day == nil { slot = nil } }
-            .onAppear { focused = true }
+            .onAppear { focused = source == nil && wholeList == nil }
+            .sheet(isPresented: $picking) {
+                ListItemPicker { item in
+                    source = item
+                    title = item.title
+                }
+            }
             // Saved from the full editor: that was the adding, so this sheet closes too.
             .sheet(item: $details, onDismiss: {
                 if let id = pendingID, store.task(id) != nil { dismiss() }
@@ -103,9 +118,40 @@ struct QuickAddSheet: View {
         .storeErrorAlert()
     }
 
+    /// Where this comes from, when it is planned from a list; otherwise a way to pick a thing from one.
+    @ViewBuilder private var listSection: some View {
+        if let wholeList {
+            Section {
+                Label("リスト「\(wholeList.name)」をチェックしながら進めます", systemImage: "checklist")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+        } else if let source {
+            Section {
+                HStack {
+                    Label("リスト「\(store.list(source.listID)?.name ?? "")」から", systemImage: "list.bullet")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    Spacer()
+                    Button { self.source = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                        .buttonStyle(.borderless).accessibilityLabel("リストとのつながりを外す")
+                }
+            }
+        } else if store.notebook.listItems.contains(where: { !$0.isDone }) {
+            Section {
+                Button("リストから選ぶ", systemImage: "list.bullet") { picking = true }
+                    .font(.subheadline)
+                    .accessibilityIdentifier("pickFromList")
+            }
+        }
+    }
+
     private func makeTask() -> TaskItem {
         var task = TaskItem(title: trimmed, plannedAt: day, isEvent: isEvent)
         if day != nil { task.slot = slot }
+        if let source {
+            task.listItemID = source.id
+            task.memo = source.memo
+        }
+        if let wholeList, !isEvent { task.listID = wholeList.id }
         return task
     }
 

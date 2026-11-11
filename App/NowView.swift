@@ -590,6 +590,7 @@ private struct NowCard: View {
         if pick.isMust && parent == nil { parts.append("★必須") }
         if !pick.label.isEmpty { parts.append(pick.label) }
         if pick.item.isRoutine || pick.item.isEvent, !pick.item.project.isEmpty { parts.append(pick.item.project) }
+        if let task, let progress = store.notebook.listProgress(of: task) { parts.append("リスト \(progress.done)/\(progress.total)") }
         return parts
     }
 

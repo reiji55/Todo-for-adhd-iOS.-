@@ -245,3 +245,64 @@ test("projects: read goal and checkpoints, make and change them, rename carries 
   const dup: any = await call(store, "set_project", { name: "英語" });
   assert.equal(dup.result.isError, true);
 });
+
+test("lists: add things, plan one, check off a trip, and the app's fields are written", async () => {
+  const store = memoryStore([]);
+  const now = new Date("2026-11-11T01:00:00Z");
+  const first = payload(await call(store, "add_list_items", {
+    new_list: "スーパー", items: [{ title: "卵" }, { title: "牛乳", memo: "低脂肪" }],
+  }, now));
+  assert.equal(first.createdList, true);
+  const again = payload(await call(store, "add_list_items", { new_list: "スーパー", items: [{ title: "パン" }] }, now));
+  assert.equal(again.list, first.list, "a list with the same name is reused");
+  assert.equal(again.createdList, undefined);
+
+  const trip = payload(await call(store, "add_tasks", { tasks: [{ title: "買い物", date: "2026-11-11", from_list: first.list }] }, now));
+  const lists = payload(await call(store, "get_lists", {}, now)).lists;
+  assert.equal(lists[0].open.length, 3);
+  assert.deepEqual([lists[0].trip.done, lists[0].trip.total], [0, 3]);
+
+  const later = new Date("2026-11-11T08:00:00Z");
+  await call(store, "check_list_items", { ids: [...first.added, ...again.added], done: true }, later);
+  const book = materialize(store.records);
+  assert.ok(book.tasks.find((t) => t.id === trip.added[0])!.completedAt, "checking off everything finishes the trip");
+  assert.equal(book.items.filter((i) => i.doneAt).length, 3);
+  const history = payload(await call(store, "get_lists", { list: first.list }, later)).lists[0];
+  assert.equal(history.doneCount, 3);
+  assert.equal(history.done.length, 3);
+
+  // Putting the last one back reopens the trip it finished.
+  await call(store, "check_list_items", { ids: [again.added[0]], done: false }, new Date("2026-11-11T09:00:00Z"));
+  assert.equal(materialize(store.records).tasks.find((t) => t.id === trip.added[0])!.completedAt, null);
+
+  // Records carry exactly what the Swift ListItem decoder needs.
+  const record = store.records.find((r) => r.id === `item_${first.added[1]}`)!;
+  for (const key of ["id", "listID", "title", "memo", "link", "place", "createdAt"]) assert.ok(record.fields[key], key);
+  assert.equal(decodeValue(record.fields.memo.value), "低脂肪");
+});
+
+test("lists: a plan made from a thing takes it into the history when done, and back when undone", async () => {
+  const store = memoryStore([]);
+  const now = new Date("2026-11-11T01:00:00Z");
+  const added = payload(await call(store, "add_list_items", {
+    new_list: "行きたいところ", items: [{ title: "美術館", place: "上野公園", link: "https://example.com" }],
+  }, now));
+  const plan = payload(await call(store, "add_tasks", {
+    tasks: [{ title: "美術館に行く", kind: "event", date: "2026-11-14", time: "10:00-12:00", from_item: added.added[0] }],
+  }, now));
+  const listed = payload(await call(store, "get_lists", {}, now)).lists[0];
+  assert.equal(listed.open[0].plan.id, plan.added[0]);
+  assert.equal(listed.open[0].place, "上野公園");
+  const days = payload(await call(store, "get_days", { start: "2026-11-14", days: 1 }, now));
+  assert.equal(days[0].items[0].fromItem.title, "美術館");
+
+  await call(store, "set_done", { ids: plan.added, done: true }, new Date("2026-11-14T05:00:00Z"));
+  assert.ok(materialize(store.records).items[0].doneAt);
+  await call(store, "set_done", { ids: plan.added, done: false }, new Date("2026-11-14T06:00:00Z"));
+  assert.equal(materialize(store.records).items[0].doneAt, null);
+
+  await call(store, "update_list_item", { id: added.added[0], memo: "常設展だけでいい" }, now);
+  assert.equal(materialize(store.records).items[0].memo, "常設展だけでいい");
+  await call(store, "update_list_item", { id: added.added[0], remove: true }, now);
+  assert.equal(materialize(store.records).items.length, 0);
+});
