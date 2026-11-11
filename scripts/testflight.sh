@@ -7,6 +7,7 @@ cd "$(dirname "$0")/.."
 RELEASE_VERSION=$(python3 scripts/release_config.py)
 BUNDLE_ID=io.github.reiji55.threedays
 WIDGET_BUNDLE_ID=$BUNDLE_ID.widgets
+SHARE_BUNDLE_ID=$BUNDLE_ID.share
 RELEASE_DIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/threedays-release.XXXXXX")
 SIGNING_KEYCHAIN="$RELEASE_DIR/signing.keychain-db"
 export APP_STORE_CONNECT_DISABLE_JWT_CACHE=true
@@ -57,6 +58,18 @@ if [[ ! -f "${WIDGET_PROFILES[0]}" ]]; then
   exit 1
 fi
 mv "${WIDGET_PROFILES[@]}" "$RELEASE_DIR/profiles/"
+# The share extension (Horme in other apps' share sheets) likewise has its own App ID and profile. It shares a
+# keychain group with the app, which every profile of the team allows, so no capability needs setting up.
+app-store-connect fetch-signing-files "$SHARE_BUNDLE_ID" \
+  --type IOS_APP_STORE --strict-match-identifier --create \
+  --certificates-dir "$RELEASE_DIR/share-certificates" \
+  --profiles-dir "$RELEASE_DIR/share-profiles"
+SHARE_PROFILES=("$RELEASE_DIR"/share-profiles/*.mobileprovision)
+if [[ ! -f "${SHARE_PROFILES[0]}" ]]; then
+  echo '::error::共有の拡張（io.github.reiji55.threedays.share）の配布プロファイルを取得できませんでした。'
+  exit 1
+fi
+mv "${SHARE_PROFILES[@]}" "$RELEASE_DIR/profiles/"
 # Xcode searches its standard profile directory during archive/export.
 python3 - "$RELEASE_DIR" <<'PY'
 import pathlib, shutil, sys
@@ -87,8 +100,9 @@ import pathlib, plistlib, sys
 path = pathlib.Path(sys.argv[1])
 options = plistlib.loads(path.read_bytes())
 profiles = options.get('provisioningProfiles', {})
-if not options.get('teamID') or not {'io.github.reiji55.threedays', 'io.github.reiji55.threedays.widgets'} <= set(profiles):
-    raise SystemExit('::error::アプリとウィジェットに対応する署名設定を生成できませんでした。')
+if not options.get('teamID') or not {'io.github.reiji55.threedays', 'io.github.reiji55.threedays.widgets',
+                                     'io.github.reiji55.threedays.share'} <= set(profiles):
+    raise SystemExit('::error::アプリ・ウィジェット・共有の拡張に対応する署名設定を生成できませんでした。')
 options.update(method='app-store-connect', destination='export')
 path.write_bytes(plistlib.dumps(options))
 PY

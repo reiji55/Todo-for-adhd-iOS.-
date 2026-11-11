@@ -3,6 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CKSharingSupported</key><true/>
+    <key>HormeInboxGroup</key><string>$(AppIdentifierPrefix)io.github.reiji55.threedays.inbox</string>
     <key>UILaunchScreen</key>
     <dict>
         <key>UIColorName</key><string>LaunchBackground</string>

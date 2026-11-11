@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 
-ALLOWED_BUNDLE_IDS = ("io.github.reiji55.threedays", "io.github.reiji55.threedays.widgets")
+ALLOWED_BUNDLE_IDS = ("io.github.reiji55.threedays", "io.github.reiji55.threedays.widgets", "io.github.reiji55.threedays.share")
 
 REQUIRED_SECRETS = (
     "APP_STORE_CONNECT_ISSUER_ID",
@@ -58,7 +58,7 @@ def prepare_project(project_path, version):
     for item in project["objects"].values():
         settings = item.get("buildSettings", {})
         if "PRODUCT_BUNDLE_IDENTIFIER" in settings:
-            # The app and the extensions inside it (io.github.reiji55.threedays.widgets) share one build number.
+            # The app and the extensions inside it (.widgets, .share) share one build number.
             if settings["PRODUCT_BUNDLE_IDENTIFIER"] not in ALLOWED_BUNDLE_IDS:
                 raise ValueError("プロジェクトのBundle IDが配布設定と一致していません")
             settings["CURRENT_PROJECT_VERSION"] = version

@@ -657,6 +657,39 @@ final class TaskStore: ObservableObject {
         if commit({ $0.listItems.removeAll { $0.id == id } }) { offerUndo("「\(item.title)」を削除しました") }
     }
 
+    /// What was shared into Horme from other apps since it last came to the front, put on its lists.
+    /// If saving fails, it goes back to the inbox for next time.
+    func takeSharedItems() {
+        guard !isDemo, !loadFailed else { return }
+        let entries = ListInbox.take().filter { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard !entries.isEmpty else { return }
+        let saved = commit { book in
+            for entry in entries where !book.listItems.contains(where: { $0.id == entry.id }) {
+                var listID = entry.listID.flatMap { id in book.lists.contains { $0.id == id } ? id : nil }
+                if listID == nil {
+                    let name = entry.newListName.isEmpty ? "共有から" : entry.newListName
+                    if let existing = book.lists.first(where: { $0.name == name }) {
+                        listID = existing.id
+                    } else {
+                        let list = StockList(name: name, createdAt: entry.createdAt)
+                        book.lists.append(list)
+                        listID = list.id
+                    }
+                }
+                guard let listID else { continue }
+                book.listItems.append(ListItem(id: entry.id, listID: listID, title: entry.title, memo: entry.memo,
+                                               link: entry.link, place: entry.place, createdAt: entry.createdAt))
+            }
+        }
+        if saved { offerUndo("共有から\(entries.count)件をリストに入れました") }
+        else { for entry in entries { _ = ListInbox.add(entry) } }
+    }
+
+    /// Lets the share sheet offer the lists there are.
+    func publishListNames() {
+        ListInbox.publish(realNotebook.lists.map { ListInbox.ListName(id: $0.id, name: $0.name) })
+    }
+
     func moveIdea(_ ideaID: UUID, toList listID: UUID) -> Bool {
         guard idea(ideaID) != nil else {
             error = "このアイデアはすでに削除またはタスク化されています。最新の一覧を確認してください。"

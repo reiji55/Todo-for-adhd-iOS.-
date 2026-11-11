@@ -79,7 +79,12 @@ with open(os.path.join(os.path.dirname(sys.argv[1]), 'PlugIns/HormeWidgets.appex
 assert widget['NSExtension']['NSExtensionPointIdentifier'] == 'com.apple.widgetkit-extension', 'Widget extension must be embedded'
 assert widget['CFBundleIdentifier'] == info['CFBundleIdentifier'] + '.widgets'
 assert widget['CFBundleVersion'] == info['CFBundleVersion'] and widget['CFBundleShortVersionString'] == info['CFBundleShortVersionString']
-print('Verified universal device family, all iPad orientations, multitasking metadata, and the embedded widgets')
+with open(os.path.join(os.path.dirname(sys.argv[1]), 'PlugIns/HormeShare.appex/Info.plist'), 'rb') as f:
+    share = plistlib.load(f)
+assert share['NSExtension']['NSExtensionPointIdentifier'] == 'com.apple.share-services', 'Share extension must be embedded'
+assert share['CFBundleIdentifier'] == info['CFBundleIdentifier'] + '.share'
+assert share['CFBundleVersion'] == info['CFBundleVersion'] and share['CFBundleShortVersionString'] == info['CFBundleShortVersionString']
+print('Verified universal device family, all iPad orientations, multitasking metadata, the embedded widgets and share extension')
 PY
 xcrun simctl install "$SIMULATOR_ID" "$APP_PATH"
 

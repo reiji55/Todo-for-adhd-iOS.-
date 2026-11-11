@@ -8,6 +8,13 @@
     <array><string>CloudKit</string></array>
     <key>com.apple.developer.icloud-container-environment</key>
     <string>$(CLOUDKIT_ENVIRONMENT)</string>
+    <!-- The app's own group comes first so what it already keeps in the keychain stays where it is;
+         the second is shared with the share extension (ListInbox). -->
+    <key>keychain-access-groups</key>
+    <array>
+        <string>$(AppIdentifierPrefix)io.github.reiji55.threedays</string>
+        <string>$(AppIdentifierPrefix)io.github.reiji55.threedays.inbox</string>
+    </array>
     <key>aps-environment</key>
     <string>$(APS_ENVIRONMENT)</string>
 </dict>

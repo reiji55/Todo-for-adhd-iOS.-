@@ -117,6 +117,8 @@ struct RootView: View {
         .onAppear {
             store.setForeground(phase == .active)
             takeQuickAddRequest()
+            store.takeSharedItems()
+            store.publishListNames()
 #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-horme-settings-preview") { settingsOpen = true }
 #endif
@@ -126,9 +128,12 @@ struct RootView: View {
             if newPhase == .active {
                 refreshDate = Date(); Reminders.shared.reschedule(store.realNotebook)
                 takeQuickAddRequest()
+                store.takeSharedItems()
+                store.publishListNames()
             }
             else { store.clearRecentlyDone() }
         }
+        .onChange(of: store.notebook.lists) { _, _ in store.publishListNames() }
         .onChange(of: store.projectToOpen) { _, key in
             if key != nil { selectedTab = Tab.board.rawValue; compactColumn = .detail }
         }

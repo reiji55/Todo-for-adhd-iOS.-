@@ -83,7 +83,8 @@ class PrepareProjectTests(unittest.TestCase):
             settings = [item["buildSettings"] for item in plistlib.loads(path.read_bytes())["objects"].values()
                         if "PRODUCT_BUNDLE_IDENTIFIER" in item.get("buildSettings", {})]
         identifiers = {s["PRODUCT_BUNDLE_IDENTIFIER"] for s in settings}
-        self.assertEqual(identifiers, {"io.github.reiji55.threedays", "io.github.reiji55.threedays.widgets"})
+        self.assertEqual(identifiers, {"io.github.reiji55.threedays", "io.github.reiji55.threedays.widgets",
+                                       "io.github.reiji55.threedays.share"})
         self.assertTrue(all(s["CURRENT_PROJECT_VERSION"] == "3.4.1" for s in settings))
 
     def test_unknown_bundle_id_stops_upload(self):
