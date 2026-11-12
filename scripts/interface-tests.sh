@@ -33,7 +33,20 @@ devices=[d for k,v in json.load(sys.stdin)["devices"].items() if ".iOS-" in k fo
 devices.sort(key=lambda d:("SE" not in d["name"],d["name"]))
 print(devices[0]["udid"])
 ')
-SIMULATOR_ID=$(xcrun simctl clone "$BASE_SIMULATOR" 'Horme Interface Tests')
+# HORME_UI_IOS=17 runs the tests on an iOS 17 simulator (installed by the launch check) instead.
+OLD_RUNTIME=""
+if [[ -n "${HORME_UI_IOS:-}" ]]; then
+  OLD_RUNTIME=$(xcrun simctl list runtimes --json | python3 -c "
+import json,sys
+r=[r for r in json.load(sys.stdin)['runtimes'] if r.get('platform')=='iOS' and r.get('isAvailable') and r['version'].startswith('${HORME_UI_IOS}.')]
+print(r[0]['identifier'] if r else '')")
+fi
+if [[ -n "$OLD_RUNTIME" ]]; then
+  echo "Interface tests on $OLD_RUNTIME"
+  SIMULATOR_ID=$(xcrun simctl create 'Horme Interface Tests' com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation "$OLD_RUNTIME")
+else
+  SIMULATOR_ID=$(xcrun simctl clone "$BASE_SIMULATOR" 'Horme Interface Tests')
+fi
 cleanup() {
   if [[ -d ci-results/InterfaceTests.xcresult ]]; then
     xcrun xcresulttool get test-results summary --path ci-results/InterfaceTests.xcresult \

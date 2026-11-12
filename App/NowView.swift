@@ -10,7 +10,6 @@ import SwiftUI
 struct NowView: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.refreshClock) private var refreshClock
-    @Environment(\.selectedTab) private var selectedTab
     @State private var energy: Energy = EnergyMemory.load()
     /// The free stretch the condition was chosen in.
     @State private var chosenFor: String? = EnergyMemory.chosenFor()
@@ -67,11 +66,6 @@ struct NowView: View {
                 .keepsStore()
         }
         .sheet(isPresented: $rolloverOpen) { RolloverSheet() }
-        // Leaving 今日 for another tab closes the timetable, so coming back shows the card. A task running on
-        // the card keeps running.
-        .onChange(of: selectedTab) { _, tab in
-            if tab != RootView.Tab.today.rawValue { timetableOpen = false; rolloverOpen = false }
-        }
         .onChange(of: store.notebook) { _, book in
             if let work, book.hasChildren(work.taskID) || !book.tasks.contains(where: {
                 $0.id == work.taskID && !$0.isComplete && !$0.isEvent

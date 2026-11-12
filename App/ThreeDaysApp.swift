@@ -67,8 +67,6 @@ struct RootView: View {
     @State private var splashing = true
     /// 振り分け, over everything: deciding an idea can open a project in the ボード tab behind it.
     @State private var sorting = false
-    /// Bumped when a tab is left, so coming back to it shows its main screen rather than what was pushed.
-    @State private var stackResets: [Int: Int] = [:]
 
     var body: some View {
         Group {
@@ -263,34 +261,25 @@ struct RootView: View {
     private var phoneNavigation: some View {
         TabView(selection: $selectedTab) {
             ForEach(Tab.allCases, id: \.rawValue) { tab in
-                // The tab's page stays the same view; only the stack inside it is replaced to go back to its
-                // main screen. (An id on the page itself gave every page the same id, which iOS 17's tab
-                // container cannot lay out.)
-                ZStack {
-                    NavigationStack {
-                        screen(tab)
-                            .navigationTitle(tab == .today ? "Horme" : tab.title)
-                            .navigationBarTitleDisplayMode(tab == .week || tab == .today ? .inline : .automatic)
-                            .toolbar { commonToolbar }
-                            .toolbar(.hidden, for: .tabBar)
-                            // The demo notice sits under the title bar, inside the screen, so no button is covered.
-                            .safeAreaInset(edge: .top, spacing: 0) { demoBar }
-                            .safeAreaInset(edge: .bottom, spacing: 0) {
-                                Color.clear.frame(height: HormeTabBar.height + (store.routineRun != nil ? Self.activeBarHeight : 0))
-                            }
-                    }
-                    .toolbar(.hidden, for: .tabBar)
-                    // 今日 keeps its screen (a task may be running on its card) and closes the timetable itself.
-                    .id(tab == .today ? 0 : stackResets[tab.rawValue, default: 0])
+                // Each tab keeps its screen when another tab is chosen, as tabs do on iOS. (Rebuilding a
+                // tab's stack while switching crashed iOS 17's tab container.)
+                NavigationStack {
+                    screen(tab)
+                        .navigationTitle(tab == .today ? "Horme" : tab.title)
+                        .navigationBarTitleDisplayMode(tab == .week || tab == .today ? .inline : .automatic)
+                        .toolbar { commonToolbar }
+                        .toolbar(.hidden, for: .tabBar)
+                        // The demo notice sits under the title bar, inside the screen, so no button is covered.
+                        .safeAreaInset(edge: .top, spacing: 0) { demoBar }
+                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                            Color.clear.frame(height: HormeTabBar.height + (store.routineRun != nil ? Self.activeBarHeight : 0))
+                        }
                 }
                 .toolbar(.hidden, for: .tabBar)
                 .tag(tab.rawValue)
             }
         }
         .environment(\.selectedTab, selectedTab)
-        .onChange(of: selectedTab) { old, _ in
-            if old != Tab.today.rawValue { stackResets[old, default: 0] += 1 }
-        }
     }
 
     static let activeBarHeight: CGFloat = 56
