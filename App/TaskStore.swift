@@ -110,8 +110,9 @@ final class TaskStore: ObservableObject {
 #if DEBUG
         if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-uiScenario"),
            ProcessInfo.processInfo.arguments.indices.contains(i + 1) {
-            // UI automation fixtures live only in memory, like the existing demo mode.
-            isDemo = true
+            // UI automation fixtures live only in memory, like the existing demo mode. -uiRealData treats them
+            // as the person's own (so いま also goes to the lock screen), for launch checks on old systems.
+            isDemo = !ProcessInfo.processInfo.arguments.contains("-uiRealData")
             notebook = InterfacePreviewData.notebook(ProcessInfo.processInfo.arguments[i + 1])
             closedDay = nil
             routineRun = nil
