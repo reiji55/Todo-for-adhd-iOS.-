@@ -310,4 +310,50 @@ shot day-closed
 launch -uiTab 2 -uiFocus >/dev/null
 sleep 4
 shot focus
+# Leaving the app while demo mode shows, on each tab: send it behind Settings, bring it back, and keep any
+# crash report it leaves (once seen on an iPad).
+crash_reports() { ls -1t "$HOME"/Library/Logs/DiagnosticReports/ThreeDays*.ips 2>/dev/null || true; }
+before=$(crash_reports | head -1)
+for tab in 2 1 0 3 4; do
+  launch -uiTab "$tab" -uiDemo >/dev/null
+  sleep 3
+  xcrun simctl launch "$SIMULATOR_ID" com.apple.Preferences >/dev/null 2>&1 || true
+  sleep 4
+  if ! pgrep -f 'ThreeDays.app/ThreeDays' >/dev/null; then echo "::warning::Horme was not running after leaving demo mode on tab $tab"; fi
+  latest=$(crash_reports | head -1)
+  if [ -n "$latest" ] && [ "$latest" != "$before" ]; then
+    echo "::error::Horme crashed after leaving demo mode on tab $tab ($DEVICE_FAMILY)"
+    head -c 60000 "$latest" | python3 -c '
+import json, sys
+text = sys.stdin.read()
+head, _, body = text.partition("\n")
+try:
+    report = json.loads(body)
+except ValueError:
+    print(text[:6000]); raise SystemExit
+print("exception:", json.dumps(report.get("exception"), ensure_ascii=False))
+for key in ("asi", "lastExceptionBacktrace", "termination"):
+    if report.get(key): print(key + ":", json.dumps(report[key], ensure_ascii=False)[:3000])
+threads = report.get("threads", [])
+images = report.get("usedImages", [])
+faulting = report.get("faultingThread", 0)
+if faulting < len(threads):
+    for frame in threads[faulting].get("frames", [])[:40]:
+        image = images[frame["imageIndex"]] if frame.get("imageIndex", -1) < len(images) else {}
+        print("  ", image.get("name", "?"), frame.get("symbol", ""), frame.get("sourceFile", ""), frame.get("sourceLine", ""))
+' || true
+    cp "$latest" "$RESULT_DIR/" || true
+    before=$latest
+  fi
+  # Back to the front without relaunching, as from the app switcher.
+  xcrun simctl launch "$SIMULATOR_ID" io.github.reiji55.threedays >/dev/null 2>&1 || true
+  sleep 3
+  latest=$(crash_reports | head -1)
+  if [ -n "$latest" ] && [ "$latest" != "$before" ]; then
+    echo "::error::Horme crashed coming back to demo mode on tab $tab ($DEVICE_FAMILY)"
+    cp "$latest" "$RESULT_DIR/" || true
+    before=$latest
+  fi
+done
+shot demo-return
 # Screenshots and launch logs verify startup and layout, not every interaction.

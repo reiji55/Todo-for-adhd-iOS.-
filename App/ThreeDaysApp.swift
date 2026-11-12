@@ -359,6 +359,8 @@ struct RootView: View {
         }
         if arguments.contains("-uiQuickAdd") { quickAdd = QuickAddRoute(day: nil, kind: .task) }
         if arguments.contains("-uiSortIdeas") { sorting = true }
+        // Demo mode, as started from settings, to exercise leaving the app while it shows.
+        if arguments.contains("-uiDemo") { store.startDemo() }
         // A task in pieces, to capture its editor.
         if arguments.contains("-uiOpenTask") {
             let tasks = store.notebook.tasks.filter { !$0.isComplete && !$0.isEvent }
