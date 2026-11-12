@@ -63,6 +63,8 @@ jobs:
         run: bash scripts/oldest-ios-launch.sh
       - name: Exercise start, interruption, notes, events, routines and five dates
         timeout-minutes: 35
+        env:
+          HORME_UI_IOS: "17"
         run: bash scripts/interface-tests.sh
       - name: Keep UI interaction results and screenshots
         if: always() && steps.simulator-build.outcome == 'success'
