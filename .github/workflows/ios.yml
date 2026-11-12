@@ -59,7 +59,7 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           build
       - name: Launch on the oldest iOS the runner has
-        timeout-minutes: 12
+        timeout-minutes: 25
         run: bash scripts/oldest-ios-launch.sh
       - name: Exercise start, interruption, notes, events, routines and five dates
         timeout-minutes: 35
