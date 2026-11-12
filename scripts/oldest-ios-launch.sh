@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 # The app supports iOS 17; testers still use it. Install the iOS 17 simulator when the runner lacks one.
 if ! xcrun simctl list runtimes | grep -q 'iOS 17'; then
   echo "Installing the iOS 17.5 simulator"
-  xcodebuild -downloadPlatform iOS -buildVersion 17.5 2>&1 | tail -3 || echo "::warning::Could not install the iOS 17.5 simulator"
+  xcodebuild -downloadPlatform iOS -buildVersion 17.5 >/tmp/runtime-download.log 2>&1 || echo "::warning::Could not install the iOS 17.5 simulator"
 fi
 
 read -r RUNTIME VERSION < <(xcrun simctl list runtimes --json | python3 -c '
@@ -36,7 +36,7 @@ xcrun simctl install "$SIMULATOR_ID" DerivedData/Build/Products/Debug-iphonesimu
 
 REPORTS="$HOME/Library/Logs/DiagnosticReports"
 status=0
-for arguments in "" "-uiScenario task" "-uiScenario timetable -uiTab 1"; do
+for arguments in "" "-uiScenario task" "-uiScenario task -uiRealData" "-uiScenario timetable -uiTab 1"; do
   before=$(date +%s)
   # shellcheck disable=SC2086
   xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays \
