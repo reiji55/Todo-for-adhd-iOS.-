@@ -12,10 +12,14 @@ struct TodayView: View {
     @State private var dayOffset = 0
     let onOpen: (AgendaItem) -> Void
     let onWeek: () -> Void
+    /// Opened from a block in 今日の流れ: that thing is brought into view and flashes once.
+    var focus: String? = nil
+    @State private var flashed: String?
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             let now = max(context.date, refreshClock)
+            ScrollViewReader { proxy in
             GeometryReader { geometry in
                 if geometry.size.width >= 760 && !dynamicTypeSize.isAccessibilitySize {
                     HStack(alignment: .top, spacing: 0) {
@@ -37,6 +41,9 @@ struct TodayView: View {
                 }
             }
             .background(Palette.paper)
+            .environment(\.flashedItem, flashed)
+            .task(id: focus) { await bringIntoView(proxy) }
+            }
         }
         .sheet(isPresented: $rolloverOpen) { RolloverSheet() }
         .onChange(of: energy) { _, value in EnergyMemory.save(value) }
@@ -46,6 +53,17 @@ struct TodayView: View {
 
     @ViewBuilder private func main(now: Date) -> some View {
         if dayOffset == 0 { today(now: now) } else { otherDay(now: now) }
+    }
+
+    /// Scrolls to the thing it was opened at, then lights it up briefly so the eye finds it.
+    private func bringIntoView(_ proxy: ScrollViewProxy) async {
+        guard let focus else { return }
+        try? await Task.sleep(for: .milliseconds(350))
+        withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(focus, anchor: .center) }
+        try? await Task.sleep(for: .milliseconds(300))
+        withAnimation(.easeIn(duration: 0.2)) { flashed = focus }
+        try? await Task.sleep(for: .milliseconds(1100))
+        withAnimation(.easeOut(duration: 0.6)) { flashed = nil }
     }
 
     /// Yesterday or tomorrow, to look at: the same timeline and list, without today's extras.
@@ -169,11 +187,14 @@ private struct TimetableFolder<Content: View>: View {
     let title: String
     let count: Int
     var identifier: String
+    /// A word beside the title, readable while folded (the nearest deadline).
+    var detail: String?
     @ViewBuilder let content: () -> Content
     @State private var open: Bool
 
-    init(title: String, count: Int, identifier: String, startsOpen: Bool = false, @ViewBuilder content: @escaping () -> Content) {
-        self.title = title; self.count = count; self.identifier = identifier
+    init(title: String, count: Int, identifier: String, detail: String? = nil, startsOpen: Bool = false,
+         @ViewBuilder content: @escaping () -> Content) {
+        self.title = title; self.count = count; self.identifier = identifier; self.detail = detail
         self.content = content
         _open = State(initialValue: startsOpen)
     }
@@ -185,6 +206,9 @@ private struct TimetableFolder<Content: View>: View {
                     Image(systemName: "chevron.down").font(.subheadline.weight(.semibold))
                         .rotationEffect(.degrees(open ? 180 : 0))
                     Text(title).font(.headline)
+                    if let detail {
+                        Text(detail).font(.subheadline.weight(.semibold)).foregroundStyle(Palette.must).monospacedDigit()
+                    }
                     Spacer(minLength: 0)
                     Text("\(count)件").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
                 }
@@ -384,6 +408,12 @@ struct TimelinePanel: View {
     }
 
     private func row(_ item: AgendaItem) -> some View {
+        rowContent(item)
+            .overlay(alignment: .trailing) { FlashRing(id: item.id).padding(.leading, timeWidth + railWidth) }
+            .id(item.id)
+    }
+
+    private func rowContent(_ item: AgendaItem) -> some View {
         HStack(alignment: .center, spacing: 0) {
             VStack(alignment: .trailing, spacing: 2) {
                 if let slot = item.slot {
@@ -482,7 +512,34 @@ private struct UntimedAgendaRow: View {
             AgendaCheck(item: item).frame(width: 44)
             AgendaRow(item: item, showsTime: false, style: .loose, showsCheck: false,
                       showsChildProgress: true, onOpen: onOpen)
-        }.accessibilityIdentifier("untimed-" + item.id)
+                .overlay { FlashRing(id: item.id) }
+        }
+        .accessibilityIdentifier("untimed-" + item.id)
+        .id(item.id)
+    }
+}
+
+private struct FlashedItemKey: EnvironmentKey { static let defaultValue: String? = nil }
+extension EnvironmentValues {
+    /// The thing on the timetable lit up for a moment, after it was opened at it.
+    var flashedItem: String? {
+        get { self[FlashedItemKey.self] }
+        set { self[FlashedItemKey.self] = newValue }
+    }
+}
+
+/// A soft ring of the accent color around a row while it is the one being pointed to.
+private struct FlashRing: View {
+    @Environment(\.flashedItem) private var flashed
+    let id: String
+    var body: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .strokeBorder(Palette.accent, lineWidth: 2.5)
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.accent.opacity(0.10)))
+            .shadow(color: Palette.accent.opacity(0.45), radius: 8)
+            .opacity(flashed == id ? 1 : 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
@@ -529,7 +586,8 @@ private struct UpcomingDeadlines: View {
         let rows: [DeadlineRow] = (upcoming.map { DeadlineRow.task($0) } + projects.map { DeadlineRow.project($0.project, open: $0.open) })
             .sorted { $0.due < $1.due }
         if !rows.isEmpty {
-            TimetableFolder(title: "これからの締切", count: rows.count, identifier: "deadlineFolder") {
+            TimetableFolder(title: "これからの締切", count: rows.count, identifier: "deadlineFolder",
+                            detail: rows.first.map { "次 \($0.due.shortDay)" }) {
             ForEach(rows.prefix(5)) { row in
                 switch row {
                 case .project(let project, let open):
@@ -647,10 +705,12 @@ struct CandidateDrawer<Content: View>: View {
                         .shadow(color: .black.opacity(isOpen ? 0.18 : 0), radius: 12, x: -2)
                 }
                 .offset(x: offset)
-                .gesture(drag(width: width))
+                .highPriorityGesture(drag(width: width))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
             .animation(.snappy, value: isOpen)
+            // While it is open, a swipe to the right closes it instead of going back a screen.
+            .background(PopGestureBlocker(blocked: isOpen))
         }
     }
 
@@ -680,6 +740,40 @@ struct CandidateDrawer<Content: View>: View {
                 withAnimation(.snappy) { isOpen = isOpen ? moved < width / 3 : moved < -width / 4 }
             }
     }
+}
+
+/// Turns off the navigation's swipe back (from the edge, and from anywhere on iOS 26) while `blocked`, so a
+/// swipe meant for something on the screen does not leave it.
+struct PopGestureBlocker: UIViewControllerRepresentable {
+    let blocked: Bool
+
+    final class Controller: UIViewController {
+        var blocked = false { didSet { apply() } }
+        override func didMove(toParent parent: UIViewController?) { super.didMove(toParent: parent); apply() }
+        override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); apply() }
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            set(enabled: true)
+        }
+        func apply() { set(enabled: !blocked) }
+        private func set(enabled: Bool) {
+            guard let navigation = navigationController else { return }
+            navigation.interactivePopGestureRecognizer?.isEnabled = enabled
+            // The swipe back from anywhere in the content (iOS 26) is also a pan on the navigation's own view.
+            for recognizer in navigation.view.gestureRecognizers ?? [] where recognizer is UIPanGestureRecognizer {
+                recognizer.isEnabled = enabled
+            }
+        }
+    }
+
+    func makeUIViewController(context: Context) -> Controller {
+        let controller = Controller()
+        controller.view.isUserInteractionEnabled = false
+        controller.blocked = blocked
+        return controller
+    }
+
+    func updateUIViewController(_ controller: Controller, context: Context) { controller.blocked = blocked }
 }
 
 /// Batch handling of tasks left on earlier days: pick some, send them to a day, or close them.

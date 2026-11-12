@@ -78,8 +78,23 @@ struct TaskEditor: View {
             Form {
                 if isPiece, let parent = task.parentID.flatMap({ store.task($0) }) {
                     Section {
-                        Label("「\(parent.title)」の子タスク", systemImage: "arrow.turn.down.right")
-                            .font(.subheadline).foregroundStyle(.secondary)
+                        // The task it is a piece of, one tap away.
+                        Button { otherTask = parent } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.turn.down.right").foregroundStyle(.secondary)
+                                Text(parent.title).foregroundStyle(Palette.accent).underline()
+                                    .multilineTextAlignment(.leading)
+                                Text("の子タスク").foregroundStyle(.secondary)
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                            }
+                            .font(.subheadline)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("「\(parent.title)」の子タスク")
+                        .accessibilityHint("親のタスクを開きます")
+                        .accessibilityIdentifier("openParentTask")
                     }
                 }
                 Section {

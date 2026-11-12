@@ -10,6 +10,7 @@ import SwiftUI
 struct NowView: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.refreshClock) private var refreshClock
+    @Environment(\.selectedTab) private var selectedTab
     @State private var energy: Energy = EnergyMemory.load()
     /// The free stretch the condition was chosen in.
     @State private var chosenFor: String? = EnergyMemory.chosenFor()
@@ -18,6 +19,8 @@ struct NowView: View {
     @State private var chosen: String?
     @State private var work: TaskWork?
     @State private var timetableOpen = false
+    /// The thing tapped in 今日の流れ, for the timetable to bring into view and flash once.
+    @State private var timetableFocus: String?
     @State private var rolloverOpen = false
     @State private var previewApplied = false
     let onOpen: (AgendaItem) -> Void
@@ -54,13 +57,18 @@ struct NowView: View {
             }
         }
         .navigationDestination(isPresented: $timetableOpen) {
-            TodayView(onOpen: onOpen, onWeek: onWeek)
+            TodayView(onOpen: onOpen, onWeek: onWeek, focus: timetableFocus)
                 .navigationTitle("時間割")
                 .navigationBarTitleDisplayMode(.inline)
                 .floatingAdd(onAdd)
                 .keepsStore()
         }
         .sheet(isPresented: $rolloverOpen) { RolloverSheet() }
+        // Leaving 今日 for another tab closes the timetable, so coming back shows the card. A task running on
+        // the card keeps running.
+        .onChange(of: selectedTab) { _, tab in
+            if tab != RootView.Tab.today.rawValue { timetableOpen = false; rolloverOpen = false }
+        }
         .onChange(of: store.notebook) { _, book in
             if let work, book.hasChildren(work.taskID) || !book.tasks.contains(where: {
                 $0.id == work.taskID && !$0.isComplete && !$0.isEvent
@@ -140,7 +148,8 @@ struct NowView: View {
                     }
                     upcoming(now: now, excluding: current?.id)
                 }
-                DayFlow(now: now) { timetableOpen = true }
+                DayFlow(now: now, onOpen: { timetableFocus = nil; timetableOpen = true },
+                        onItem: { timetableFocus = $0; timetableOpen = true })
                 footer(now: now)
             }
         }
@@ -1013,6 +1022,8 @@ private struct DayFlow: View {
     @EnvironmentObject private var store: TaskStore
     let now: Date
     let onOpen: () -> Void
+    /// A block tapped: the timetable opens at it.
+    var onItem: (String) -> Void = { _ in }
 
     static let hourWidth: CGFloat = 64
     static let laneHeight: CGFloat = 54
@@ -1084,6 +1095,8 @@ private struct DayFlow: View {
                         }
                         ForEach(placed) { block in
                             FlowBlock(block: block)
+                                .contentShape(Rectangle())
+                                .onTapGesture { onItem(block.item.id) }
                                 .offset(x: block.x, y: Self.axisHeight + CGFloat(block.lane) * Self.laneHeight)
                         }
                         if nowX >= 0 && nowX <= width {

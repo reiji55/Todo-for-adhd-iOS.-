@@ -464,7 +464,7 @@ final class HormeUITests: XCTestCase {
         capture(app, "closed-day-remains-closed-after-idea-start")
     }
 
-    func testOrdinaryReturnToTodayKeepsOpenTimetableWhileTaskRuns() {
+    func testReturningToTodayShowsTheCardAndKeepsTaskWork() {
         let app = launch("task")
         let start = app.buttons["startNowItem"]
         XCTAssertTrue(start.waitForExistence(timeout: 30))
@@ -476,13 +476,12 @@ final class HormeUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "label == %@", "すべて")).firstMatch.tap()
         XCTAssertTrue(app.navigationBars["すべて"].waitForExistence(timeout: 10))
         app.buttons.matching(NSPredicate(format: "label == %@", "今日")).firstMatch.tap()
-        XCTAssertTrue(app.navigationBars["時間割"].waitForExistence(timeout: 10), "ordinary tab restoration must not pop the timetable")
-        capture(app, "ordinary-today-return-keeps-timetable-navigation")
-        app.navigationBars["時間割"].buttons.element(boundBy: 0).tap()
+        // Coming back to a tab shows its main screen: the card, with the task still running on it.
         let interrupt = app.buttons["interruptTask"]
         XCTAssertTrue(interrupt.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.navigationBars["時間割"].exists, "returning to 今日 shows the card, not the timetable")
         reveal(interrupt, in: app)
-        capture(app, "ordinary-today-return-keeps-local-task-work")
+        capture(app, "today-return-shows-card-and-keeps-task-work")
     }
 
 }

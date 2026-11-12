@@ -32,6 +32,15 @@ struct QuickAddRoute: Identifiable {
     var kind: AddKind = .task
 }
 
+private struct SelectedTabKey: EnvironmentKey { static let defaultValue = 2 }
+extension EnvironmentValues {
+    /// The tab in front (RootView.Tab's raw value).
+    var selectedTab: Int {
+        get { self[SelectedTabKey.self] }
+        set { self[SelectedTabKey.self] = newValue }
+    }
+}
+
 @MainActor
 struct RootView: View {
     /// 今日 sits in the middle, where the thumb rests; the app always opens on it.
@@ -57,6 +66,8 @@ struct RootView: View {
     @State private var splashing = true
     /// 振り分け, over everything: deciding an idea can open a project in the ボード tab behind it.
     @State private var sorting = false
+    /// Bumped when a tab is left, so coming back to it shows its main screen rather than what was pushed.
+    @State private var stackResets: [Int: Int] = [:]
 
     var body: some View {
         Group {
@@ -264,8 +275,14 @@ struct RootView: View {
                         }
                 }
                 .toolbar(.hidden, for: .tabBar)
+                // 今日 keeps its screen (a task may be running on its card) and closes the timetable itself.
+                .id(tab == .today ? 0 : stackResets[tab.rawValue, default: 0])
                 .tag(tab.rawValue)
             }
+        }
+        .environment(\.selectedTab, selectedTab)
+        .onChange(of: selectedTab) { old, _ in
+            if old != Tab.today.rawValue { stackResets[old, default: 0] += 1 }
         }
     }
 
