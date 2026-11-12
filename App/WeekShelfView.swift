@@ -4,7 +4,7 @@ import UIKit
 /// The week on iPhone: each day a row of four shelves (morning, midday, evening, night) holding its
 /// things as small chips, so the whole week reads at a glance without sideways scrolling. A sheet
 /// pulled up from the bottom shows the chosen day and the next one hour by hour; swiping its dates
-/// moves a day at a time. Time held for sleep or work only tints the shelves it fills.
+/// moves a day at a time. A shelf that time held for sleep or work reaches is hatched.
 ///
 /// A chip tapped on the shelves opens the sheet at its hour; a shelf with three or more opens a small
 /// balloon listing them all. A chip held and dragged goes to another day or time of day; the exact
@@ -169,6 +169,8 @@ struct WeekShelfView: View {
     enum Band: Int, CaseIterable {
         case morning, midday, evening, night
         var title: String { ["AM1", "AM2", "PM1", "PM2"][rawValue] }
+        /// The column heading: the first band also holds things without a time.
+        var heading: String { self == .morning ? "AM1/時間未定" : title }
         /// Minutes of the day the band covers: six hours each, within the day.
         var range: Range<Int> { [0..<6 * 60, 6 * 60..<12 * 60, 12 * 60..<18 * 60, 18 * 60..<24 * 60][rawValue] }
         /// Where a thing moved into this band from another one lands, until a time is picked in the sheet.
@@ -196,7 +198,8 @@ struct WeekShelfView: View {
             HStack(spacing: 4) {
                 Color.clear.frame(width: gutter, height: 1)
                 ForEach(Band.allCases, id: \.rawValue) { band in
-                    Text(band.title).font(.caption.weight(.bold)).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+                    Text(band.heading).font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                        .lineLimit(1).minimumScaleFactor(0.6).frame(maxWidth: .infinity)
                 }
             }
             .padding(.top, 6)
@@ -211,7 +214,7 @@ struct WeekShelfView: View {
                          onDrop: dropped)
                 .overlay {
                     if isToday {
-                        RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.55), lineWidth: 1.5)
+                        RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.6), lineWidth: 2.5)
                             .padding(.leading, gutter + 2).allowsHitTesting(false)
                     }
                 }
@@ -514,7 +517,7 @@ private struct ShelfRow: View {
             ForEach(WeekShelfView.Band.allCases, id: \.rawValue) { band in
                 ShelfCell(day: day, band: band,
                           items: items.filter { !$0.isBlock && WeekShelfView.Band.of($0) == band },
-                          heldSpans: Self.spans(of: held, in: band.range),
+                          holds: Self.holds(held, in: band.range),
                           isTarget: targetBand == band, carrying: carrying,
                           onFocus: { onFocus(band, $0) }, onCarry: onCarry, onDrop: onDrop)
             }
@@ -522,14 +525,9 @@ private struct ShelfRow: View {
         .opacity(past ? 0.55 : 1)
     }
 
-    /// The parts of a band held for sleep or work, as fractions of its width from left (its start) to right.
-    static func spans(of held: [TimeSlot], in range: Range<Int>) -> [ClosedRange<Double>] {
-        let length = Double(range.count)
-        return held.compactMap { slot in
-            let start = max(slot.start, range.lowerBound), end = min(slot.end, range.upperBound)
-            guard end > start else { return nil }
-            return Double(start - range.lowerBound) / length...Double(end - range.lowerBound) / length
-        }
+    /// Whether any of a band is held for sleep or work.
+    static func holds(_ held: [TimeSlot], in range: Range<Int>) -> Bool {
+        held.contains { min($0.end, range.upperBound) > max($0.start, range.lowerBound) }
     }
 }
 
@@ -540,8 +538,8 @@ private struct ShelfCell: View {
     let day: Date
     let band: WeekShelfView.Band
     let items: [AgendaItem]
-    /// Where the shelf's time is held for sleep or work, hatched under its chips at that place in the band.
-    let heldSpans: [ClosedRange<Double>]
+    /// Some of the shelf's time is held for sleep or work: the whole shelf is hatched under its chips.
+    let holds: Bool
     let isTarget: Bool
     let carrying: String?
     let onFocus: (AgendaItem?) -> Void
@@ -575,14 +573,7 @@ private struct ShelfCell: View {
         .background {
             RoundedRectangle(cornerRadius: 10).fill(Color(uiColor: .secondarySystemGroupedBackground))
                 .overlay {
-                    GeometryReader { box in
-                        ForEach(Array(heldSpans.enumerated()), id: \.offset) { _, span in
-                            HeldFill(cornerRadius: 0)
-                                .frame(width: box.size.width * (span.upperBound - span.lowerBound), height: box.size.height)
-                                .offset(x: box.size.width * span.lowerBound)
-                        }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    if holds { HeldFill(cornerRadius: 10) }
                 }
         }
         .overlay {

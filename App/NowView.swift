@@ -109,7 +109,7 @@ struct NowView: View {
                 if let stretch, stretch.key != chosenFor, offers, running == nil, chosen == nil {
                     FreeStretchCard(stretch: stretch, now: now) { setEnergy($0) }
                         .transition(.opacity)
-                    upcoming(now: now, excluding: nil)
+                    flow(now: now, excluding: nil)
                 } else {
                     let current = resolve(running.map { "task-\($0.taskID.uuidString)" } ?? chosen, in: picks, book: book)
                     if let current, !(current.kind == .upcoming && offers) {
@@ -146,10 +146,8 @@ struct NowView: View {
                     } else {
                         NothingLeftCard(now: now)
                     }
-                    upcoming(now: now, excluding: current?.id)
+                    flow(now: now, excluding: current?.id)
                 }
-                DayFlow(now: now, onOpen: { timetableFocus = nil; timetableOpen = true },
-                        onItem: { timetableFocus = $0; timetableOpen = true })
                 footer(now: now)
             }
         }
@@ -226,30 +224,12 @@ struct NowView: View {
             }
     }
 
-    private func upcoming(now: Date, excluding id: String?) -> some View {
-        let items = Array(laterToday(now, excluding: id).prefix(2))
-        return VStack(alignment: .leading, spacing: 8) {
-            Button { timetableOpen = true } label: {
-                HStack {
-                    Text("このあと").font(.footnote.weight(.bold)).foregroundStyle(.secondary)
-                    Spacer()
-                    Text("時間割を開く").font(.caption.weight(.semibold))
-                    Image(systemName: "chevron.right").font(.caption.weight(.semibold))
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("openTimetable")
-            if !items.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        if index > 0 { Divider().padding(.leading, 72) }
-                        UpcomingRow(item: item, ongoing: (item.slot?.start ?? 0) <= Self.minute(of: now)) { onOpen(item) }
-                    }
-                }
-                .background(RaisedCardBackground(cornerRadius: 16))
-            }
-        }
+    /// The day's flow with the next two things below it, in one card. Its blocks and rows open the
+    /// timetable at that thing; its heading opens the timetable as it is.
+    private func flow(now: Date, excluding id: String?) -> some View {
+        DayFlow(now: now, next: Array(laterToday(now, excluding: id).prefix(2)),
+                onOpen: { timetableFocus = nil; timetableOpen = true },
+                onItem: { timetableFocus = $0; timetableOpen = true })
     }
 
     private func footer(now: Date) -> some View {
@@ -862,7 +842,7 @@ private struct NowButtonStyle: ButtonStyle {
     }
 }
 
-/// One timed thing later today: its time, what kind it is, and its name. A tap opens it.
+/// One timed thing later today: its time, what kind it is, and its name. A tap opens the timetable at it.
 private struct UpcomingRow: View {
     let item: AgendaItem
     var ongoing = false
@@ -1021,8 +1001,10 @@ private struct DayClosedView: View {
 private struct DayFlow: View {
     @EnvironmentObject private var store: TaskStore
     let now: Date
+    /// The next things not done yet (one going on now included), listed below the flow.
+    var next: [AgendaItem] = []
     let onOpen: () -> Void
-    /// A block tapped: the timetable opens at it.
+    /// A block or row tapped: the timetable opens at it.
     var onItem: (String) -> Void = { _ in }
 
     static let hourWidth: CGFloat = 64
@@ -1058,7 +1040,7 @@ private struct DayFlow: View {
                     Text("今日の流れ").font(.subheadline.weight(.bold)).foregroundStyle(.primary)
                     Spacer()
                     HStack(spacing: 3) {
-                        Text("時間割を開く")
+                        Text("時間割")
                         Image(systemName: "chevron.right").font(.caption.weight(.bold))
                     }
                     .font(.subheadline.weight(.semibold)).foregroundStyle(Palette.accent)
@@ -1066,7 +1048,8 @@ private struct DayFlow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityIdentifier("openDayFlowTimetable")
+            .accessibilityLabel("今日の流れ、時間割を開く")
+            .accessibilityIdentifier("openTimetable")
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     ZStack(alignment: .topLeading) {
@@ -1124,6 +1107,16 @@ private struct DayFlow: View {
             .accessibilityAddTraits(.isButton)
             .accessibilityAction { onOpen() }
             .accessibilityIdentifier("dayFlowTimeline")
+            if !next.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(next) { item in
+                        Divider().padding(.leading, 14)
+                        UpcomingRow(item: item, ongoing: (item.slot?.start ?? 0) <= NowView.minute(of: now)) { onItem(item.id) }
+                            .accessibilityHint("時間割のこの場所を開きます")
+                    }
+                }
+                .padding(.horizontal, -14)
+            }
         }
         .padding(14)
         .background(RaisedCardBackground(cornerRadius: 16))
@@ -1162,7 +1155,7 @@ private struct DayFlow: View {
     private func spoken(_ timed: [AgendaItem]) -> String {
         let open = timed.filter { !$0.isDone }
         let list = open.prefix(4).map { "\($0.slot?.startLabel ?? "") \($0.title)" }.joined(separator: "、")
-        return "今日の流れ。" + (open.isEmpty ? "時間の決まった予定はありません。" : "\(list)。") + "時間割を開く"
+        return "今日の流れ。" + (open.isEmpty ? "時間の決まった予定はありません。" : "\(list)。") + "時間割を開きます"
     }
 }
 

@@ -273,6 +273,7 @@ final class HormeUITests: XCTestCase {
         let app = launch("project", arguments: ["-uiOpenFirstProject"])
         let timetable = app.buttons["openTimetable"]
         XCTAssertTrue(timetable.waitForExistence(timeout: 30))
+        reveal(timetable, in: app)
         tapVisible(timetable, in: app)
         XCTAssertTrue(app.navigationBars["時間割"].waitForExistence(timeout: 10))
         app.buttons.matching(NSPredicate(format: "label == %@", "ボード")).firstMatch.tap()
@@ -373,7 +374,7 @@ final class HormeUITests: XCTestCase {
         let app = launch("timetable")
         let dayFlow = app.descendants(matching: .any).matching(identifier: "dayFlowTimeline").firstMatch
         XCTAssertTrue(dayFlow.waitForExistence(timeout: 30))
-        let home = app.scrollViews.containing(.button, identifier: "openDayFlowTimetable").firstMatch
+        let home = app.scrollViews.containing(.button, identifier: "openTimetable").firstMatch
         reveal(dayFlow, in: app, scroll: home)
         // Bring the bottom overview clear of the root tabs before capturing and dragging it.
         home.swipeUp()
@@ -471,6 +472,7 @@ final class HormeUITests: XCTestCase {
         tapVisible(start, in: app)
         XCTAssertTrue(app.buttons["interruptTask"].waitForExistence(timeout: 5))
         let timetable = app.buttons["openTimetable"]
+        reveal(timetable, in: app)
         tapVisible(timetable, in: app)
         XCTAssertTrue(app.navigationBars["時間割"].waitForExistence(timeout: 10))
         app.buttons.matching(NSPredicate(format: "label == %@", "すべて")).firstMatch.tap()
