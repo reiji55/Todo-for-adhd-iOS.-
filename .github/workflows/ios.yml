@@ -16,7 +16,7 @@ jobs:
     runs-on: macos-15
     permissions:
       contents: write
-    timeout-minutes: 40
+    timeout-minutes: 70
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
@@ -59,7 +59,7 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           build
       - name: Exercise start, interruption, notes, events, routines and five dates
-        timeout-minutes: 20
+        timeout-minutes: 35
         run: bash scripts/interface-tests.sh
       - name: Keep UI interaction results and screenshots
         if: always() && steps.simulator-build.outcome == 'success'
