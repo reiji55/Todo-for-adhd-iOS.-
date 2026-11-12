@@ -554,7 +554,7 @@ private struct ShelfCell: View {
     let band: WeekShelfView.Band
     let items: [AgendaItem]
     /// Where the shelf's time is held for sleep or work, hatched under its chips at that place in the band
-    /// and named at its lower left when there is room (chips cover the name when the shelf is full).
+    /// and named at its lower left when there is room (not when "+N" needs that corner).
     let heldSpans: [ShelfRow.HeldSpan]
     let isTarget: Bool
     let carrying: String?
@@ -595,7 +595,8 @@ private struct ShelfCell: View {
                             HeldFill(cornerRadius: 0)
                                 .frame(width: width, height: box.size.height)
                                 .offset(x: box.size.width * held.span.lowerBound)
-                            if held.named {
+                            // With three or more chips, "+N" sits where the name would go.
+                            if held.named && items.count <= 2 {
                                 Text(held.name).font(.system(size: 8.5, weight: .bold)).foregroundStyle(HeldFill.label)
                                     .lineLimit(1).truncationMode(.tail)
                                     .frame(width: max(0, width - 8), alignment: .leading)
