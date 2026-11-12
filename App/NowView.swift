@@ -36,8 +36,11 @@ struct NowView: View {
                         .frame(maxWidth: 620)
                         .frame(maxWidth: .infinity)
                         .id("nowTop")
-                        .onChange(of: lockState(now: now), initial: true) { _, state in
-                            NowActivityController.shared.show(state)
+                        // The lock screen follows what the card would show; worked out only when that can change.
+                        .onChange(of: LockInputs(book: store.notebook, energy: energy, passed: passed, chosen: chosen,
+                                                 work: work, closed: store.closedDay, demo: store.isDemo,
+                                                 minute: Self.minute(of: now)), initial: true) { _, _ in
+                            NowActivityController.shared.show(lockState(now: Date()))
                         }
                 }
                 .background(Palette.paper)
@@ -190,6 +193,18 @@ struct NowView: View {
     private func remember(_ key: String) {
         chosenFor = key
         EnergyMemory.markChosen(key)
+    }
+
+    /// Everything the lock screen's card depends on.
+    private struct LockInputs: Equatable {
+        var book: Notebook
+        var energy: Energy
+        var passed: [String]
+        var chosen: String?
+        var work: TaskWork?
+        var closed: String?
+        var demo: Bool
+        var minute: Int
     }
 
     /// What the lock screen shows: the card's pick, or nothing once the day is closed or nothing is left.
@@ -435,7 +450,7 @@ private struct NowCard: View {
             if showingNote, let task, !working {
                 HStack(alignment: .top, spacing: 8) {
                     TextField("次はどこから？（任意）", text: $draft,
-                              prompt: Text("次はどこから？（任意）").foregroundColor(.secondary), axis: .vertical)
+                              prompt: Text("次はどこから？（任意）").foregroundColor(Color(uiColor: .placeholderText)), axis: .vertical)
                         .font(.subheadline).lineLimit(1...2)
                         .focused($noteFocused)
                         .padding(10).background(Palette.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
