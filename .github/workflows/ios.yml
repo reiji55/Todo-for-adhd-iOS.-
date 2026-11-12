@@ -58,6 +58,9 @@ jobs:
           -derivedDataPath DerivedData-device
           CODE_SIGNING_ALLOWED=NO
           build
+      - name: Launch on the oldest iOS the runner has
+        timeout-minutes: 12
+        run: bash scripts/oldest-ios-launch.sh
       - name: Exercise start, interruption, notes, events, routines and five dates
         timeout-minutes: 35
         run: bash scripts/interface-tests.sh

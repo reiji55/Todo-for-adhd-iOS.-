@@ -263,21 +263,27 @@ struct RootView: View {
     private var phoneNavigation: some View {
         TabView(selection: $selectedTab) {
             ForEach(Tab.allCases, id: \.rawValue) { tab in
-                NavigationStack {
-                    screen(tab)
-                        .navigationTitle(tab == .today ? "Horme" : tab.title)
-                        .navigationBarTitleDisplayMode(tab == .week || tab == .today ? .inline : .automatic)
-                        .toolbar { commonToolbar }
-                        .toolbar(.hidden, for: .tabBar)
-                        // The demo notice sits under the title bar, inside the screen, so no button is covered.
-                        .safeAreaInset(edge: .top, spacing: 0) { demoBar }
-                        .safeAreaInset(edge: .bottom, spacing: 0) {
-                            Color.clear.frame(height: HormeTabBar.height + (store.routineRun != nil ? Self.activeBarHeight : 0))
-                        }
+                // The tab's page stays the same view; only the stack inside it is replaced to go back to its
+                // main screen. (An id on the page itself gave every page the same id, which iOS 17's tab
+                // container cannot lay out.)
+                ZStack {
+                    NavigationStack {
+                        screen(tab)
+                            .navigationTitle(tab == .today ? "Horme" : tab.title)
+                            .navigationBarTitleDisplayMode(tab == .week || tab == .today ? .inline : .automatic)
+                            .toolbar { commonToolbar }
+                            .toolbar(.hidden, for: .tabBar)
+                            // The demo notice sits under the title bar, inside the screen, so no button is covered.
+                            .safeAreaInset(edge: .top, spacing: 0) { demoBar }
+                            .safeAreaInset(edge: .bottom, spacing: 0) {
+                                Color.clear.frame(height: HormeTabBar.height + (store.routineRun != nil ? Self.activeBarHeight : 0))
+                            }
+                    }
+                    .toolbar(.hidden, for: .tabBar)
+                    // 今日 keeps its screen (a task may be running on its card) and closes the timetable itself.
+                    .id(tab == .today ? 0 : stackResets[tab.rawValue, default: 0])
                 }
                 .toolbar(.hidden, for: .tabBar)
-                // 今日 keeps its screen (a task may be running on its card) and closes the timetable itself.
-                .id(tab == .today ? 0 : stackResets[tab.rawValue, default: 0])
                 .tag(tab.rawValue)
             }
         }
