@@ -214,7 +214,7 @@ struct WeekShelfView: View {
                          onDrop: dropped)
                 .overlay {
                     if isToday {
-                        RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.6), lineWidth: 2.5)
+                        RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.7), lineWidth: 3.5)
                             .padding(.leading, gutter + 2).allowsHitTesting(false)
                     }
                 }
