@@ -71,6 +71,10 @@ def summarize_text(text):
                                                "Triggered by Thread", "Crashed Thread", "Version", "OS Version", "Hardware Model"))]
     print("\n".join("  " + l for l in keep))
     for i, line in enumerate(lines):
+        if line.startswith("Last Exception Backtrace"):
+            print("\n".join("    " + l for l in lines[i:i + 45]))
+            break
+    for i, line in enumerate(lines):
         if "Crashed:" in line:
             print("\n".join("    " + l for l in lines[i:i + 40]))
             break
