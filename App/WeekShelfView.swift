@@ -169,12 +169,15 @@ struct WeekShelfView: View {
     enum Band: Int, CaseIterable {
         case morning, midday, evening, night
         var title: String { ["朝", "昼", "夕", "夜"][rawValue] }
-        /// Minutes of the day the band covers.
-        var range: Range<Int> { [0..<12 * 60, 12 * 60..<17 * 60, 17 * 60..<20 * 60, 20 * 60..<24 * 60][rawValue] }
+        /// Minutes the band covers, from its start: 朝 4–10, 昼 10–16, 夕 16–19, 夜 19 to 4 the next morning
+        /// (a day's own hours before 4 sit at the end of its 夜, written past 24:00).
+        var range: Range<Int> { [4 * 60..<10 * 60, 10 * 60..<16 * 60, 16 * 60..<19 * 60, 19 * 60..<28 * 60][rawValue] }
         /// Where a thing moved into this band from another one lands, until a time is picked in the sheet.
-        var usualStart: Int { [9 * 60, 13 * 60, 18 * 60, 21 * 60][rawValue] }
+        var usualStart: Int { [7 * 60, 12 * 60, 17 * 60, 20 * 60][rawValue] }
+        /// A minute of the day on the bands' clock: before 4:00 counts as the end of the night.
+        static func clock(_ minute: Int) -> Int { minute < 4 * 60 ? minute + 24 * 60 : minute }
         static func of(_ minute: Int) -> Band {
-            allCases.first { $0.range.contains(minute) } ?? .night
+            allCases.first { $0.range.contains(clock(minute)) } ?? .night
         }
         /// Things without a time sit with the morning.
         static func of(_ item: AgendaItem) -> Band { item.slot.map { of($0.start) } ?? .morning }
@@ -523,10 +526,16 @@ private struct ShelfRow: View {
     }
 
     /// The parts of a band held for sleep or work, as fractions of its width from left (its start) to right.
+    /// A day's hours before 4:00 are the end of its night, as its things there are.
     static func spans(of held: [TimeSlot], in range: Range<Int>) -> [ClosedRange<Double>] {
         let length = Double(range.count)
-        return held.compactMap { slot in
-            let start = max(slot.start, range.lowerBound), end = min(slot.end, range.upperBound)
+        let pieces = held.flatMap { slot -> [Range<Int>] in
+            var parts = [slot.start..<slot.end]
+            if slot.start < 4 * 60 { parts.append((slot.start + 24 * 60)..<(min(slot.end, 4 * 60) + 24 * 60)) }
+            return parts
+        }
+        return pieces.compactMap { piece in
+            let start = max(piece.lowerBound, range.lowerBound), end = min(piece.upperBound, range.upperBound)
             guard end > start else { return nil }
             return Double(start - range.lowerBound) / length...Double(end - range.lowerBound) / length
         }
