@@ -495,7 +495,7 @@ private struct ShelfRow: View {
     var body: some View {
         let calendar = Calendar.current
         let items = Agenda.items(on: day, tasks: store.notebook.tasks, routines: store.notebook.routines)
-        let held = items.filter(\.isBlock).compactMap(\.slot)
+        let held = items.filter { $0.isBlock && $0.slot != nil }
         let today = calendar.isDate(day, inSameDayAs: now)
         let past = calendar.startOfDay(for: day) < calendar.startOfDay(for: now)
         let weekday = calendar.component(.weekday, from: day)
@@ -525,13 +525,23 @@ private struct ShelfRow: View {
         .opacity(past ? 0.55 : 1)
     }
 
-    /// The parts of a band held for sleep or work, as fractions of its width from left (its start) to right.
-    static func spans(of held: [TimeSlot], in range: Range<Int>) -> [ClosedRange<Double>] {
+    /// A part of a band held for sleep or work: its name, and where it lies as fractions of the band's
+    /// width from left (its start) to right.
+    struct HeldSpan {
+        let name: String
+        let span: ClosedRange<Double>
+        /// Wide enough to carry its name.
+        var named: Bool { span.upperBound - span.lowerBound >= 0.3 }
+    }
+
+    static func spans(of held: [AgendaItem], in range: Range<Int>) -> [HeldSpan] {
         let length = Double(range.count)
-        return held.compactMap { slot in
+        return held.compactMap { item in
+            guard let slot = item.slot else { return nil }
             let start = max(slot.start, range.lowerBound), end = min(slot.end, range.upperBound)
             guard end > start else { return nil }
-            return Double(start - range.lowerBound) / length...Double(end - range.lowerBound) / length
+            return HeldSpan(name: item.title,
+                            span: Double(start - range.lowerBound) / length...Double(end - range.lowerBound) / length)
         }
     }
 }
@@ -543,8 +553,9 @@ private struct ShelfCell: View {
     let day: Date
     let band: WeekShelfView.Band
     let items: [AgendaItem]
-    /// Where the shelf's time is held for sleep or work, hatched under its chips at that place in the band.
-    let heldSpans: [ClosedRange<Double>]
+    /// Where the shelf's time is held for sleep or work, hatched under its chips at that place in the band
+    /// and named at its lower left when there is room (chips cover the name when the shelf is full).
+    let heldSpans: [ShelfRow.HeldSpan]
     let isTarget: Bool
     let carrying: String?
     let onFocus: (AgendaItem?) -> Void
@@ -579,10 +590,18 @@ private struct ShelfCell: View {
             RoundedRectangle(cornerRadius: 10).fill(Color(uiColor: .secondarySystemGroupedBackground))
                 .overlay {
                     GeometryReader { box in
-                        ForEach(Array(heldSpans.enumerated()), id: \.offset) { _, span in
+                        ForEach(Array(heldSpans.enumerated()), id: \.offset) { _, held in
+                            let width = box.size.width * (held.span.upperBound - held.span.lowerBound)
                             HeldFill(cornerRadius: 0)
-                                .frame(width: box.size.width * (span.upperBound - span.lowerBound), height: box.size.height)
-                                .offset(x: box.size.width * span.lowerBound)
+                                .frame(width: width, height: box.size.height)
+                                .offset(x: box.size.width * held.span.lowerBound)
+                            if held.named {
+                                Text(held.name).font(.system(size: 8.5, weight: .bold)).foregroundStyle(HeldFill.label)
+                                    .lineLimit(1).truncationMode(.tail)
+                                    .frame(width: max(0, width - 8), alignment: .leading)
+                                    .offset(x: box.size.width * held.span.lowerBound + 4, y: box.size.height - 14)
+                                    .accessibilityHidden(true)
+                            }
                         }
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 10))
