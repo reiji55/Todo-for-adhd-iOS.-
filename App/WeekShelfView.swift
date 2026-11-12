@@ -4,7 +4,7 @@ import UIKit
 /// The week on iPhone: each day a row of four shelves (morning, midday, evening, night) holding its
 /// things as small chips, so the whole week reads at a glance without sideways scrolling. A sheet
 /// pulled up from the bottom shows the chosen day and the next one hour by hour; swiping its dates
-/// moves a day at a time. A shelf that time held for sleep or work reaches is hatched.
+/// moves a day at a time. Time held for sleep or work only tints the shelves it fills.
 ///
 /// A chip tapped on the shelves opens the sheet at its hour; a shelf with three or more opens a small
 /// balloon listing them all. A chip held and dragged goes to another day or time of day; the exact
@@ -517,7 +517,7 @@ private struct ShelfRow: View {
             ForEach(WeekShelfView.Band.allCases, id: \.rawValue) { band in
                 ShelfCell(day: day, band: band,
                           items: items.filter { !$0.isBlock && WeekShelfView.Band.of($0) == band },
-                          holds: Self.holds(held, in: band.range),
+                          heldSpans: Self.spans(of: held, in: band.range),
                           isTarget: targetBand == band, carrying: carrying,
                           onFocus: { onFocus(band, $0) }, onCarry: onCarry, onDrop: onDrop)
             }
@@ -525,9 +525,14 @@ private struct ShelfRow: View {
         .opacity(past ? 0.55 : 1)
     }
 
-    /// Whether any of a band is held for sleep or work.
-    static func holds(_ held: [TimeSlot], in range: Range<Int>) -> Bool {
-        held.contains { min($0.end, range.upperBound) > max($0.start, range.lowerBound) }
+    /// The parts of a band held for sleep or work, as fractions of its width from left (its start) to right.
+    static func spans(of held: [TimeSlot], in range: Range<Int>) -> [ClosedRange<Double>] {
+        let length = Double(range.count)
+        return held.compactMap { slot in
+            let start = max(slot.start, range.lowerBound), end = min(slot.end, range.upperBound)
+            guard end > start else { return nil }
+            return Double(start - range.lowerBound) / length...Double(end - range.lowerBound) / length
+        }
     }
 }
 
@@ -538,8 +543,8 @@ private struct ShelfCell: View {
     let day: Date
     let band: WeekShelfView.Band
     let items: [AgendaItem]
-    /// Some of the shelf's time is held for sleep or work: the whole shelf is hatched under its chips.
-    let holds: Bool
+    /// Where the shelf's time is held for sleep or work, hatched under its chips at that place in the band.
+    let heldSpans: [ClosedRange<Double>]
     let isTarget: Bool
     let carrying: String?
     let onFocus: (AgendaItem?) -> Void
@@ -573,7 +578,14 @@ private struct ShelfCell: View {
         .background {
             RoundedRectangle(cornerRadius: 10).fill(Color(uiColor: .secondarySystemGroupedBackground))
                 .overlay {
-                    if holds { HeldFill(cornerRadius: 10) }
+                    GeometryReader { box in
+                        ForEach(Array(heldSpans.enumerated()), id: \.offset) { _, span in
+                            HeldFill(cornerRadius: 0)
+                                .frame(width: box.size.width * (span.upperBound - span.lowerBound), height: box.size.height)
+                                .offset(x: box.size.width * span.lowerBound)
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
         }
         .overlay {
