@@ -1030,13 +1030,15 @@ private struct DayFlow: View {
 
     var body: some View {
         let items = Agenda.items(on: now, tasks: store.notebook.tasks, routines: store.notebook.routines)
-        let held = items.filter(\.isBlock).compactMap(\.slot)
+        let held = items.filter { $0.isBlock && $0.slot != nil }
         let timed = items.filter { !$0.isBlock && $0.slot != nil }
         let range = Agenda.hourRange(for: timed)
         let placed = Self.place(timed, fromHour: range.lowerBound)
         let lanes = max(1, (placed.map(\.lane).max() ?? 0) + 1)
         let width = CGFloat(range.upperBound - range.lowerBound) * Self.hourWidth
-        let height = Self.axisHeight + CGFloat(lanes) * Self.laneHeight + 4
+        // Held time is named along the bottom, below the rows of blocks.
+        let strip: CGFloat = held.isEmpty ? 0 : 16
+        let height = Self.axisHeight + CGFloat(lanes) * Self.laneHeight + 4 + strip
         let nowX = Self.x(NowView.minute(of: now), fromHour: range.lowerBound)
         VStack(alignment: .leading, spacing: 10) {
             Button(action: onOpen) {
@@ -1056,12 +1058,18 @@ private struct DayFlow: View {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     ZStack(alignment: .topLeading) {
-                        ForEach(Array(held.enumerated()), id: \.offset) { _, slot in
+                        ForEach(held) { item in
+                            let slot = item.slot!
                             let start = max(0, Self.x(slot.start, fromHour: range.lowerBound))
                             let end = min(width, Self.x(slot.end, fromHour: range.lowerBound))
                             if end > start {
                                 HeldFill(cornerRadius: 0)
                                     .frame(width: end - start, height: height).offset(x: start)
+                                Text("\(item.title) \(slot.label)")
+                                    .font(.system(size: 9, weight: .bold)).foregroundStyle(HeldFill.label)
+                                    .lineLimit(1).truncationMode(.tail)
+                                    .frame(width: max(0, end - start - 8), alignment: .leading)
+                                    .offset(x: start + 4, y: height - 14)
                             }
                         }
                         if nowX > 0 {
