@@ -192,7 +192,6 @@ struct WeekShelfView: View {
 
     private func shelf(now: Date) -> some View {
         let calendar = Calendar.current
-        let next = calendar.date(byAdding: .day, value: 1, to: selectedDay) ?? selectedDay
         return VStack(spacing: 4) {
             HStack(spacing: 4) {
                 Color.clear.frame(width: gutter, height: 1)
@@ -202,8 +201,8 @@ struct WeekShelfView: View {
             }
             .padding(.top, 6)
             ForEach(days, id: \.self) { day in
-                let emphasis: Double = calendar.isDate(day, inSameDayAs: selectedDay) ? 0.5
-                    : (calendar.isDate(day, inSameDayAs: next) ? 0.22 : 0)
+                // Only today is outlined: tapping a day already brings it up in the sheet below.
+                let isToday = calendar.isDate(day, inSameDayAs: now)
                 let target = carry?.target.flatMap { calendar.isDate($0.day, inSameDayAs: day) ? $0.band : nil }
                 ShelfRow(day: day, now: now, gutter: gutter, targetBand: target, carrying: carry?.item.id,
                          onSelect: { select(day) },
@@ -211,8 +210,8 @@ struct WeekShelfView: View {
                          onCarry: { item, location in carried(item, from: day, to: location) },
                          onDrop: dropped)
                 .overlay {
-                    if emphasis > 0 {
-                        RoundedRectangle(cornerRadius: 12).strokeBorder(Palette.accent.opacity(emphasis), lineWidth: 1.5)
+                    if isToday {
+                        RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.55), lineWidth: 1.5)
                             .padding(.leading, gutter + 2).allowsHitTesting(false)
                     }
                 }
@@ -515,7 +514,7 @@ private struct ShelfRow: View {
             ForEach(WeekShelfView.Band.allCases, id: \.rawValue) { band in
                 ShelfCell(day: day, band: band,
                           items: items.filter { !$0.isBlock && WeekShelfView.Band.of($0) == band },
-                          heldShare: Self.share(of: held, in: band.range),
+                          heldSpans: Self.spans(of: held, in: band.range),
                           isTarget: targetBand == band, carrying: carrying,
                           onFocus: { onFocus(band, $0) }, onCarry: onCarry, onDrop: onDrop)
             }
@@ -523,12 +522,14 @@ private struct ShelfRow: View {
         .opacity(past ? 0.55 : 1)
     }
 
-    /// How much of a band is held for sleep or work.
-    static func share(of held: [TimeSlot], in range: Range<Int>) -> Double {
-        let covered = held.reduce(0) { total, slot in
-            total + max(0, min(slot.end, range.upperBound) - max(slot.start, range.lowerBound))
+    /// The parts of a band held for sleep or work, as fractions of its width from left (its start) to right.
+    static func spans(of held: [TimeSlot], in range: Range<Int>) -> [ClosedRange<Double>] {
+        let length = Double(range.count)
+        return held.compactMap { slot in
+            let start = max(slot.start, range.lowerBound), end = min(slot.end, range.upperBound)
+            guard end > start else { return nil }
+            return Double(start - range.lowerBound) / length...Double(end - range.lowerBound) / length
         }
-        return Double(covered) / Double(range.count)
     }
 }
 
@@ -539,7 +540,8 @@ private struct ShelfCell: View {
     let day: Date
     let band: WeekShelfView.Band
     let items: [AgendaItem]
-    let heldShare: Double
+    /// Where the shelf's time is held for sleep or work, hatched under its chips at that place in the band.
+    let heldSpans: [ClosedRange<Double>]
     let isTarget: Bool
     let carrying: String?
     let onFocus: (AgendaItem?) -> Void
@@ -571,11 +573,17 @@ private struct ShelfCell: View {
         .padding(4)
         .frame(maxWidth: .infinity, minHeight: 64, alignment: .topLeading)
         .background {
-            if heldShare >= 0.5 {
-                HeldFill(cornerRadius: 10)
-            } else {
-                RoundedRectangle(cornerRadius: 10).fill(Color(uiColor: .secondarySystemGroupedBackground))
-            }
+            RoundedRectangle(cornerRadius: 10).fill(Color(uiColor: .secondarySystemGroupedBackground))
+                .overlay {
+                    GeometryReader { box in
+                        ForEach(Array(heldSpans.enumerated()), id: \.offset) { _, span in
+                            HeldFill(cornerRadius: 0)
+                                .frame(width: box.size.width * (span.upperBound - span.lowerBound), height: box.size.height)
+                                .offset(x: box.size.width * span.lowerBound)
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
         }
         .overlay {
             if isTarget {
