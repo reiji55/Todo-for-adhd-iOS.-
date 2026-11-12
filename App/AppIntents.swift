@@ -87,7 +87,7 @@ struct BoardCardQuery: EntityStringQuery {
 
 struct GetTodayIntent: AppIntent {
     static var title: LocalizedStringResource = "今日の予定を取得"
-    static var description = IntentDescription("今日の時間割（タスクとルーティン）、今日中に必要なもの、前の日から残っているものを文章で返します。")
+    static var description = IntentDescription("今日の時間割（タスクとルーティン）、今日までの締切、前の日から残っているものを文章で返します。")
 
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         guard !TaskStore.shared.isDemo else { throw HormeIntentError.demo }

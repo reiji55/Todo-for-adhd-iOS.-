@@ -127,7 +127,7 @@ struct TodayView: View {
             }
             if !required.isEmpty {
                 // What is due today starts open: folded, it would be easy to miss.
-                TimetableFolder(title: "今日中に必要なもの", count: required.count, identifier: "requiredFolder", startsOpen: true) {
+                TimetableFolder(title: "今日までの締切", count: required.count, identifier: "requiredFolder", startsOpen: true) {
                     ForEach(required) { task in
                         let current = store.task(task.id) ?? task
                         if store.hasChildren(task.id) {

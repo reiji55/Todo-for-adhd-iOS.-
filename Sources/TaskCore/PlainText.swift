@@ -50,7 +50,7 @@ public enum PlainText {
             $0.plannedAt.map { calendar.isDate($0, inSameDayAs: now) } != true
         }
         if !required.isEmpty {
-            parts.append("今日中に必要なもの\n" + required.map { "\(line(AgendaItem(task: $0), task: $0))（\(board.obligationReason($0, now: now))）" }
+            parts.append("今日までの締切\n" + required.map { "\(line(AgendaItem(task: $0), task: $0))（\(board.obligationReason($0, now: now))）" }
                 .joined(separator: "\n"))
         }
         let leftovers = board.pastPlanned(book.tasks, now: now)

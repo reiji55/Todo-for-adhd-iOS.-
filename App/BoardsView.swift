@@ -113,7 +113,7 @@ struct AllTasksView: View {
                                    description: Text(search.isEmpty ? "右下の＋から、タイトルだけで登録できます。" : "別の言葉で検索してみてください。"))
         }
         if !required.isEmpty {
-            SectionHeading(title: "今日中に必要なもの \(required.count)件", color: Palette.must)
+            SectionHeading(title: "今日までの締切 \(required.count)件", color: Palette.must)
             ForEach(required) { task in
                 row(task, reason: board.obligationReason(task, now: now), raised: listedDay(task).map(calendar.isDateInToday) == true)
             }
