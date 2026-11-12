@@ -47,7 +47,35 @@ if [[ -n "$OLD_RUNTIME" ]]; then
 else
   SIMULATOR_ID=$(xcrun simctl clone "$BASE_SIMULATOR" 'Horme Interface Tests')
 fi
+STARTED=$(date +%s)
 cleanup() {
+  # A crash in the app under test: print the exception and where it was thrown.
+  for report in $(find "$HOME/Library/Logs/DiagnosticReports" -name 'ThreeDays*' -newermt "@$STARTED" 2>/dev/null); do
+    echo "::error::App crash during interface tests: $report"
+    python3 - "$report" <<'PY'
+import json, sys
+text = open(sys.argv[1]).read()
+head, _, body = text.partition("\n")
+try:
+    report = json.loads(body)
+except ValueError:
+    print(text[:8000]); sys.exit()
+print("exception:", json.dumps(report.get("exception")))
+if report.get("asi"):
+    print("asi:", json.dumps(report["asi"], ensure_ascii=False)[:4000])
+images = report.get("usedImages", [])
+def frames(items):
+    for frame in items[:40]:
+        image = images[frame["imageIndex"]]["name"] if frame.get("imageIndex", -1) < len(images) else "?"
+        print("   ", image, frame.get("symbol", ""), frame.get("sourceFile", ""), frame.get("sourceLine", ""))
+if report.get("lastExceptionBacktrace"):
+    print("last exception backtrace:"); frames(report["lastExceptionBacktrace"])
+threads = report.get("threads", [])
+faulting = report.get("faultingThread", 0)
+if faulting < len(threads):
+    print("crashed thread:"); frames(threads[faulting].get("frames", []))
+PY
+  done
   if [[ -d ci-results/InterfaceTests.xcresult ]]; then
     xcrun xcresulttool get test-results summary --path ci-results/InterfaceTests.xcresult \
       > ci-results/interface-summary.json || true
