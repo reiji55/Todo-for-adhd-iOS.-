@@ -37,6 +37,9 @@ struct NowView: View {
                         .frame(maxWidth: 620)
                         .frame(maxWidth: .infinity)
                         .id("nowTop")
+                        .onChange(of: lockState(now: now), initial: true) { _, state in
+                            NowActivityController.shared.show(state)
+                        }
                 }
                 .background(Palette.paper)
                 .onChange(of: store.taskStartRequest) { _, request in
@@ -195,6 +198,19 @@ struct NowView: View {
         EnergyMemory.markChosen(key)
     }
 
+    /// What the lock screen shows: the card's pick, or nothing once the day is closed or nothing is left.
+    private func lockState(now: Date) -> NowActivityAttributes.ContentState? {
+        // Sample data in demo mode stays off the lock screen.
+        guard !store.isDemo, store.closedDay != DayKey.of(now) else { return nil }
+        let book = store.notebook
+        let running = work.flatMap { Calendar.current.isDate($0.startedAt, inSameDayAs: now) ? $0 : nil }
+        let picks = NowPlan.picks(in: book, energy: energy, now: now, passed: passed)
+        guard let current = resolve(running.map { "task-\($0.taskID.uuidString)" } ?? chosen, in: picks, book: book)
+        else { return nil }
+        return NowActivityController.state(for: current, among: picks, store: store,
+                                           stretch: NowPlan.freeStretch(in: book, now: now), work: running)
+    }
+
     /// The pick to show: one picked or kept in front, else the first. One kept in front stays even when a
     /// change to its 負荷 takes it out of the condition, until it is done or passed over.
     private func resolve(_ id: String?, in picks: [NowPick], book: Notebook) -> NowPick? {
@@ -342,6 +358,7 @@ private struct NowCard: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.startRoutine) private var startRoutine
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.colorScheme) private var scheme
     let pick: NowPick
     let others: [NowPick]
     let canPass: Bool
@@ -360,8 +377,8 @@ private struct NowCard: View {
     @State private var draft = ""
     @FocusState private var noteFocused: Bool
 
-    /// Marks on the dark card are white, in one family with its buttons; no second accent color.
-    private let mark = Color.white
+    /// The card's one color: Horme's green, for its mark, progress and buttons.
+    private let mark = Palette.accent
     private var task: TaskItem? {
         guard case .task(let id) = pick.item.source, let task = store.task(id), !task.isEvent else { return nil }
         return task
@@ -390,12 +407,12 @@ private struct NowCard: View {
                     kicker
                     Text(pick.item.title).font(.title2.weight(.bold))
                         .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                     if let due = task?.deadline ?? parent?.deadline, !pick.label.contains("締切") {
-                        Text("締切 \(ProjectText.day(due))").font(.caption).foregroundStyle(.white.opacity(0.75))
+                        Text("締切 \(ProjectText.day(due))").font(.caption).foregroundStyle(.secondary)
                     }
                     if hasInlineNotes {
-                        ItemNotesView(item: pick.item, foreground: .white.opacity(0.85),
+                        ItemNotesView(item: pick.item, foreground: .secondary,
                                       includesContinuation: !pick.item.isRoutine)
                             .padding(.top, 2)
                     }
@@ -408,13 +425,13 @@ private struct NowCard: View {
             .accessibilityHint("開いて編集します。メモの全文もここから読めます")
             if let note = routineContinuation {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("前回の続き").font(.caption).foregroundStyle(.white.opacity(0.75))
+                    Text("前回の続き").font(.caption).foregroundStyle(.secondary)
                     Text(note).font(.subheadline.weight(.semibold))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(Palette.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             if !children.isEmpty {
                 ChildProgressView(children: children, tint: mark)
@@ -424,10 +441,10 @@ private struct NowCard: View {
             if showingNote, let task, !working {
                 HStack(alignment: .top, spacing: 8) {
                     TextField("次はどこから？（任意）", text: $draft,
-                              prompt: Text("次はどこから？（任意）").foregroundColor(.white.opacity(0.65)), axis: .vertical)
+                              prompt: Text("次はどこから？（任意）").foregroundColor(.secondary), axis: .vertical)
                         .font(.subheadline).lineLimit(1...2)
                         .focused($noteFocused)
-                        .padding(10).background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                        .padding(10).background(Palette.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                         .accessibilityIdentifier("taskContinuationInput")
                     Button("残す") {
                         if store.saveTaskContinuation(task.id, note: draft) {
@@ -438,22 +455,12 @@ private struct NowCard: View {
                     .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityIdentifier("saveTaskContinuation")
                 }
-                .tint(.white)
+                .tint(Palette.accent)
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(.primary)
         .padding(14)
-        .background(alignment: .trailing) {
-            FocusLeaves().opacity(0.35).padding(.trailing, 12)
-        }
-        .background {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(LinearGradient(colors: [Color(red: 0.16, green: 0.35, blue: 0.28),
-                                              Color(red: 0.06, green: 0.22, blue: 0.16)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-                .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(.white.opacity(0.25)))
-                .shadow(color: Palette.accent.opacity(0.3), radius: 8, x: 4, y: 5)
-        }
+        .background(RaisedCardBackground(cornerRadius: 16))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("nowFocusCard")
         .sensoryFeedback(.success, trigger: finished)
@@ -462,24 +469,28 @@ private struct NowCard: View {
 
     private var header: some View {
         headerLayout {
-            Text(working ? "実行中" : pick.kind == .upcoming ? "次" : "いま")
-                .font(.caption.weight(.bold)).foregroundStyle(Color(red: 0.08, green: 0.24, blue: 0.18))
-                .padding(.horizontal, 10).padding(.vertical, 6).background(mark, in: Capsule())
+            HStack(spacing: 5) {
+                SproutMark(dark: scheme == .dark).frame(width: 14, height: 16)
+                Text(working ? "実行中" : pick.kind == .upcoming ? "次" : "いま")
+            }
+            .font(.caption.weight(.heavy)).foregroundStyle(mark)
+            .padding(.leading, 7).padding(.trailing, 10).padding(.vertical, 5)
+            .background(mark.opacity(scheme == .dark ? 0.22 : 0.1), in: Capsule())
             if working, let work {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text(ElapsedTimer.clock(work.elapsed(at: context.date)))
-                        .font(.subheadline.weight(.semibold)).monospacedDigit()
+                        .font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(mark)
                         .accessibilityIdentifier("taskElapsed")
                 }
             } else if let slot = pick.item.slot, pick.kind == .inSlot || pick.kind == .upcoming {
                 Text("\(slot.startLabel)–\(TimeSlot.clock(slot.end))")
-                    .font(.caption).monospacedDigit().lineLimit(1).minimumScaleFactor(0.85)
+                    .font(.caption).monospacedDigit().lineLimit(1).minimumScaleFactor(0.85).foregroundStyle(.secondary)
             } else if let stretch {
                 HStack(spacing: 3) {
                     Text(NowView.stretchTitle(stretch)).lineLimit(1).truncationMode(.tail)
                     Text("· " + NowView.stretchEnd(stretch)).lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 }
-                .font(.caption2)
+                .font(.caption2).foregroundStyle(.secondary)
             }
             if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 0) }
             if let task {
@@ -552,8 +563,6 @@ private struct NowCard: View {
             .font(.footnote.weight(.bold)).foregroundStyle(color)
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(color.opacity(0.12), in: Capsule())
-            // The agreed card is always dark; use the existing dark project palette on it.
-            .environment(\.colorScheme, .dark)
             .accessibilityLabel("プロジェクト：\(project)")
         }
     }
@@ -572,7 +581,6 @@ private struct NowCard: View {
             }
             .font(.footnote.weight(.bold))
             .foregroundStyle(kickerColor)
-            .environment(\.colorScheme, .dark)
         }
     }
 
@@ -668,15 +676,19 @@ private struct NowCard: View {
 private struct FocusActionStyle: ButtonStyle {
     enum Kind { case primary, secondary }
     let kind: Kind
+    /// Text on the green: white on the light card, deep green on the lighter green of dark mode.
+    static let onAccent = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(red: 0.06, green: 0.17, blue: 0.14, alpha: 1) : .white
+    })
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body.weight(.bold))
-            .foregroundStyle(kind == .secondary ? Color.white : Color(red: 0.08, green: 0.24, blue: 0.18))
+            .foregroundStyle(kind == .secondary ? Palette.accent : Self.onAccent)
             .padding(.horizontal, 18).frame(minHeight: 50)
             .background {
-                Capsule().fill(kind == .secondary ? Color.clear : Color.white)
+                Capsule().fill(kind == .secondary ? Color.clear : Palette.accent)
             }
-            .overlay(Capsule().strokeBorder(kind == .secondary ? .white.opacity(0.7) : .clear))
+            .overlay(Capsule().strokeBorder(kind == .secondary ? Palette.accent : .clear, lineWidth: 1.5))
             .contentShape(Capsule())
             .opacity(configuration.isPressed ? 0.75 : 1)
     }
@@ -690,12 +702,12 @@ private struct EffortBadge: View {
     var body: some View {
         Button(action: onCycle) {
             HStack(spacing: 6) {
-                Text("負荷").font(.caption2.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
-                EffortMeter(level: effort.rank + 1, color: .white)
-                Text(effort.label).font(.caption.weight(.bold)).foregroundStyle(.white)
+                Text("負荷").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                EffortMeter(level: effort.rank + 1, color: Palette.accent)
+                Text(effort.label).font(.caption.weight(.bold)).foregroundStyle(.primary)
             }
             .padding(.horizontal, 10).frame(minHeight: 30)
-            .background(.white.opacity(0.1), in: Capsule())
+            .background(Color.primary.opacity(0.05), in: Capsule())
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }

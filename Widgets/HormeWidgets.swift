@@ -2,13 +2,15 @@ import SwiftUI
 import UIKit
 import WidgetKit
 
-/// Widgets that only open Horme's add screens, for writing something down the moment it comes up.
+/// Widgets that open Horme's add screens, for writing something down the moment it comes up, and いま
+/// on the lock screen.
 @main
 struct HormeWidgets: WidgetBundle {
     var body: some Widget {
         TaskQuickAddWidget()
         IdeaQuickAddWidget()
         QuickAddPairWidget()
+        NowLiveActivity()
         if #available(iOSApplicationExtension 18.0, *) {
             TaskQuickAddControl()
             IdeaQuickAddControl()

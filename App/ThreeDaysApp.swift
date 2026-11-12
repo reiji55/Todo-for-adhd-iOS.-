@@ -5,6 +5,7 @@ import SwiftUI
 struct ThreeDaysApp: App {
     @UIApplicationDelegateAdaptor(HormeAppDelegate.self) private var appDelegate
     @StateObject private var store = TaskStore.shared
+    init() { NowActivityController.install() }
     var body: some Scene {
         WindowGroup { RootView().environmentObject(store).tint(Palette.accent) }
     }

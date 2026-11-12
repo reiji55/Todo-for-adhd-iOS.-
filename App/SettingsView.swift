@@ -30,6 +30,7 @@ struct SettingsView: View {
             Form {
                 SharingSection()
                 NotificationSettingsSection()
+                LockScreenSection()
                 ClaudeBridgeSection()
                 Section {
                     NavigationLink { RoutineSettingsView() } label: {
@@ -161,5 +162,20 @@ struct SettingsView: View {
     private func exportSafetyBackup(beforeSharing: Bool) {
         do { document = BackupDocument(data: try store.backupData(beforeSharing: beforeSharing)); exporter = true }
         catch { localError = error.localizedDescription }
+    }
+}
+
+/// いま on the lock screen, above the notifications.
+@MainActor
+private struct LockScreenSection: View {
+    @AppStorage(NowActivityController.enabledKey) private var enabled = true
+
+    var body: some View {
+        Section {
+            Toggle("ロック画面に「いま」を出す", isOn: $enabled)
+                .onChange(of: enabled) { _, on in if !on { NowActivityController.shared.end() } }
+        } footer: {
+            Text("通知の上に「いま」のカードを出します。iPhoneの決まりで12時間ほどで消え、今日の画面を開くと出し直します。")
+        }
     }
 }

@@ -78,36 +78,3 @@ struct ChildProgressView: View {
         .accessibilityLabel("子タスク\(children.count)件のうち\(done)件完了")
     }
 }
-
-/// Small botanical accent made of vector leaves; it never takes part in layout or hit testing.
-struct FocusLeaves: View {
-    var body: some View {
-        ZStack {
-            LeafShape().fill(LinearGradient(colors: [Color(red: 0.7, green: 0.9, blue: 0.25),
-                                                    Color(red: 0.25, green: 0.55, blue: 0.14)],
-                                           startPoint: .topTrailing, endPoint: .bottomLeading))
-                .frame(width: 25, height: 43).rotationEffect(.degrees(18)).offset(x: 7, y: -11)
-            LeafShape().fill(Color(red: 0.4, green: 0.68, blue: 0.2))
-                .frame(width: 18, height: 30).rotationEffect(.degrees(-65)).offset(x: -10, y: 11)
-            LeafShape().fill(Color(red: 0.25, green: 0.5, blue: 0.17))
-                .frame(width: 16, height: 26).rotationEffect(.degrees(55)).offset(x: 10, y: 21)
-        }
-        .frame(width: 54, height: 76)
-        .accessibilityHidden(true)
-        .allowsHitTesting(false)
-    }
-}
-
-private struct LeafShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        Path { p in
-            p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-            p.addCurve(to: CGPoint(x: rect.maxX, y: rect.minY),
-                       control1: CGPoint(x: -rect.width * 0.15, y: rect.height * 0.3),
-                       control2: CGPoint(x: rect.width * 0.8, y: rect.height * 0.2))
-            p.addCurve(to: CGPoint(x: rect.minX, y: rect.maxY),
-                       control1: CGPoint(x: rect.width * 1.1, y: rect.height * 0.7),
-                       control2: CGPoint(x: rect.width * 0.5, y: rect.height * 0.95))
-        }
-    }
-}
