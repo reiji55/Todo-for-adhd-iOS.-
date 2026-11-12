@@ -314,8 +314,9 @@ shot focus
 # crash report it leaves (once seen on an iPad).
 crash_reports() { ls -1t "$HOME"/Library/Logs/DiagnosticReports/ThreeDays*.ips 2>/dev/null || true; }
 before=$(crash_reports | head -1)
-for tab in 2 1 0 3 4; do
-  launch -uiTab "$tab" -uiDemo >/dev/null
+for tab in "2" "2 -uiTimetable" "1" "0" "3" "4"; do
+  # shellcheck disable=SC2086
+  launch -uiTab $tab -uiDemo >/dev/null
   sleep 3
   xcrun simctl launch "$SIMULATOR_ID" com.apple.Preferences >/dev/null 2>&1 || true
   sleep 4

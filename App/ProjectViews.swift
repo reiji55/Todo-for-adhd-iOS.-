@@ -516,7 +516,7 @@ struct ProjectPage: View {
             if request != nil { addingStep = false }
         }
         .navigationDestination(item: $openedCard) { route in
-            GuidePager(startID: route.id, cardIDs: store.projectCards(key).map(\.id))
+            GuidePager(startID: route.id, cardIDs: store.projectCards(key).map(\.id)).keepsStore()
         }
     }
 

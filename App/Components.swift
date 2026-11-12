@@ -57,6 +57,13 @@ extension TaskStore {
     }
 }
 
+extension View {
+    /// Hands the store to a pushed screen itself. On iPad, when the window changes size (rotating, going to
+    /// the app switcher) a navigation destination can be rebuilt without the environment of the screen
+    /// that pushed it, and reading the store there would crash.
+    func keepsStore() -> some View { environmentObject(TaskStore.shared) }
+}
+
 /// Time held for something else (sleep, work): a gray a step darker than what is around it, with fine
 /// diagonal lines. Light and dark each have their own shades, so it reads the same on both.
 struct HeldFill: View {

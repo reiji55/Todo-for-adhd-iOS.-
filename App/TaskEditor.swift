@@ -220,7 +220,7 @@ struct TaskEditor: View {
             .interactiveDismissDisabled(changed)
             .sheet(item: $guide) { route in GuideSheet(cardID: route.id) }
             .navigationDestination(item: $openedProject) { route in
-                ProjectPage(key: route.key) { otherTask = $0 }
+                ProjectPage(key: route.key) { otherTask = $0 }.keepsStore()
             }
             .sheet(item: $otherTask) { TaskEditor(task: $0, original: store.task($0.id)) }
             .sheet(item: $timing) { ref in

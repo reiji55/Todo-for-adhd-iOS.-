@@ -58,6 +58,7 @@ struct NowView: View {
                 .navigationTitle("時間割")
                 .navigationBarTitleDisplayMode(.inline)
                 .floatingAdd(onAdd)
+                .keepsStore()
         }
         .sheet(isPresented: $rolloverOpen) { RolloverSheet() }
         .onChange(of: store.notebook) { _, book in

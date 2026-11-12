@@ -31,7 +31,7 @@ struct StockView: View {
             .frame(maxWidth: 820).frame(maxWidth: .infinity)
             .background(Palette.paper)
         }
-        .navigationDestination(item: $openedList) { route in ListPage(listID: route.id) }
+        .navigationDestination(item: $openedList) { route in ListPage(listID: route.id).keepsStore() }
         .onAppear {
             #if DEBUG
             let arguments = ProcessInfo.processInfo.arguments

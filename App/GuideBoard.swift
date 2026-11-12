@@ -103,16 +103,16 @@ struct GuideBoardView: View {
         .sheet(item: $newCard) { card in GuideCardEditor(card: card) }
         .sheet(item: $newProject) { project in ProjectEditor(project: project, originalKey: nil) }
         .navigationDestination(for: GuideRoute.self) { route in
-            GuidePager(startID: route.id, cardIDs: shown.map(\.id), onEdit: onEdit)
+            GuidePager(startID: route.id, cardIDs: shown.map(\.id), onEdit: onEdit).keepsStore()
         }
         .navigationDestination(item: $opened) { route in
-            GuidePager(startID: route.id, cardIDs: shown.map(\.id), onEdit: onEdit)
+            GuidePager(startID: route.id, cardIDs: shown.map(\.id), onEdit: onEdit).keepsStore()
         }
-        .navigationDestination(for: ProjectRoute.self) { route in ProjectPage(key: route.key, onEdit: onEdit) }
-        .navigationDestination(item: $openedProject) { route in ProjectPage(key: route.key, onEdit: onEdit) }
+        .navigationDestination(for: ProjectRoute.self) { route in ProjectPage(key: route.key, onEdit: onEdit).keepsStore() }
+        .navigationDestination(item: $openedProject) { route in ProjectPage(key: route.key, onEdit: onEdit).keepsStore() }
         // A card tapped on a folder pages through the cards of that project.
         .navigationDestination(item: $openedProjectCard) { route in
-            GuidePager(startID: route.id, cardIDs: projectSiblings(of: route.id), onEdit: onEdit)
+            GuidePager(startID: route.id, cardIDs: projectSiblings(of: route.id), onEdit: onEdit).keepsStore()
         }
         .onAppear {
             openForScreenshot()
