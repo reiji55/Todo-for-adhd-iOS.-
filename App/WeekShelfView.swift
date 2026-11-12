@@ -571,8 +571,11 @@ private struct ShelfCell: View {
         .padding(4)
         .frame(maxWidth: .infinity, minHeight: 64, alignment: .topLeading)
         .background {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(heldShare >= 0.5 ? Color.primary.opacity(0.045) : Color(uiColor: .secondarySystemGroupedBackground))
+            if heldShare >= 0.5 {
+                HeldFill(cornerRadius: 10)
+            } else {
+                RoundedRectangle(cornerRadius: 10).fill(Color(uiColor: .secondarySystemGroupedBackground))
+            }
         }
         .overlay {
             if isTarget {
@@ -774,10 +777,11 @@ private struct SheetDays: View {
         return ZStack(alignment: .topLeading) {
             ForEach(held) { item in
                 let slot = item.slot!
-                RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05))
+                HeldFill(cornerRadius: 8)
                     .frame(width: column, height: CGFloat(slot.duration) / 60 * hourHeight)
                     .overlay(alignment: .topLeading) {
-                        Text("\(item.title) \(slot.label)").font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1).padding(4)
+                        Text("\(item.title) \(slot.label)").font(.system(size: 10, weight: .bold)).foregroundStyle(HeldFill.label)
+                            .lineLimit(1).padding(5)
                     }
                     .offset(y: CGFloat(slot.start) / 60 * hourHeight)
                     .allowsHitTesting(false)

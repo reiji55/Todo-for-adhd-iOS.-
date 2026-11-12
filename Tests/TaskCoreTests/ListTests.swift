@@ -122,4 +122,21 @@ final class ListTests: XCTestCase {
         XCTAssertEqual(preview.combined.openItems(in: copy.id).count, 3)
         XCTAssertEqual(preview.combined.listItems.count, 6)
     }
+
+    func testHeadingsGroupWhatIsOpenWithoutHeadingFirst() throws {
+        let list = StockList(name: "トルティーヤ", createdAt: now)
+        let items = [ListItem(listID: list.id, title: "玉ねぎ", group: "共通", createdAt: now),
+                     ListItem(listID: list.id, title: "合いびき肉", group: "タコミート", createdAt: later(1)),
+                     ListItem(listID: list.id, title: "トルティーヤ", createdAt: later(2)),
+                     ListItem(listID: list.id, title: "トマト", group: "共通", createdAt: later(3)),
+                     ListItem(listID: list.id, title: "レタス", group: "タコミート", createdAt: later(4), doneAt: later(5))]
+        let book = Notebook(lists: [list], listItems: items)
+        let groups = book.openGroups(in: list.id)
+        XCTAssertEqual(groups.map(\.heading), ["", "共通", "タコミート"])
+        XCTAssertEqual(groups[1].items.map(\.title), ["玉ねぎ", "トマト"])
+        XCTAssertEqual(groups[2].items.map(\.title), ["合いびき肉"], "done things are not listed under their heading")
+        XCTAssertEqual(book.headings(in: list.id), ["共通", "タコミート"])
+        // The heading travels and older records without it still open.
+        XCTAssertEqual(try NotebookCodec.decode(NotebookCodec.encode(book)).listItems.map(\.group), items.map(\.group))
+    }
 }

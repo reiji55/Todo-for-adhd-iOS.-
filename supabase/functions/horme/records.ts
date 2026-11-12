@@ -29,6 +29,8 @@ export type StockList = { id: string; name: string; createdAt: string };
 export type ListItem = {
   id: string; listID: string; title: string; memo: string; link: string; place: string; createdAt: string;
   doneAt?: string | null;
+  /** An optional heading it is listed under (a dish or aisle, an area, a genre). */
+  group?: string;
 };
 export type Idea = { id: string; text: string; createdAt: string };
 export type Card = { id: string; title: string; purpose: string; goal: string; detail: string; createdAt: string; rank: number };
@@ -94,7 +96,7 @@ export function materialize(records: SyncRecord[]): Book {
     } else if (record.id.startsWith("list_")) {
       book.lists.push(plain as StockList);
     } else if (record.id.startsWith("item_")) {
-      book.items.push({ memo: "", link: "", place: "", ...(plain as ListItem) });
+      book.items.push({ memo: "", link: "", place: "", group: "", ...(plain as ListItem) });
     } else if (record.id.startsWith("card_")) {
       book.cards.push({ purpose: "", goal: "", detail: "", rank: 0, ...(plain as Card) });
     } else if (record.id.startsWith("project_")) {

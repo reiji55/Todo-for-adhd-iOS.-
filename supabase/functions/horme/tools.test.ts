@@ -250,7 +250,7 @@ test("lists: add things, plan one, check off a trip, and the app's fields are wr
   const store = memoryStore([]);
   const now = new Date("2026-11-11T01:00:00Z");
   const first = payload(await call(store, "add_list_items", {
-    new_list: "スーパー", items: [{ title: "卵" }, { title: "牛乳", memo: "低脂肪" }],
+    new_list: "スーパー", items: [{ title: "卵", group: "乳製品・卵" }, { title: "牛乳", memo: "低脂肪", group: "乳製品・卵" }],
   }, now));
   assert.equal(first.createdList, true);
   const again = payload(await call(store, "add_list_items", { new_list: "スーパー", items: [{ title: "パン" }] }, now));
@@ -260,6 +260,7 @@ test("lists: add things, plan one, check off a trip, and the app's fields are wr
   const trip = payload(await call(store, "add_tasks", { tasks: [{ title: "買い物", date: "2026-11-11", from_list: first.list }] }, now));
   const lists = payload(await call(store, "get_lists", {}, now)).lists;
   assert.equal(lists[0].open.length, 3);
+  assert.equal(lists[0].open.filter((i: any) => i.group === "乳製品・卵").length, 2);
   assert.deepEqual([lists[0].trip.done, lists[0].trip.total], [0, 3]);
 
   const later = new Date("2026-11-11T08:00:00Z");

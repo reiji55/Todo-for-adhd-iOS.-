@@ -139,6 +139,14 @@ struct ListPage: View {
     @State private var newName = ""
     @State private var confirmDelete = false
     @State private var showDone = false
+    /// Headings folded away.
+    @State private var collapsed: Set<String> = []
+    /// The heading a thing is being added under, and what is typed.
+    @State private var addingTo: String?
+    @State private var headingDraft = ""
+    @FocusState private var headingFocused: Bool
+    @State private var namingHeading = false
+    @State private var newHeading = ""
 
     struct ListItemRouteID: Identifiable { let id: UUID }
 
@@ -157,6 +165,9 @@ struct ListPage: View {
     private func content(_ list: StockList) -> some View {
         let book = store.notebook
         let open = book.openItems(in: list.id)
+        let groups = book.openGroups(in: list.id)
+        let loose = groups.first { $0.heading.isEmpty }?.items ?? []
+        let headed = groups.filter { !$0.heading.isEmpty }
         let done = book.doneItems(in: list.id)
         let trip = book.tasks.filter { $0.listID == list.id && !$0.isComplete }.min { $0.createdAt < $1.createdAt }
         return ScrollView {
@@ -172,7 +183,7 @@ struct ListPage: View {
                     .accessibilityIdentifier("planWholeList")
                 }
                 VStack(spacing: 0) {
-                    ForEach(open) { item in
+                    ForEach(loose) { item in
                         ListItemRow(item: item, onCheck: { store.setItemDone(item.id, true) }, onOpen: { opened = ListItemRouteID(id: item.id) })
                         Divider().padding(.leading, 52)
                     }
@@ -188,6 +199,19 @@ struct ListPage: View {
                     .padding(.horizontal, 12).frame(minHeight: 50)
                 }
                 .background(RaisedCardBackground(cornerRadius: 16))
+                ForEach(headed, id: \.heading) { group in
+                    headingCard(group.heading, items: group.items)
+                }
+                // A heading just named has no things yet: its card waits for the first.
+                if let pending = addingTo, !pending.isEmpty, !headed.contains(where: { $0.heading == pending }) {
+                    headingCard(pending, items: [])
+                }
+                Button { namingHeading = true } label: {
+                    Label("見出しを足す", systemImage: "plus").font(.subheadline.weight(.bold))
+                        .padding(.horizontal, 4).frame(minHeight: 44)
+                }
+                .buttonStyle(.plain).foregroundStyle(Palette.accent)
+                .accessibilityIdentifier("addListHeading")
                 if !done.isEmpty {
                     Button { withAnimation(.snappy) { showDone.toggle() } } label: {
                         HStack(spacing: 8) {
@@ -226,6 +250,19 @@ struct ListPage: View {
                 .accessibilityLabel("リストの操作")
             }
         }
+        .alert("見出し", isPresented: $namingHeading) {
+            TextField("例：野菜、上野のあたり、小説", text: $newHeading)
+            Button("追加") {
+                let name = newHeading.trimmingCharacters(in: .whitespacesAndNewlines)
+                newHeading = ""
+                guard !name.isEmpty else { return }
+                collapsed.remove(name)
+                headingDraft = ""
+                addingTo = name
+                headingFocused = true
+            }
+            Button("キャンセル", role: .cancel) { newHeading = "" }
+        }
         .alert("リストの名前", isPresented: $renaming) {
             TextField("名前", text: $newName)
             Button("保存") { store.renameList(list.id, to: newName) }
@@ -242,6 +279,69 @@ struct ListPage: View {
     private func add() {
         if store.addItem(draft, to: listID) { draft = "" }
         adding = true
+    }
+
+    /// One heading: tap it to fold; its things; a line to add under it.
+    private func headingCard(_ heading: String, items: [ListItem]) -> some View {
+        let folded = collapsed.contains(heading)
+        return VStack(spacing: 0) {
+            Button {
+                withAnimation(.snappy) {
+                    if folded { collapsed.remove(heading) } else { collapsed.insert(heading) }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.down").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(folded ? -90 : 0))
+                    Text(heading).font(.subheadline.weight(.heavy)).foregroundStyle(.primary).lineLimit(1)
+                    Text("\(items.count)件").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 14).frame(minHeight: 44)
+                .background(Color(uiColor: .tertiarySystemFill).opacity(0.5),
+                            in: UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: folded ? 16 : 0,
+                                                       bottomTrailingRadius: folded ? 16 : 0, topTrailingRadius: 16,
+                                                       style: .continuous))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(folded ? "折りたたみ" : "展開中")
+            if !folded {
+                ForEach(items) { item in
+                    Divider().padding(.leading, 52)
+                    ListItemRow(item: item, onCheck: { store.setItemDone(item.id, true) }, onOpen: { opened = ListItemRouteID(id: item.id) })
+                }
+                Divider().padding(.leading, 52)
+                if addingTo == heading {
+                    HStack(spacing: 12) {
+                        Image(systemName: "plus").font(.body.weight(.semibold)).foregroundStyle(Palette.accent).frame(width: 28)
+                        TextField("\(heading)に追加", text: $headingDraft)
+                            .focused($headingFocused)
+                            .submitLabel(.next)
+                            .onSubmit {
+                                if store.addItem(headingDraft, to: listID, under: heading) { headingDraft = "" }
+                                headingFocused = true
+                            }
+                    }
+                    .padding(.horizontal, 12).frame(minHeight: 50)
+                } else {
+                    Button {
+                        headingDraft = ""
+                        addingTo = heading
+                        headingFocused = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "plus").font(.body.weight(.semibold)).foregroundStyle(Palette.accent).frame(width: 28)
+                            Text("\(heading)に追加").foregroundStyle(.secondary)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 12).frame(minHeight: 50).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .background(RaisedCardBackground(cornerRadius: 16))
     }
 }
 
@@ -369,6 +469,18 @@ struct ListItemSheet: View {
                     TextField("名前", text: $draft.title, axis: .vertical).font(.headline).lineLimit(1...4)
                     if let list = current.flatMap({ store.list($0.listID) }) {
                         Label(list.name, systemImage: "list.bullet").font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+                Section {
+                    HStack {
+                        TextField("見出し（任意）", text: $draft.group)
+                        let used = store.notebook.headings(in: draft.listID).filter { $0 != draft.group }
+                        if !used.isEmpty {
+                            Menu {
+                                ForEach(used, id: \.self) { heading in Button(heading) { draft.group = heading } }
+                            } label: { Image(systemName: "chevron.up.chevron.down") }
+                            .accessibilityLabel("使っている見出しから選ぶ")
+                        }
                     }
                 }
                 Section("メモ") {
@@ -500,15 +612,21 @@ struct ListChecklistSection: View {
         if let listID = task.listID, let list = store.list(listID) {
             let book = store.notebook
             let open = book.openItems(in: listID)
+            let groups = book.openGroups(in: listID)
             let done = book.doneItems(in: listID).filter { ($0.doneAt ?? .distantPast) >= task.createdAt }
             Section {
-                ForEach(open) { item in
-                    Button { store.setItemDone(item.id, true) } label: {
-                        Label { Text(item.title).foregroundStyle(.primary) } icon: {
-                            Image(systemName: "circle").foregroundStyle(Palette.accent)
-                        }
+                ForEach(groups, id: \.heading) { group in
+                    if !group.heading.isEmpty {
+                        Text(group.heading).font(.caption.weight(.bold)).foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.borderless)
+                    ForEach(group.items) { item in
+                        Button { store.setItemDone(item.id, true) } label: {
+                            Label { Text(item.title).foregroundStyle(.primary) } icon: {
+                                Image(systemName: "circle").foregroundStyle(Palette.accent)
+                            }
+                        }
+                        .buttonStyle(.borderless)
+                    }
                 }
                 ForEach(done) { item in
                     Button { store.setItemDone(item.id, false) } label: {

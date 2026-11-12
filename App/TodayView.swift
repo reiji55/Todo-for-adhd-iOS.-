@@ -52,7 +52,9 @@ struct TodayView: View {
     private func otherDay(now: Date) -> some View {
         let calendar = Calendar.current
         let day = calendar.date(byAdding: .day, value: dayOffset, to: now) ?? now
-        let items = Agenda.items(on: day, tasks: store.notebook.tasks, routines: store.notebook.routines).filter { !$0.isBlock }
+        let all = Agenda.items(on: day, tasks: store.notebook.tasks, routines: store.notebook.routines)
+        let held = all.filter { $0.isBlock && $0.slot != nil }
+        let items = all.filter { !$0.isBlock }
         let timed = items.filter { $0.slot != nil }
         let untimed = items.filter { $0.slot == nil }
         return LazyVStack(alignment: .leading, spacing: 10) {
@@ -63,7 +65,7 @@ struct TodayView: View {
                     .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 6)
             }
             if !timed.isEmpty {
-                TimelinePanel(items: timed, now: now, showsNow: false, onOpen: onOpen).padding(.bottom, 6)
+                TimedSchedule(items: timed, held: held, now: now, showsNow: false, onOpen: onOpen).padding(.bottom, 6)
             }
             if !untimed.isEmpty {
                 Text("時間を決めていない").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, timed.isEmpty ? 0 : 8)
@@ -147,7 +149,8 @@ struct TodayView: View {
             let timed = visible.filter { $0.slot != nil }
             let untimed = visible.filter { $0.slot == nil }
             if !timed.isEmpty {
-                TimelinePanel(items: timed, now: now, onOpen: onOpen).padding(.bottom, 6)
+                TimedSchedule(items: timed, held: Agenda.items(on: now, tasks: tasks, routines: store.notebook.routines)
+                    .filter { $0.isBlock && $0.slot != nil }, now: now, showsNow: true, onOpen: onOpen).padding(.bottom, 6)
             }
             if !untimed.isEmpty {
                 Text("時間を決めていない").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, timed.isEmpty ? 0 : 8)
@@ -262,6 +265,89 @@ private struct MustFolder: View {
 }
 
 /// Cards share a rail, but each connector stops before the control so an empty circle stays empty.
+/// The day's timed things on their timeline. Those that fall in time held for something else (sleep, work)
+/// sit together on a faint hatched band named for it, so a task put into working hours shows as such.
+/// Held time with nothing in it is left to the week and 今日の流れ.
+@MainActor
+struct TimedSchedule: View {
+    let items: [AgendaItem]
+    let held: [AgendaItem]
+    let now: Date
+    let showsNow: Bool
+    let onOpen: (AgendaItem) -> Void
+
+    struct Part: Identifiable {
+        let id: String
+        let block: AgendaItem?
+        var items: [AgendaItem]
+    }
+
+    /// Runs of things in the same held time (or in none), in order.
+    static func parts(_ items: [AgendaItem], held: [AgendaItem]) -> [Part] {
+        var parts: [Part] = []
+        for item in items {
+            guard let start = item.slot?.start else { continue }
+            let block = held.first { block in
+                guard let slot = block.slot else { return false }
+                return slot.start <= start && start < slot.end
+            }
+            if let last = parts.last, last.block?.id == block?.id {
+                parts[parts.count - 1].items.append(item)
+            } else {
+                parts.append(Part(id: (block.map { "held-\($0.id)-" } ?? "free-") + item.id, block: block, items: [item]))
+            }
+        }
+        return parts
+    }
+
+    /// The part and the place in it where the line for now goes: before the first thing still to start,
+    /// kept out of a band whose time has not begun or has already ended.
+    static func nowPlace(_ parts: [Part], minute: Int) -> (part: Int, index: Int)? {
+        guard !parts.isEmpty else { return nil }
+        let all = parts.flatMap(\.items)
+        let next = all.firstIndex { ($0.slot?.start ?? Int.max) > minute } ?? all.count
+        var part = parts.count - 1, index = parts[part].items.count
+        var seen = 0
+        for (k, p) in parts.enumerated() {
+            if next < seen + p.items.count { part = k; index = next - seen; break }
+            seen += p.items.count
+        }
+        if index == 0, part > 0 {
+            let notYet = parts[part].block?.slot.map { minute < $0.start } ?? false
+            let stillIn = parts[part - 1].block?.slot.map { minute < $0.end } ?? false
+            if notYet || stillIn { part -= 1; index = parts[part].items.count }
+        }
+        return (part, index)
+    }
+
+    var body: some View {
+        let parts = Self.parts(items, held: held)
+        let place = showsNow ? Self.nowPlace(parts, minute: NowView.minute(of: now)) : nil
+        VStack(spacing: 12) {
+            ForEach(Array(parts.enumerated()), id: \.element.id) { k, part in
+                let nowAt = place.map { $0.part == k ? $0.index : -1 } ?? -1
+                if let block = part.block, let slot = block.slot {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 6) {
+                            RoundedRectangle(cornerRadius: 2).fill(HeldFill.label.opacity(0.6)).frame(width: 8, height: 8)
+                            Text(block.title).lineLimit(1)
+                            Text(slot.label).fontWeight(.semibold).foregroundStyle(HeldFill.label.opacity(0.8)).monospacedDigit()
+                        }
+                        .font(.caption.weight(.bold)).foregroundStyle(HeldFill.label)
+                        .padding(.leading, 6)
+                        .accessibilityElement(children: .combine)
+                        TimelinePanel(items: part.items, now: now, showsNow: showsNow, nowAt: nowAt, onOpen: onOpen)
+                    }
+                    .padding(.horizontal, 6).padding(.top, 10).padding(.bottom, 8)
+                    .background(HeldFill(cornerRadius: 16))
+                } else {
+                    TimelinePanel(items: part.items, now: now, showsNow: showsNow, nowAt: nowAt, onOpen: onOpen)
+                }
+            }
+        }
+    }
+}
+
 @MainActor
 struct TimelinePanel: View {
     @EnvironmentObject private var store: TaskStore
@@ -270,12 +356,15 @@ struct TimelinePanel: View {
     let items: [AgendaItem]
     let now: Date
     var showsNow = true
+    /// Where the line for now goes, when a schedule split into parts decides it; -1 for none.
+    var nowAt: Int? = nil
     let onOpen: (AgendaItem) -> Void
 
     private let railWidth: CGFloat = 44
     private var minute: Int { NowView.minute(of: now) }
     private var nowIndex: Int {
-        showsNow ? (items.firstIndex { ($0.slot?.start ?? Int.max) > minute } ?? items.count) : -1
+        if let nowAt { return nowAt }
+        return showsNow ? (items.firstIndex { ($0.slot?.start ?? Int.max) > minute } ?? items.count) : -1
     }
 
     var body: some View {

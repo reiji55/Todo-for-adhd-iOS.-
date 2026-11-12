@@ -713,8 +713,7 @@ private struct WeekBlock: View {
         let titleLines = max(1, Int((size.height - (showsTime ? 16 : 6)) / 15))
         ZStack(alignment: .topLeading) {
             if item.isBlock {
-                shape.fill(Color.secondary.opacity(0.08))
-                Hatch(spacing: 6).stroke(Color.secondary.opacity(0.25), lineWidth: 1).clipShape(shape)
+                HeldFill(cornerRadius: 7)
             } else if item.isEvent {
                 // Events read as appointments: a lighter fill with an outline instead of a side bar.
                 shape.fill(ProjectColor.tint(for: colorName, amount: 0.16))

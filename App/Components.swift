@@ -57,6 +57,33 @@ extension TaskStore {
     }
 }
 
+/// Time held for something else (sleep, work): a gray a step darker than what is around it, with fine
+/// diagonal lines. Light and dark each have their own shades, so it reads the same on both.
+struct HeldFill: View {
+    var cornerRadius: CGFloat = 6
+
+    static let base = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(red: 0.21, green: 0.22, blue: 0.24, alpha: 1)
+            : UIColor(red: 0.89, green: 0.90, blue: 0.92, alpha: 1)
+    })
+    static let line = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(white: 1, alpha: 0.09)
+            : UIColor(red: 0.43, green: 0.46, blue: 0.50, alpha: 0.18)
+    })
+    /// Its name and time, written on it.
+    static let label = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(red: 0.78, green: 0.80, blue: 0.83, alpha: 1)
+            : UIColor(red: 0.29, green: 0.31, blue: 0.35, alpha: 1)
+    })
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        shape.fill(Self.base)
+            .overlay(Hatch(spacing: 7).stroke(Self.line, lineWidth: 2.5).clipShape(shape))
+            .accessibilityHidden(true)
+    }
+}
+
 /// Diagonal lines, used for finished blocks and for time held for something else (sleep, work).
 struct Hatch: Shape {
     var spacing: CGFloat = 6

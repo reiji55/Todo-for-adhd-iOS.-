@@ -131,8 +131,8 @@ function listView(book: Book, list: StockList, history: boolean) {
     return t ? { id: t.id, kind: t.isEvent ? "event" : "task", date: t.plannedAt ? dayKey(t.plannedAt) : "anytime" } : undefined;
   };
   const brief = (item: ListItem) => ({
-    id: item.id, title: item.title, memo: item.memo || undefined, link: item.link || undefined, place: item.place || undefined,
-    plan: plan(item),
+    id: item.id, title: item.title, group: item.group || undefined, memo: item.memo || undefined, link: item.link || undefined,
+    place: item.place || undefined, plan: plan(item),
   });
   const trip = book.tasks.find((t) => sameID(t.listID, list.id) && !t.completedAt);
   const done = mine.filter((i) => i.doneAt).sort((a, b) => b.doneAt!.localeCompare(a.doneAt!));
@@ -686,7 +686,8 @@ export const tools: Tool[] = [
     title: "リストに項目を足す",
     description:
       "リストに項目を足す。list にリストの id、または new_list に新しいリストの名前（同じ名前のリストがあればそこに足す）。" +
-      "項目は title（必須）と memo・link（URL）・place（店名や住所）。同じものを二重に足さないよう、先に get_lists で確認する。",
+      "項目は title（必須）と group（見出し：料理名や売り場、地域、ジャンルなど。まとめて表示される）・memo・link（URL）・place（店名や住所）。" +
+      "分類は title に【】で書かず group に入れる。同じものを二重に足さないよう、先に get_lists で確認する。",
     inputSchema: {
       type: "object",
       properties: {
@@ -695,7 +696,10 @@ export const tools: Tool[] = [
           type: "array", minItems: 1,
           items: {
             type: "object",
-            properties: { title: { type: "string" }, memo: { type: "string" }, link: { type: "string" }, place: { type: "string" } },
+            properties: {
+              title: { type: "string" }, group: { type: "string", description: "見出し（任意）" }, memo: { type: "string" },
+              link: { type: "string" }, place: { type: "string" },
+            },
             required: ["title"],
           },
         },
@@ -723,7 +727,8 @@ export const tools: Tool[] = [
         const id = newID();
         // A second apart keeps them in the order given (the app reads whole seconds).
         writer.set(`item_${id}`, {
-          alive: true, id, listID: target!.id, title, memo: String(input.memo ?? ""), link: String(input.link ?? "").trim(),
+          alive: true, id, listID: target!.id, title, group: String(input.group ?? "").trim(), memo: String(input.memo ?? ""),
+          link: String(input.link ?? "").trim(),
           place: String(input.place ?? "").trim(), createdAt: nowISO(new Date(now.getTime() + index * 1000)),
         });
         added.push(id);
@@ -735,13 +740,13 @@ export const tools: Tool[] = [
     name: "update_list_item",
     title: "リストの項目を直す・消す",
     description:
-      "リストの項目の名前・メモ・リンク・場所を書き換える。渡した欄だけ変わる。remove=true で項目を消す（本人に頼まれたときだけ。" +
+      "リストの項目の名前・見出し（group、空文字で外す）・メモ・リンク・場所を書き換える。渡した欄だけ変わる。remove=true で項目を消す（本人に頼まれたときだけ。" +
       "済んだものは消さずに check_list_items で済みにする）。",
     inputSchema: {
       type: "object",
       properties: {
-        id: { type: "string" }, title: { type: "string" }, memo: { type: "string" }, link: { type: "string" }, place: { type: "string" },
-        remove: { type: "boolean" },
+        id: { type: "string" }, title: { type: "string" }, group: { type: "string" }, memo: { type: "string" },
+        link: { type: "string" }, place: { type: "string" }, remove: { type: "boolean" },
       },
       required: ["id"],
     },
@@ -757,7 +762,7 @@ export const tools: Tool[] = [
         if (!String(args.title).trim()) throw new Error("名前は空にできません。");
         values.title = String(args.title).trim();
       }
-      for (const key of ["memo", "link", "place"]) if (args[key] !== undefined) values[key] = String(args[key]).trim();
+      for (const key of ["group", "memo", "link", "place"]) if (args[key] !== undefined) values[key] = String(args[key]).trim();
       if (!Object.keys(values).length) return { result: { changed: false } };
       writer.set(`item_${item.id}`, values);
       return { result: { changed: true, id: item.id }, changes: writer.changes };

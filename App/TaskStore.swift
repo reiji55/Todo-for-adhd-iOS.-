@@ -618,11 +618,12 @@ final class TaskStore: ObservableObject {
     }
 
     @discardableResult
-    func addItem(_ title: String, to listID: UUID) -> Bool {
+    func addItem(_ title: String, to listID: UUID, under heading: String = "") -> Bool {
         let text = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return false }
         guard list(listID) != nil else { error = "このリストは別の端末で削除されました。"; return false }
-        return commit { $0.listItems.append(ListItem(listID: listID, title: text)) }
+        let group = heading.trimmingCharacters(in: .whitespacesAndNewlines)
+        return commit { $0.listItems.append(ListItem(listID: listID, title: text, group: group)) }
     }
 
     /// Saves the text of a thing on a list, leaving whether it is done as it now is.
@@ -639,6 +640,7 @@ final class TaskStore: ObservableObject {
             book.listItems[i].memo = item.memo
             book.listItems[i].link = item.link.trimmingCharacters(in: .whitespacesAndNewlines)
             book.listItems[i].place = item.place.trimmingCharacters(in: .whitespacesAndNewlines)
+            book.listItems[i].group = item.group.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 

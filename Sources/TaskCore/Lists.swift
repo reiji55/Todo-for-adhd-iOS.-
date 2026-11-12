@@ -22,26 +22,28 @@ public struct ListItem: Codable, Identifiable, Equatable {
     public var link: String
     /// A place name or address, opened in Maps.
     public var place: String
+    /// An optional heading it is listed under (a dish or aisle, an area, a genre). Empty: none.
+    public var group: String
     public var createdAt: Date
     /// When it was checked off, or when the plan made from it was done. Done items are the list's history
     /// (行った・読んだ・買った); they can be put back.
     public var doneAt: Date?
 
     public init(id: UUID = UUID(), listID: UUID, title: String, memo: String = "", link: String = "", place: String = "",
-                createdAt: Date = Date(), doneAt: Date? = nil) {
+                group: String = "", createdAt: Date = Date(), doneAt: Date? = nil) {
         self.id = id; self.listID = listID; self.title = title; self.memo = memo; self.link = link; self.place = place
-        self.createdAt = createdAt; self.doneAt = doneAt
+        self.group = group; self.createdAt = createdAt; self.doneAt = doneAt
     }
 
     public var isDone: Bool { doneAt != nil }
 
-    enum CodingKeys: String, CodingKey { case id, listID, title, memo, link, place, createdAt, doneAt }
+    enum CodingKeys: String, CodingKey { case id, listID, title, memo, link, place, group, createdAt, doneAt }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         func text(_ key: CodingKeys) throws -> String { try c.decodeIfPresent(String.self, forKey: key) ?? "" }
         self.init(id: try c.decode(UUID.self, forKey: .id), listID: try c.decode(UUID.self, forKey: .listID),
                   title: try c.decode(String.self, forKey: .title), memo: try text(.memo), link: try text(.link),
-                  place: try text(.place), createdAt: try c.decode(Date.self, forKey: .createdAt),
+                  place: try text(.place), group: try text(.group), createdAt: try c.decode(Date.self, forKey: .createdAt),
                   doneAt: try c.decodeIfPresent(Date.self, forKey: .doneAt))
     }
 }
@@ -55,6 +57,29 @@ public extension Notebook {
     func openItems(in listID: UUID) -> [ListItem] {
         listItems.filter { $0.listID == listID && !$0.isDone }
             .sorted { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
+    }
+
+    /// What is still on the list under its headings: those without one first, then each heading in the order
+    /// its first open item was added.
+    func openGroups(in listID: UUID) -> [(heading: String, items: [ListItem])] {
+        var order: [String] = []
+        var byHeading: [String: [ListItem]] = [:]
+        for item in openItems(in: listID) {
+            let heading = item.group.trimmingCharacters(in: .whitespacesAndNewlines)
+            if byHeading[heading] == nil { order.append(heading) }
+            byHeading[heading, default: []].append(item)
+        }
+        let ordered = order.filter(\.isEmpty) + order.filter { !$0.isEmpty }
+        return ordered.map { ($0, byHeading[$0] ?? []) }
+    }
+
+    /// The headings used on a list, open or done, in the order they first appear.
+    func headings(in listID: UUID) -> [String] {
+        var seen = Set<String>()
+        return listItems.filter { $0.listID == listID }
+            .sorted { $0.createdAt < $1.createdAt }
+            .map { $0.group.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
     }
 
     /// The list's history, latest first.
@@ -129,7 +154,7 @@ public extension Notebook {
         lists.append(copy)
         for (index, item) in openItems(in: id).enumerated() {
             listItems.append(ListItem(listID: copy.id, title: item.title, memo: item.memo, link: item.link, place: item.place,
-                                      createdAt: now.addingTimeInterval(Double(index) / 1000)))
+                                      group: item.group, createdAt: now.addingTimeInterval(Double(index) / 1000)))
         }
         return copy.id
     }

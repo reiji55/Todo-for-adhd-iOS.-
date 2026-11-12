@@ -1060,7 +1060,7 @@ private struct DayFlow: View {
                             let start = max(0, Self.x(slot.start, fromHour: range.lowerBound))
                             let end = min(width, Self.x(slot.end, fromHour: range.lowerBound))
                             if end > start {
-                                Rectangle().fill(Color.primary.opacity(0.06))
+                                HeldFill(cornerRadius: 0)
                                     .frame(width: end - start, height: height).offset(x: start)
                             }
                         }
