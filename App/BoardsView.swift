@@ -395,9 +395,9 @@ struct IndexFolders<Content: View>: View {
 
     /// The folder in front is only faintly tinted, so its white cards read like the rest of the app; the
     /// folders behind keep a little more color to tell them apart.
-    private static let frontTint = 0.09
-    private static let backTint = 0.14
-    private static let radius: CGFloat = 16
+    private static var frontTint: Double { 0.09 }
+    private static var backTint: Double { 0.14 }
+    private static var radius: CGFloat { 16 }
 
     /// The folder itself; the corner under its tab is square so the tab and folder read as one piece.
     private func folderShape(_ mode: AllTasksView.Mode, front: Bool = false) -> some View {
