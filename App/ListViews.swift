@@ -1,3 +1,4 @@
+import MapKit
 import SwiftUI
 
 struct ListRoute: Identifiable, Hashable { let id: UUID }
@@ -412,6 +413,11 @@ private struct ListItemRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            if let latitude = item.latitude, let longitude = item.longitude {
+                Button(action: onOpen) { MapThumbnail(latitude: latitude, longitude: longitude, width: 56, height: 56) }
+                    .buttonStyle(.plain)
+                    .accessibilityHidden(true)
+            }
         }
         .padding(.horizontal, 12)
     }
@@ -455,10 +461,24 @@ struct ListItemSheet: View {
     @State private var planning: ListItem?
     @State private var editingTask: TaskItem?
     @State private var confirmDelete = false
+    @State private var readingPlace = false
+    @State private var placeMissing = false
 
     init(itemID: UUID) {
         self.itemID = itemID
         _draft = State(initialValue: TaskStore.shared.listItem(itemID) ?? ListItem(listID: UUID(), title: ""))
+    }
+
+    /// The name and point a map link gave: the name fills the place (and the title when it was only a link).
+    private func usePlace(_ found: MapPlace, from url: URL) {
+        let bare = draft.title.isEmpty || draft.title == url.host || draft.title.hasPrefix("http")
+        if !found.name.isEmpty {
+            if draft.place.isEmpty || draft.place.hasPrefix("http") || draft.place == url.host { draft.place = found.name }
+            if bare { draft.title = found.name }
+        }
+        draft.latitude = found.latitude
+        draft.longitude = found.longitude
+        placeMissing = !found.hasCoordinate && found.name.isEmpty
     }
 
     var body: some View {
@@ -493,8 +513,36 @@ struct ListItemSheet: View {
                         Link(destination: url) { Label("リンクを開く", systemImage: "safari") }
                     }
                     TextField("場所（店名や住所）", text: $draft.place)
-                    if let url = ListLinks.maps(draft.place) {
+                    if let latitude = draft.latitude, let longitude = draft.longitude {
+                        let point = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+                        Map(initialPosition: .region(MKCoordinateRegion(center: point, latitudinalMeters: 800, longitudinalMeters: 800)),
+                            interactionModes: []) {
+                            Marker(draft.place.isEmpty ? draft.title : draft.place, coordinate: point).tint(Palette.accent)
+                        }
+                        .frame(height: 160)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+                        .id("\(latitude),\(longitude)")
+                    }
+                    if let url = ListLinks.maps(draft.place, latitude: draft.latitude, longitude: draft.longitude) {
                         Link(destination: url) { Label("地図で開く", systemImage: "map") }
+                    }
+                    if !draft.hasCoordinate, let url = URL(string: draft.link.trimmingCharacters(in: .whitespacesAndNewlines)),
+                       MapLink.isMap(url) {
+                        Button {
+                            readingPlace = true
+                            Task {
+                                if let found = await MapResolver.place(for: url) { usePlace(found, from: url) }
+                                else { placeMissing = true }
+                                readingPlace = false
+                            }
+                        } label: {
+                            Label(readingPlace ? "読み込み中…" : "リンクから場所を読み込む", systemImage: "mappin.and.ellipse")
+                        }
+                        .disabled(readingPlace)
+                        if placeMissing {
+                            Text("このリンクからは場所を読み取れませんでした。").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 if let current {
@@ -549,12 +597,15 @@ enum ListLinks {
         return url
     }
 
-    /// The place searched in Maps.
-    static func maps(_ place: String) -> URL? {
+    /// The place in Maps: at its point when known, else searched by name.
+    static func maps(_ place: String, latitude: Double? = nil, longitude: Double? = nil) -> URL? {
         let value = place.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return nil }
+        var items: [URLQueryItem] = []
+        if let latitude, let longitude { items.append(URLQueryItem(name: "ll", value: "\(latitude),\(longitude)")) }
+        if !value.isEmpty { items.append(URLQueryItem(name: "q", value: value)) }
+        guard !items.isEmpty else { return nil }
         var components = URLComponents(string: "https://maps.apple.com/")
-        components?.queryItems = [URLQueryItem(name: "q", value: value)]
+        components?.queryItems = items
         return components?.url
     }
 }
@@ -664,8 +715,8 @@ struct ListSourceSection: View {
                 if let url = ListLinks.web(item.link) {
                     Link(destination: url) { Label("リンクを開く", systemImage: "safari") }
                 }
-                if let url = ListLinks.maps(item.place) {
-                    Link(destination: url) { Label("地図で開く：\(item.place)", systemImage: "map") }
+                if let url = ListLinks.maps(item.place, latitude: item.latitude, longitude: item.longitude) {
+                    Link(destination: url) { Label(item.place.isEmpty ? "地図で開く" : "地図で開く：\(item.place)", systemImage: "map") }
                 }
             }
         }

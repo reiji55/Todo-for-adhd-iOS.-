@@ -22,6 +22,8 @@ enum ListInbox {
         var link = ""
         var place = ""
         var createdAt = Date()
+        var latitude: Double?
+        var longitude: Double?
     }
 
     struct Contents: Codable, Equatable {
@@ -105,11 +107,7 @@ enum ListInbox {
 /// What a shared page or place becomes on a list: its name, link and (for a map) place.
 enum SharedContent {
     /// Hosts whose links are places on a map.
-    static func isMap(_ url: URL) -> Bool {
-        let host = url.host?.lowercased() ?? ""
-        return host.contains("maps.apple") || host.hasPrefix("maps.google") || host == "maps.app.goo.gl"
-            || (host.hasSuffix("google.com") && url.path.hasPrefix("/maps")) || (host == "goo.gl" && url.path.hasPrefix("/maps"))
-    }
+    static func isMap(_ url: URL) -> Bool { MapLink.isMap(url) }
 
     /// A name for the shared thing: the text without its link, else the place a map link names, else the site.
     static func title(text: String, url: URL?) -> String {

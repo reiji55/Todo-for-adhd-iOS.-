@@ -40,6 +40,9 @@ final class ShareModel: ObservableObject {
     @Published var memo = ""
     @Published var link = ""
     @Published var place = ""
+    /// Where the place is, when its map link said.
+    @Published var latitude: Double?
+    @Published var longitude: Double?
     /// The list chosen; nil means a new one named `newListName`.
     @Published var listID: UUID?
     @Published var newListName = ""
@@ -78,7 +81,20 @@ final class ShareModel: ObservableObject {
         }
         title = SharedContent.title(text: text, url: url)
         link = url?.absoluteString ?? ""
-        if let url, SharedContent.isMap(url) { place = title }
+        if let url, MapLink.isMap(url) {
+            place = title
+            // A short Google Maps link names nothing until followed: follow it for the name and the point.
+            if let found = await MapResolver.place(for: url) {
+                let bare = title.isEmpty || title == url.host || title.hasPrefix("http")
+                if !found.name.isEmpty {
+                    if bare { title = found.name }
+                    place = found.name
+                } else if bare {
+                    place = ""
+                }
+                latitude = found.latitude; longitude = found.longitude
+            }
+        }
         loading = false
     }
 
@@ -86,7 +102,8 @@ final class ShareModel: ObservableObject {
         let entry = ListInbox.Entry(listID: listID, newListName: newListName.trimmingCharacters(in: .whitespacesAndNewlines),
                                     title: title.trimmingCharacters(in: .whitespacesAndNewlines),
                                     memo: memo, link: link.trimmingCharacters(in: .whitespacesAndNewlines),
-                                    place: place.trimmingCharacters(in: .whitespacesAndNewlines))
+                                    place: place.trimmingCharacters(in: .whitespacesAndNewlines),
+                                    latitude: latitude, longitude: longitude)
         guard ListInbox.add(entry) else { failed = true; return false }
         if let listID { UserDefaults.standard.set(listID.uuidString, forKey: Self.lastListKey) }
         return true

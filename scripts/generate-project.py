@@ -19,6 +19,8 @@ def filegroup(key, path, targets=('app',)):
     return add(key, isa='PBXGroup', path=path, sourceTree='<group>', children=children)
 app = filegroup('app', 'App')
 core = filegroup('core', 'Sources/TaskCore')
+# The share extension reads map links with the same code the core tests cover.
+shareSources.append(add('sharebuild:Sources/TaskCore/MapLink.swift', isa='PBXBuildFile', fileRef=uid('Sources/TaskCore/MapLink.swift')))
 # Shared files go into both the app and the widget extension (the widgets' links and intents).
 shared = filegroup('shared', 'Shared', targets=('app', 'widgets'))
 widgets = filegroup('widgets', 'Widgets', targets=('widgets',))

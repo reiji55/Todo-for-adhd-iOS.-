@@ -28,23 +28,32 @@ public struct ListItem: Codable, Identifiable, Equatable {
     /// When it was checked off, or when the plan made from it was done. Done items are the list's history
     /// (行った・読んだ・買った); they can be put back.
     public var doneAt: Date?
+    /// Where the place is, when a map link said: drawn as a small map on the list.
+    public var latitude: Double?
+    public var longitude: Double?
 
     public init(id: UUID = UUID(), listID: UUID, title: String, memo: String = "", link: String = "", place: String = "",
-                group: String = "", createdAt: Date = Date(), doneAt: Date? = nil) {
+                group: String = "", createdAt: Date = Date(), doneAt: Date? = nil,
+                latitude: Double? = nil, longitude: Double? = nil) {
         self.id = id; self.listID = listID; self.title = title; self.memo = memo; self.link = link; self.place = place
         self.group = group; self.createdAt = createdAt; self.doneAt = doneAt
+        self.latitude = latitude; self.longitude = longitude
     }
+
+    public var hasCoordinate: Bool { latitude != nil && longitude != nil }
 
     public var isDone: Bool { doneAt != nil }
 
-    enum CodingKeys: String, CodingKey { case id, listID, title, memo, link, place, group, createdAt, doneAt }
+    enum CodingKeys: String, CodingKey { case id, listID, title, memo, link, place, group, createdAt, doneAt, latitude, longitude }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         func text(_ key: CodingKeys) throws -> String { try c.decodeIfPresent(String.self, forKey: key) ?? "" }
         self.init(id: try c.decode(UUID.self, forKey: .id), listID: try c.decode(UUID.self, forKey: .listID),
                   title: try c.decode(String.self, forKey: .title), memo: try text(.memo), link: try text(.link),
                   place: try text(.place), group: try text(.group), createdAt: try c.decode(Date.self, forKey: .createdAt),
-                  doneAt: try c.decodeIfPresent(Date.self, forKey: .doneAt))
+                  doneAt: try c.decodeIfPresent(Date.self, forKey: .doneAt),
+                  latitude: try c.decodeIfPresent(Double.self, forKey: .latitude),
+                  longitude: try c.decodeIfPresent(Double.self, forKey: .longitude))
     }
 }
 

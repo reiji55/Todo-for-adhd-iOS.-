@@ -643,6 +643,8 @@ final class TaskStore: ObservableObject {
             book.listItems[i].link = item.link.trimmingCharacters(in: .whitespacesAndNewlines)
             book.listItems[i].place = item.place.trimmingCharacters(in: .whitespacesAndNewlines)
             book.listItems[i].group = item.group.trimmingCharacters(in: .whitespacesAndNewlines)
+            book.listItems[i].latitude = item.latitude
+            book.listItems[i].longitude = item.longitude
         }
     }
 
@@ -682,7 +684,8 @@ final class TaskStore: ObservableObject {
                 }
                 guard let listID else { continue }
                 book.listItems.append(ListItem(id: entry.id, listID: listID, title: entry.title, memo: entry.memo,
-                                               link: entry.link, place: entry.place, createdAt: entry.createdAt))
+                                               link: entry.link, place: entry.place, createdAt: entry.createdAt,
+                                               latitude: entry.latitude, longitude: entry.longitude))
             }
         }
         if saved { offerUndo("共有から\(entries.count)件をリストに入れました") }
