@@ -1,0 +1,30 @@
+name: iOS 17での起動確認
+
+# A short run: build for the simulator and launch on iOS 17 only, printing any crash report and, with the
+# timetable open, the app's CPU use and what its main thread is doing.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  launch:
+    runs-on: macos-15
+    timeout-minutes: 35
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build for iPhone Simulator
+        run: >-
+          xcodebuild
+          -project ThreeDays.xcodeproj
+          -scheme ThreeDays
+          -configuration Debug
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath DerivedData
+          CODE_SIGNING_ALLOWED=NO
+          build
+      - name: Launch on iOS 17
+        run: bash scripts/oldest-ios-launch.sh
