@@ -30,8 +30,8 @@ jobs:
         run: bash scripts/oldest-ios-launch.sh
       - name: Date and fold taps in the timetable on iOS 17
         if: always()
-        timeout-minutes: 15
+        timeout-minutes: 18
         env:
           HORME_UI_IOS: "17"
-          HORME_UI_ONLY: "testFiveDatesStayFixedAndShowNotesInDarkMode testTimetableFoldsSecondarySectionsAndAlignsUntimedControl"
+          HORME_UI_ONLY: "testFiveDatesStayFixedAndShowNotesInDarkMode testInlineStartInterruptNoteRestartCompleteUndo testOrdinaryReturnToTodayKeepsOpenTimetableWhileTaskRuns"
         run: bash scripts/interface-tests.sh

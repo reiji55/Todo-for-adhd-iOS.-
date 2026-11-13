@@ -202,6 +202,8 @@ final class HormeUITests: XCTestCase {
         let timetable = app.buttons["openTimetable"]
         reveal(timetable, in: app)
         tapVisible(timetable, in: app)
+        // A tap that lands while the page is still settling from the scroll only stops it; tap once more.
+        if !app.navigationBars["時間割"].waitForExistence(timeout: 3) { tapVisible(timetable, in: app) }
         let today = app.buttons["timetableDay0"]
         if !today.waitForExistence(timeout: 8) {
             // Show what is on screen instead, to find what hides the dates.

@@ -449,9 +449,16 @@ private struct NowCard: View {
             actions
             if showingNote, let task, !working {
                 HStack(alignment: .top, spacing: 8) {
+                    // One line: a growing field inside the scrolling page locked up iOS 17 when the keyboard came up.
                     TextField("次はどこから？（任意）", text: $draft,
-                              prompt: Text("次はどこから？（任意）").foregroundColor(Color(uiColor: .placeholderText)), axis: .vertical)
-                        .font(.subheadline).lineLimit(1...2)
+                              prompt: Text("次はどこから？（任意）").foregroundColor(Color(uiColor: .placeholderText)))
+                        .font(.subheadline)
+                        .submitLabel(.done)
+                        .onSubmit {
+                            if store.saveTaskContinuation(task.id, note: draft) {
+                                noteFocused = false; draft = ""; showingNote = false
+                            }
+                        }
                         .focused($noteFocused)
                         .padding(10).background(Palette.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                         .accessibilityIdentifier("taskContinuationInput")
