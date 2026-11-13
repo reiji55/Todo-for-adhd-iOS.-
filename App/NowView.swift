@@ -21,6 +21,8 @@ struct NowView: View {
     /// The thing tapped in 今日の流れ, for the timetable to bring into view and flash once.
     @State private var timetableFocus: String?
     @State private var rolloverOpen = false
+    /// The whole list behind ほかの候補, with the condition to choose from.
+    @State private var candidatesOpen = false
     @State private var previewApplied = false
     let onOpen: (AgendaItem) -> Void
     let onWeek: () -> Void
@@ -69,6 +71,14 @@ struct NowView: View {
                 .keepsStore()
         }
         .sheet(isPresented: $rolloverOpen) { RolloverSheet() }
+        .sheet(isPresented: $candidatesOpen) {
+            CandidateSheet(energy: energy, onEnergy: setEnergy, passed: passed,
+                           current: work.map { "task-\($0.taskID.uuidString)" } ?? chosen) { id in
+                withAnimation(.snappy) { chosen = id }
+                candidatesOpen = false
+            }
+            .environmentObject(store)
+        }
         .onChange(of: store.notebook) { _, book in
             if let work, book.hasChildren(work.taskID) || !book.tasks.contains(where: {
                 $0.id == work.taskID && !$0.isComplete && !$0.isEvent
@@ -116,6 +126,8 @@ struct NowView: View {
                         let rest = picks.filter { $0.id != current.id }
                         NowCard(pick: current,
                                 others: Array(rest.prefix(2)),
+                                moreCount: max(0, rest.count - 2),
+                                onMore: { candidatesOpen = true },
                                 canPass: !rest.isEmpty,
                                 stretch: stretch,
                                 now: now,
@@ -370,6 +382,9 @@ private struct NowCard: View {
     @Environment(\.colorScheme) private var scheme
     let pick: NowPick
     let others: [NowPick]
+    /// How many more there are beyond those shown, opened with もっと見る.
+    var moreCount = 0
+    var onMore: () -> Void = {}
     let canPass: Bool
     let stretch: FreeStretch?
     let now: Date
@@ -639,6 +654,19 @@ private struct NowCard: View {
                     Button { withAnimation(.snappy) { onChoose(other.id) } } label: { chip(other) }
                         .buttonStyle(.plain)
                         .accessibilityHint("これを、いまのカードにします")
+                }
+                if moreCount > 0 {
+                    Button(action: onMore) {
+                        HStack(spacing: 3) {
+                            Text("もっと見る（ほか\(moreCount)件）")
+                            Image(systemName: "chevron.right").font(.caption2.weight(.bold))
+                        }
+                        .font(.footnote.weight(.bold)).foregroundStyle(Palette.accent)
+                        .padding(.horizontal, 4).frame(minHeight: 32)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("moreCandidates")
                 }
             }
         }
@@ -1221,5 +1249,80 @@ private struct FlowBlock: View {
                 .foregroundStyle(block.item.isEvent ? color : Color.primary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+/// Everything behind ほかの候補, in the いま card's order, with the condition to choose by. Choosing one puts it
+/// on the card.
+@MainActor
+private struct CandidateSheet: View {
+    @EnvironmentObject private var store: TaskStore
+    @Environment(\.dismiss) private var dismiss
+    let energy: Energy
+    let onEnergy: (Energy) -> Void
+    let passed: [String]
+    /// The one on the card now, left out of the list.
+    let current: String?
+    let onChoose: (String) -> Void
+
+    var body: some View {
+        let shown = current ?? onCard
+        let picks = NowPlan.picks(in: store.notebook, energy: energy, now: Date(), passed: passed).filter { $0.id != shown }
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Picker("今の調子", selection: Binding(get: { energy }, set: onEnergy)) {
+                        ForEach(Energy.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("candidateEnergy")
+                    Text("選ぶと、いまのカードになります").font(.caption).foregroundStyle(.secondary).padding(.leading, 2)
+                    if picks.isEmpty {
+                        Text("この調子で出せる候補はありません。").font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 12)
+                    }
+                    ForEach(picks) { pick in
+                        Button { onChoose(pick.id) } label: { row(pick) }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("これを、いまのカードにします")
+                    }
+                }
+                .padding(16)
+            }
+            .background(Palette.paper)
+            .navigationTitle("ほかの候補")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    /// With nothing picked by hand, the card shows the first pick: leave that one out too.
+    private var onCard: String {
+        NowPlan.picks(in: store.notebook, energy: energy, now: Date(), passed: passed).first?.id ?? ""
+    }
+
+    private func row(_ pick: NowPick) -> some View {
+        let urgent = pick.isMust || pick.label.contains("締切")
+        var detail: [String] = []
+        if !pick.label.isEmpty { detail.append(pick.label) }
+        if !pick.item.project.isEmpty { detail.append(pick.item.project) }
+        if case .task(let id) = pick.item.source, let task = store.task(id) { detail.append(task.effort.label) }
+        return HStack(spacing: 12) {
+            Circle().fill(urgent ? Palette.must : Palette.accent).frame(width: 8, height: 8)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    if pick.isMust { Image(systemName: "star.fill").font(.caption2).foregroundStyle(Palette.must) }
+                    Text(pick.item.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(2)
+                }
+                if !detail.isEmpty {
+                    Text(detail.joined(separator: " · ")).font(.caption).foregroundStyle(urgent ? Palette.must : Color.secondary)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RaisedCardBackground(cornerRadius: 12))
+        .contentShape(Rectangle())
     }
 }

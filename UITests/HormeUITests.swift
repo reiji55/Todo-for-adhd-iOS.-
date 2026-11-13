@@ -377,7 +377,7 @@ final class HormeUITests: XCTestCase {
         capture(dark, "timetable-untimed-rail-dark")
     }
 
-    func testDayFlowScrollsOpensTimetableAndCandidateDrawerFiltersAndEdits() {
+    func testDayFlowScrollsOpensTimetableWithFreeTimeAndMoreCandidatesFilter() {
         let app = launch("timetable")
         let dayFlow = app.descendants(matching: .any).matching(identifier: "dayFlowTimeline").firstMatch
         XCTAssertTrue(dayFlow.waitForExistence(timeout: 30))
@@ -407,36 +407,37 @@ final class HormeUITests: XCTestCase {
         tapVisible(dayFlow, in: app, scroll: home)
         XCTAssertTrue(app.navigationBars["時間割"].waitForExistence(timeout: 10))
 
-        let drawer = app.buttons["toggleCandidateDrawer"]
-        XCTAssertTrue(drawer.waitForExistence(timeout: 5))
-        XCTAssertEqual(drawer.label, "今できそうなものを開く")
-        drawer.tap()
-        XCTAssertEqual(drawer.label, "候補を閉じる")
+        // Free time in the timetable shows a suggestion, or a thin line once suggestions are turned off.
+        let toggle = app.buttons["gapSuggestionToggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        let wasOn = toggle.value as? String
+        tapVisible(toggle, in: app)
+        XCTAssertNotEqual(toggle.value as? String, wasOn)
+        capture(app, "timetable-free-time-toggled")
+        tapVisible(toggle, in: app)
+        XCTAssertEqual(toggle.value as? String, wasOn)
+
+        // Back on Today, everything behind ほかの候補 opens from もっと見る, filtered by the condition.
+        app.navigationBars["時間割"].buttons.element(boundBy: 0).tap()
+        let more = app.buttons["moreCandidates"]
+        XCTAssertTrue(more.waitForExistence(timeout: 10))
+        reveal(more, in: app)
+        tapVisible(more, in: app)
         let energy = app.segmentedControls["candidateEnergy"].firstMatch
         XCTAssertTrue(energy.waitForExistence(timeout: 5))
-        let panel = app.scrollViews.containing(.segmentedControl, identifier: "candidateEnergy").firstMatch
-        XCTAssertTrue(panel.exists)
-        let laundry = panel.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND NOT label CONTAINS %@",
-                                                         "洗濯物をたたむ", "を完了")).firstMatch
+        let laundry = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "洗濯物をたたむ")).firstMatch
         energy.buttons["軽めから"].tap()
         XCTAssertTrue(energy.buttons["軽めから"].isSelected)
         XCTAssertFalse(laundry.exists, "the medium-effort task must be excluded by the light filter")
-        capture(app, "restored-candidate-drawer-light-filter")
+        capture(app, "candidates-light-filter")
         energy.buttons["いつも通り"].tap()
-        XCTAssertTrue(energy.buttons["いつも通り"].isSelected)
         XCTAssertTrue(laundry.waitForExistence(timeout: 5))
-        reveal(laundry, in: app, scroll: panel)
-        capture(app, "restored-candidate-drawer-open")
-        tapVisible(laundry, in: app, scroll: panel)
-        XCTAssertTrue(app.navigationBars["タスクを編集"].waitForExistence(timeout: 10))
-        let title = NSPredicate(format: "value == %@", "洗濯物をたたむ")
-        XCTAssertTrue(app.textFields.matching(title).firstMatch.exists || app.textViews.matching(title).firstMatch.exists)
-        capture(app, "restored-candidate-task-editor")
-        app.buttons["キャンセル"].firstMatch.tap()
-        XCTAssertTrue(drawer.waitForExistence(timeout: 5))
-        drawer.tap()
-        XCTAssertEqual(drawer.label, "今できそうなものを開く")
-        XCTAssertTrue(app.navigationBars["時間割"].exists)
+        capture(app, "candidates-all")
+        laundry.tap()
+        // Chosen, it is on the いま card.
+        let details = app.buttons["nowTaskDetails"]
+        XCTAssertTrue(details.waitForExistence(timeout: 10))
+        XCTAssertTrue(details.label.contains("洗濯物をたたむ"))
     }
     func testClosedTodayIsNotAutomaticallyReopenedByIdeaStart() {
         // Open Today first so the existing Debug preview closes this day before moving to Ideas.

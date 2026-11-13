@@ -4,9 +4,6 @@ import SwiftUI
 struct TodayView: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.refreshClock) private var refreshClock
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @State private var energy: Energy = EnergyMemory.load()
-    @State private var drawerOpen = false
     @State private var rolloverOpen = false
     /// A fixed five-day window centered on today. Other days are for a look; reopening returns to today.
     @State private var dayOffset = 0
@@ -20,35 +17,23 @@ struct TodayView: View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             let now = max(context.date, refreshClock)
             ScrollViewReader { proxy in
-            GeometryReader { geometry in
-                if geometry.size.width >= 760 && !dynamicTypeSize.isAccessibilitySize {
-                    HStack(alignment: .top, spacing: 0) {
-                        ScrollView { main(now: now).padding(20) }.frame(maxWidth: .infinity)
-                        Divider()
-                        // Wide screens have room to keep suggestions in view.
-                        ScrollView { CandidatePanel(energy: $energy, now: now, onOpen: onOpen).padding(20) }
-                            .frame(width: min(400, geometry.size.width * 0.38))
-                    }
-                } else {
-                    ScrollView { main(now: now).padding(16) }
-                        .overlay(alignment: .trailing) {
-                            if dayOffset == 0 {
-                                CandidateDrawer(isOpen: $drawerOpen) {
-                                    CandidatePanel(energy: $energy, now: now, onOpen: onOpen)
-                                }
-                            }
-                        }
-                }
-            }
+            // Suggestions live with the いま card on Today and in the free time of this timetable.
+            ScrollView { main(now: now).padding(16) }
             .background(Palette.paper)
             .environment(\.flashedItem, flashed)
             .task(id: focus) { await bringIntoView(proxy) }
             }
         }
         .sheet(isPresented: $rolloverOpen) { RolloverSheet() }
-        .onChange(of: energy) { _, value in EnergyMemory.save(value) }
         .onAppear { dayOffset = 0 }
         .onDisappear { dayOffset = 0 }
+    }
+
+    /// What the free time between today's things can hold: the いま card's own order (its condition and
+    /// what was passed over), without the one on the card and without things that already have a time.
+    static func gapSuggestions(_ book: Notebook, now: Date) -> [NowPick] {
+        let picks = NowPlan.picks(in: book, energy: EnergyMemory.load(now: now), now: now, passed: PassedOver.load(now: now))
+        return picks.dropFirst().filter { ($0.kind == .candidate || $0.kind == .obligation) && $0.item.slot == nil && !$0.item.isEvent }
     }
 
     @ViewBuilder private func main(now: Date) -> some View {
@@ -158,7 +143,11 @@ struct TodayView: View {
                     }
                 }
             }
-            SectionHeading(title: "今日の時間割")
+            HStack(alignment: .lastTextBaseline) {
+                SectionHeading(title: "今日の時間割")
+                Spacer()
+                GapSuggestionToggle()
+            }
             if visible.isEmpty {
                 Text(agenda.isEmpty ? "今日の予定はまだありません。右下の＋から足せます。" : "今日の予定はすべて終わりました。")
                     .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 6)
@@ -168,7 +157,8 @@ struct TodayView: View {
             let untimed = visible.filter { $0.slot == nil }
             if !timed.isEmpty {
                 TimedSchedule(items: timed, held: Agenda.items(on: now, tasks: tasks, routines: store.notebook.routines)
-                    .filter { $0.isBlock && $0.slot != nil }, now: now, showsNow: true, onOpen: onOpen).padding(.bottom, 6)
+                    .filter { $0.isBlock && $0.slot != nil }, now: now, showsNow: true, onOpen: onOpen,
+                              suggestions: Self.gapSuggestions(store.notebook, now: now)).padding(.bottom, 6)
             }
             if !untimed.isEmpty {
                 Text("時間を決めていない").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, timed.isEmpty ? 0 : 8)
@@ -299,6 +289,9 @@ struct TimedSchedule: View {
     let now: Date
     let showsNow: Bool
     let onOpen: (AgendaItem) -> Void
+    /// Today only: the free time between things shows as a gap, with one of these when suggestions are on.
+    var suggestions: [NowPick]? = nil
+    @AppStorage(GapSuggestionToggle.key) private var suggestionsOn = true
 
     struct Part: Identifiable {
         let id: String
@@ -364,12 +357,175 @@ struct TimedSchedule: View {
                     }
                     .padding(.horizontal, 6).padding(.top, 10).padding(.bottom, 8)
                     .background(HeldFill(cornerRadius: 16))
+                } else if let suggestions {
+                    freePart(part, nowAt: nowAt, suggestions: suggestions, gapsBefore: gapCount(before: k, parts: parts))
                 } else {
                     TimelinePanel(items: part.items, now: now, showsNow: showsNow, nowAt: nowAt, onOpen: onOpen)
                 }
             }
         }
     }
+
+    /// Free time of at least this many minutes between two things shows as a gap.
+    static let gapMinutes = 20
+
+    /// Where a free part breaks: after the item at each index, the free time that follows it (still to come).
+    func gaps(in part: Part) -> [(after: Int, start: Int, end: Int)] {
+        let minute = NowView.minute(of: now)
+        var result: [(after: Int, start: Int, end: Int)] = []
+        var reach = 0
+        for (index, item) in part.items.enumerated() {
+            reach = max(reach, item.slot?.end ?? 0)
+            guard index + 1 < part.items.count, let next = part.items[index + 1].slot?.start else { continue }
+            let start = max(reach, minute)
+            if next - start >= Self.gapMinutes { result.append((index, start, next)) }
+        }
+        return result
+    }
+
+    /// The line for now inside one panel of a free part, or -1 when it falls in another. At a panel's end it
+    /// belongs to the next panel's start, except in the last panel.
+    static func line(_ nowAt: Int, lower: Int, upper: Int, last: Bool) -> Int {
+        guard nowAt >= lower, nowAt < upper || (last && nowAt == upper) else { return -1 }
+        return nowAt - lower
+    }
+
+    private func gapCount(before part: Int, parts: [Part]) -> Int {
+        parts.prefix(part).filter { $0.block == nil }.reduce(0) { $0 + gaps(in: $1).count }
+    }
+
+    /// A free part, broken into panels at its gaps. The line for now stays in the panel it falls in.
+    @ViewBuilder private func freePart(_ part: Part, nowAt: Int, suggestions: [NowPick], gapsBefore: Int) -> some View {
+        let gaps = gaps(in: part)
+        let bounds = [0] + gaps.map { $0.after + 1 } + [part.items.count]
+        VStack(spacing: 8) {
+            ForEach(0..<(bounds.count - 1), id: \.self) { run in
+                let lower = bounds[run], upper = bounds[run + 1]
+                TimelinePanel(items: Array(part.items[lower..<upper]), now: now, showsNow: showsNow,
+                              nowAt: Self.line(nowAt, lower: lower, upper: upper, last: run == bounds.count - 2), onOpen: onOpen)
+                if run < gaps.count {
+                    let gap = gaps[run]
+                    FreeGapRow(start: gap.start, end: gap.end, day: now, suggestions: suggestions,
+                               index: gapsBefore + run, showsSuggestion: suggestionsOn, onOpen: onOpen)
+                }
+            }
+        }
+    }
+}
+
+/// 空き時間に候補: on, the free time in today's timetable shows one thing to do there; off, only a thin line.
+struct GapSuggestionToggle: View {
+    static let key = "gapSuggestions"
+    @AppStorage(Self.key) private var on = true
+
+    var body: some View {
+        Button { withAnimation(.snappy) { on.toggle() } } label: {
+            Label("空き時間に候補", systemImage: "sparkles")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(on ? Color.white : Palette.accent)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(Capsule().fill(on ? Palette.accent : Palette.accent.opacity(0.1)))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("空き時間に候補を出す")
+        .accessibilityValue(on ? "オン" : "オフ")
+        .accessibilityIdentifier("gapSuggestionToggle")
+    }
+}
+
+/// Free time between two things in today's timetable. With suggestions on, one thing that fits there, from the
+/// いま card's order: a long gap offers ここでやる (puts it in that time) and 別の候補; a short one names it.
+@MainActor
+struct FreeGapRow: View {
+    @EnvironmentObject private var store: TaskStore
+    let start: Int
+    let end: Int
+    let day: Date
+    let suggestions: [NowPick]
+    /// Which gap of the day this is, so each takes a different suggestion.
+    let index: Int
+    let showsSuggestion: Bool
+    let onOpen: (AgendaItem) -> Void
+    @State private var shift = 0
+
+    private var length: Int { end - start }
+    private var pick: NowPick? {
+        guard !suggestions.isEmpty else { return nil }
+        return suggestions[(index + shift) % suggestions.count]
+    }
+
+    var body: some View {
+        if showsSuggestion, let pick {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("空き \(NowView.duration(length))  \(TimeSlot.clock(start))–\(TimeSlot.clock(end))")
+                    .font(.caption.weight(.bold)).foregroundStyle(Palette.accent).monospacedDigit()
+                Button { onOpen(pick.item) } label: {
+                    VStack(alignment: .leading, spacing: 1) {
+                        (Text("ここでやれそう：").foregroundStyle(.secondary) + Text(pick.item.title).fontWeight(.semibold))
+                            .font(.subheadline).lineLimit(2).multilineTextAlignment(.leading)
+                        if !reason(pick).isEmpty {
+                            Text(reason(pick)).font(.caption)
+                                .foregroundStyle(pick.label.contains("締切") ? Palette.must : Color.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if length >= 30 {
+                    HStack(spacing: 8) {
+                        Button { place(pick) } label: {
+                            Label("ここでやる", systemImage: "play.fill").font(.caption.weight(.bold))
+                                .foregroundStyle(.white).padding(.horizontal, 11).padding(.vertical, 6)
+                                .background(Capsule().fill(Palette.accent))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("この時間に予定します")
+                        if suggestions.count > 1 {
+                            Button { withAnimation(.snappy) { shift += 1 } } label: {
+                                Label("別の候補", systemImage: "arrow.left.arrow.right").font(.caption.weight(.bold))
+                                    .foregroundStyle(Palette.accent).padding(.horizontal, 11).padding(.vertical, 6)
+                                    .overlay(Capsule().strokeBorder(Palette.accent, lineWidth: 1.2))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Palette.accent.opacity(0.06)))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Palette.accent.opacity(0.45), style: StrokeStyle(lineWidth: 1.2, dash: [5, 4])))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("freeGap")
+        } else {
+            HStack(spacing: 8) {
+                Rectangle().fill(Palette.accent.opacity(0.35)).frame(height: 1)
+                Text("空き \(NowView.duration(length))").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                    .monospacedDigit().fixedSize()
+                Rectangle().fill(Palette.accent.opacity(0.35)).frame(height: 1)
+            }
+            .padding(.horizontal, 24).frame(height: 18)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("freeGap")
+        }
+    }
+
+    private func reason(_ pick: NowPick) -> String {
+        var parts: [String] = []
+        if !pick.label.isEmpty { parts.append(pick.label) }
+        if case .task(let id) = pick.item.source, let task = store.task(id) { parts.append(task.effort.label) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Puts it in this free time: from the start (or now, when the gap has begun), up to an hour.
+    private func place(_ pick: NowPick) {
+        let slot = TimeSlot(start: start, duration: min(length, 60))
+        store.move(pick.item, to: day, slot: slot)
+        store.offerUndo("「\(pick.item.title)」を\(slot.label)に入れました")
+    }
+
 }
 
 @MainActor
@@ -640,152 +796,6 @@ private struct UpcomingDeadlines: View {
             }
         }
     }
-}
-
-/// "今できそうなもの": up to three things to start now, explained.
-@MainActor
-struct CandidatePanel: View {
-    @EnvironmentObject private var store: TaskStore
-    @Binding var energy: Energy
-    let now: Date
-    let onOpen: (AgendaItem) -> Void
-
-    var body: some View {
-        let placement = store.notebook.tasksWithProjectDeadlines.map { task -> TaskItem in
-            var copy = task
-            if store.recentlyDone.contains(AgendaItem(task: task).id) { copy.completedAt = nil }
-            return copy
-        }
-        let candidates = TaskBoard().candidates(placement, energy: energy, now: now)
-        VStack(alignment: .leading, spacing: 10) {
-            Text("今できそうなもの").font(.title3.weight(.bold))
-            Text("気になるものから。大きなタスクは、その中の一つずつが出ます。").font(.caption).foregroundStyle(.secondary).onlyInDemo()
-            Picker(selection: $energy) {
-                ForEach(Energy.allCases) { Text($0.label).tag($0) }
-            } label: { Text("今の調子") }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("candidateEnergy")
-            .accessibilityHint("候補だけを変えます。今日が締切のものや全件一覧には影響しません。")
-            Text("今の調子：\(energy.label)。選んだ調子より重いものは出さず、重いものから順に出します。")
-                .font(.caption).foregroundStyle(.secondary).onlyInDemo()
-            if candidates.isEmpty {
-                Text("今の候補はありません。「すべて」からどのタスクでも始められます。")
-                    .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 6)
-            }
-            ForEach(candidates) { candidate in
-                AgendaRow(item: AgendaItem(task: store.task(candidate.task.id) ?? candidate.task), reason: candidate.reason,
-                          onOpen: onOpen)
-            }
-        }
-    }
-}
-
-/// Pulled in from the right edge on narrow screens. A tab on the edge shows it is there.
-struct CandidateDrawer<Content: View>: View {
-    @Binding var isOpen: Bool
-    @ViewBuilder let content: () -> Content
-    @GestureState private var dragX: CGFloat = 0
-
-    var body: some View {
-        GeometryReader { geometry in
-            let width = min(340, geometry.size.width * 0.88)
-            // Positive while pushing it back to the right; negative while pulling it in.
-            let offset = isOpen ? max(0, dragX) : max(0, width + dragX)
-            ZStack(alignment: .trailing) {
-                if isOpen || dragX < 0 {
-                    Color.black.opacity(0.25 * Double(1 - offset / width)).ignoresSafeArea()
-                        .onTapGesture { withAnimation(.snappy) { isOpen = false } }
-                }
-                HStack(spacing: 0) {
-                    handle
-                    ScrollView { content().padding(16) }
-                        .frame(width: width)
-                        .background(Color(uiColor: .systemGroupedBackground))
-                        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 20))
-                        .shadow(color: .black.opacity(isOpen ? 0.18 : 0), radius: 12, x: -2)
-                }
-                .offset(x: offset)
-                .highPriorityGesture(drag(width: width))
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-            .animation(.snappy, value: isOpen)
-            // While it is open, a swipe to the right closes it instead of going back a screen.
-            // It only reaches the navigation. At no size, it cannot cover the timetable: at full size it hid the
-            // dates and folders from touches on iOS 17.
-            .background(alignment: .topLeading) {
-                PopGestureBlocker(blocked: isOpen).frame(width: 0, height: 0)
-                    .allowsHitTesting(false).accessibilityHidden(true)
-            }
-        }
-    }
-
-    private var handle: some View {
-        Button { withAnimation(.snappy) { isOpen.toggle() } } label: {
-            VStack(spacing: 4) {
-                Image(systemName: isOpen ? "chevron.right" : "sparkles").font(.caption.weight(.bold))
-                if !isOpen { Text("今できそう").font(.caption2.weight(.semibold)).fixedSize() .rotationEffect(.degrees(-90)).frame(width: 14, height: 64) }
-            }
-            .foregroundStyle(.white)
-            .frame(width: 26, height: isOpen ? 44 : 104)
-            .background(Palette.accent, in: UnevenRoundedRectangle(topLeadingRadius: 10, bottomLeadingRadius: 10))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(isOpen ? "候補を閉じる" : "今できそうなものを開く")
-        .accessibilityIdentifier("toggleCandidateDrawer")
-    }
-
-    private func drag(width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 12)
-            .updating($dragX) { value, state, _ in
-                // Follow the finger only horizontally, so vertical scrolling inside the panel still works.
-                if abs(value.translation.width) > abs(value.translation.height) { state = value.translation.width }
-            }
-            .onEnded { value in
-                let moved = value.predictedEndTranslation.width
-                withAnimation(.snappy) { isOpen = isOpen ? moved < width / 3 : moved < -width / 4 }
-            }
-    }
-}
-
-/// Turns off the navigation's swipe back (from the edge, and from anywhere on iOS 26) while `blocked`, so a
-/// swipe meant for something on the screen does not leave it.
-struct PopGestureBlocker: UIViewControllerRepresentable {
-    let blocked: Bool
-
-    final class Controller: UIViewController {
-        var blocked = false { didSet { apply() } }
-        override func loadView() {
-            // An empty view that never takes a touch: it sits behind the whole timetable.
-            let view = UIView()
-            view.isUserInteractionEnabled = false
-            view.backgroundColor = .clear
-            self.view = view
-        }
-        override func didMove(toParent parent: UIViewController?) { super.didMove(toParent: parent); apply() }
-        override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); apply() }
-        override func viewWillDisappear(_ animated: Bool) {
-            super.viewWillDisappear(animated)
-            set(enabled: true)
-        }
-        func apply() { set(enabled: !blocked) }
-        private func set(enabled: Bool) {
-            guard let navigation = navigationController else { return }
-            navigation.interactivePopGestureRecognizer?.isEnabled = enabled
-            // The swipe back from anywhere in the content (iOS 26) is also a pan on the navigation's own view.
-            for recognizer in navigation.view.gestureRecognizers ?? [] where recognizer is UIPanGestureRecognizer {
-                recognizer.isEnabled = enabled
-            }
-        }
-    }
-
-    func makeUIViewController(context: Context) -> Controller {
-        let controller = Controller()
-        controller.view.isUserInteractionEnabled = false
-        controller.blocked = blocked
-        return controller
-    }
-
-    func updateUIViewController(_ controller: Controller, context: Context) { controller.blocked = blocked }
 }
 
 /// Batch handling of tasks left on earlier days: pick some, send them to a day, or close them.
