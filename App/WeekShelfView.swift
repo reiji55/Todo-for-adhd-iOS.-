@@ -587,7 +587,7 @@ private struct ShelfCell: View {
         .padding(4)
         .frame(maxWidth: .infinity, minHeight: 64, alignment: .topLeading)
         .background {
-            RoundedRectangle(cornerRadius: 10).fill(Color(uiColor: .secondarySystemGroupedBackground))
+            RoundedRectangle(cornerRadius: 12).fill(Color(uiColor: .secondarySystemGroupedBackground))
                 .overlay {
                     GeometryReader { box in
                         ForEach(Array(heldSpans.enumerated()), id: \.offset) { _, held in
@@ -605,12 +605,12 @@ private struct ShelfCell: View {
                             }
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
         }
         .overlay {
             if isTarget {
-                RoundedRectangle(cornerRadius: 10).strokeBorder(Palette.accent, lineWidth: 2.5).allowsHitTesting(false)
+                RoundedRectangle(cornerRadius: 12).strokeBorder(Palette.accent, lineWidth: 2.5).allowsHitTesting(false)
             }
         }
         .contentShape(Rectangle())

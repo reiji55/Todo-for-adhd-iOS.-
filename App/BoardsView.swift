@@ -369,10 +369,10 @@ struct IndexFolders<Content: View>: View {
                 content
                     .padding(.horizontal, 10).padding(.top, 12).padding(.bottom, 14)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(folderShape(selected))
+                    .background(folderShape(selected, front: true))
             }
             .padding(.top, back.isEmpty ? 0 : -14)
-            .shadow(color: .black.opacity(0.1), radius: 6, y: -2)
+            .shadow(color: .black.opacity(0.06), radius: 6, y: -1)
             .zIndex(10)
         }
         .animation(.snappy, value: selected)
@@ -388,17 +388,23 @@ struct IndexFolders<Content: View>: View {
         }
         .foregroundStyle(mode.color)
         .padding(.horizontal, 14).frame(height: front ? 34 : 30)
-        .background(UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12).fill(mode.color.opacity(0.16)))
+        .background(UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12)
+            .fill(mode.color.opacity(front ? Self.frontTint : Self.backTint)))
         .frame(maxWidth: .infinity, alignment: mode.tabAlignment)
     }
 
+    /// The folder in front is only faintly tinted, so its white cards read like the rest of the app; the
+    /// folders behind keep a little more color to tell them apart.
+    private static let frontTint = 0.09
+    private static let backTint = 0.14
+    private static let radius: CGFloat = 16
+
     /// The folder itself; the corner under its tab is square so the tab and folder read as one piece.
-    private func folderShape(_ mode: AllTasksView.Mode) -> some View {
-        UnevenRoundedRectangle(topLeadingRadius: mode.tabAlignment == .leading ? 0 : 18, bottomLeadingRadius: 18,
-                               bottomTrailingRadius: 18, topTrailingRadius: mode.tabAlignment == .trailing ? 0 : 18)
-            .fill(mode.color.opacity(0.16))
-            .background(UnevenRoundedRectangle(topLeadingRadius: mode.tabAlignment == .leading ? 0 : 18, bottomLeadingRadius: 18,
-                                               bottomTrailingRadius: 18, topTrailingRadius: mode.tabAlignment == .trailing ? 0 : 18)
-                .fill(Palette.paper))
+    private func folderShape(_ mode: AllTasksView.Mode, front: Bool = false) -> some View {
+        let shape = UnevenRoundedRectangle(topLeadingRadius: mode.tabAlignment == .leading ? 0 : Self.radius,
+                                           bottomLeadingRadius: Self.radius, bottomTrailingRadius: Self.radius,
+                                           topTrailingRadius: mode.tabAlignment == .trailing ? 0 : Self.radius)
+        return shape.fill(mode.color.opacity(front ? Self.frontTint : Self.backTint))
+            .background(shape.fill(Palette.paper))
     }
 }
