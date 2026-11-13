@@ -72,4 +72,25 @@ PY
     status=1
   done
 done
+# The timetable opened straight away: if the app keeps the CPU busy there (a loop that freezes it), show
+# what its main thread is doing.
+xcrun simctl launch --terminate-running-process "$SIMULATOR_ID" io.github.reiji55.threedays \
+  -AppleLanguages '(ja)' -AppleLocale ja_JP -uiScenario timetable -uiTimetable >/dev/null
+sleep 15
+xcrun simctl io "$SIMULATOR_ID" screenshot "ci-results/oldest-ios-timetable.png" >/dev/null 2>&1 || true
+pid=$(pgrep -f 'ThreeDays.app/ThreeDays' | head -1 || true)
+if [ -n "$pid" ]; then
+  echo "Timetable on iOS $VERSION, app CPU:"; ps -o pid,%cpu,stat,etime -p "$pid" || true
+  for round in 1 2; do
+    cpu=$(ps -o %cpu= -p "$pid" | tr -d ' ' || echo 0)
+    echo "CPU sample $round: $cpu%"
+    sleep 3
+  done
+  echo "::warning::Timetable on iOS $VERSION: app CPU $(ps -o %cpu= -p "$pid" | tr -d ' ')%"
+  echo "Main thread while the timetable is open:"
+  sample "$pid" 3 2>/dev/null > /tmp/timetable-sample.txt || true
+  echo "::warning::Main thread frames: $(grep -E 'ThreeDays' /tmp/timetable-sample.txt | sed 's/^[ +!:|]*//; s/  */ /g' | sort | uniq -c | sort -rn | head -12 | tr '\n' ';')"
+  awk '/Thread_[0-9]+.*(DispatchQueue_1|main-thread)/,/Thread_[0-9]+.*DispatchQueue_[2-9]/' /tmp/timetable-sample.txt | grep -E "ThreeDays|SwiftUI|UIKit|AttributeGraph" | sed 's/^[ +!:|]*//' | sort | uniq -c | sort -rn | head -60 || true
+fi
+
 exit $status
