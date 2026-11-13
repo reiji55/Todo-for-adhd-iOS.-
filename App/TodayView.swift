@@ -710,7 +710,12 @@ struct CandidateDrawer<Content: View>: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
             .animation(.snappy, value: isOpen)
             // While it is open, a swipe to the right closes it instead of going back a screen.
-            .background(PopGestureBlocker(blocked: isOpen))
+            // It only reaches the navigation. At no size, it cannot cover the timetable: at full size it hid the
+            // dates and folders from touches on iOS 17.
+            .background(alignment: .topLeading) {
+                PopGestureBlocker(blocked: isOpen).frame(width: 0, height: 0)
+                    .allowsHitTesting(false).accessibilityHidden(true)
+            }
         }
     }
 
@@ -749,6 +754,13 @@ struct PopGestureBlocker: UIViewControllerRepresentable {
 
     final class Controller: UIViewController {
         var blocked = false { didSet { apply() } }
+        override func loadView() {
+            // An empty view that never takes a touch: it sits behind the whole timetable.
+            let view = UIView()
+            view.isUserInteractionEnabled = false
+            view.backgroundColor = .clear
+            self.view = view
+        }
         override func didMove(toParent parent: UIViewController?) { super.didMove(toParent: parent); apply() }
         override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); apply() }
         override func viewWillDisappear(_ animated: Bool) {
