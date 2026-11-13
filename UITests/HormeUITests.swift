@@ -203,7 +203,12 @@ final class HormeUITests: XCTestCase {
         reveal(timetable, in: app)
         tapVisible(timetable, in: app)
         let today = app.buttons["timetableDay0"]
-        XCTAssertTrue(today.waitForExistence(timeout: 5))
+        if !today.waitForExistence(timeout: 8) {
+            // Show what is on screen instead, to find what hides the dates.
+            print("TIMETABLE-TREE-BEGIN\n\(app.debugDescription)\nTIMETABLE-TREE-END")
+            XCTFail("The timetable's dates did not appear")
+            return
+        }
         let center = today.frame.midX
         for offset in -2...2 { XCTAssertTrue(app.buttons["timetableDay\(offset)"].exists) }
         capture(app, "timetable-five-dates-dark")

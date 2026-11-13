@@ -47,6 +47,9 @@ if [[ -n "$OLD_RUNTIME" ]]; then
 else
   SIMULATOR_ID=$(xcrun simctl clone "$BASE_SIMULATOR" 'Horme Interface Tests')
 fi
+# HORME_UI_ONLY="testA testB" runs only those tests.
+ONLY_TESTING=()
+for name in ${HORME_UI_ONLY:-}; do ONLY_TESTING+=("-only-testing:HormeUITests/HormeUITests/$name"); done
 STARTED=$(date +%s)
 cleanup() {
   # A crash in the app under test: print the exception and where it was thrown.
@@ -91,4 +94,4 @@ xcodebuild -project ThreeDays.xcodeproj -scheme ThreeDays -configuration Debug \
   -derivedDataPath DerivedData -resultBundlePath ci-results/InterfaceTests.xcresult \
   -parallel-testing-enabled NO -test-timeouts-enabled YES \
   -default-test-execution-time-allowance 180 -maximum-test-execution-time-allowance 240 \
-  CODE_SIGNING_ALLOWED=NO test
+  CODE_SIGNING_ALLOWED=NO ${ONLY_TESTING[@]+"${ONLY_TESTING[@]}"} test
