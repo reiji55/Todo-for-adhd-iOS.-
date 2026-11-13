@@ -7,6 +7,8 @@ struct AllTasksView: View {
     @State private var mode: Mode = .tasks
     @State private var search = ""
     @State private var showDone = false
+    /// The projects opened in いつでも, kept between visits (names joined by a separator).
+    @AppStorage("allOpenProjects") private var openProjects = ""
     let onOpen: (AgendaItem) -> Void
     let onEditRoutine: (Routine) -> Void
 
@@ -129,8 +131,15 @@ struct AllTasksView: View {
         }
         if !musts.isEmpty && mustsBefore == nil { mustSection(musts, nearest: nearest) }
         if !undated.isEmpty {
-            SectionHeading(title: "いつでも \(undated.count)件", subtitle: "日付を決めていないもの")
-            ForEach(undated) { task in row(task) }
+            SectionHeading(title: "いつでも \(undated.count)件", subtitle: "日付を決めていないもの・プロジェクトごと")
+            // Folded by project, those without one first. A search opens them all so every match shows.
+            ForEach(Self.folds(undated), id: \.name) { fold in
+                let open = !search.isEmpty || isOpen(fold.name)
+                foldHeader(fold.name, tasks: fold.tasks, open: open)
+                if open {
+                    ForEach(fold.tasks) { task in row(task).padding(.leading, 14) }
+                }
+            }
         }
         Toggle("完了したタスクを表示（\(done.count)件）", isOn: $showDone).font(.subheadline).padding(.vertical)
         if showDone {
@@ -142,6 +151,55 @@ struct AllTasksView: View {
                 }
             }
         }
+    }
+
+    /// いつでも's tasks by project: those without one first, then each project where its first task stands.
+    static func folds(_ tasks: [TaskItem]) -> [(name: String, tasks: [TaskItem])] {
+        var order: [String] = []
+        var byName: [String: [TaskItem]] = [:]
+        for task in tasks {
+            let name = task.project.trimmingCharacters(in: .whitespacesAndNewlines)
+            if byName[name] == nil { order.append(name) }
+            byName[name, default: []].append(task)
+        }
+        return (order.filter(\.isEmpty) + order.filter { !$0.isEmpty }).map { ($0, byName[$0] ?? []) }
+    }
+
+    private static let separator: Character = "\u{1F}"
+    private func isOpen(_ name: String) -> Bool { openProjects.split(separator: Self.separator).contains { $0 == name } }
+    private func toggle(_ name: String) {
+        var names = openProjects.split(separator: Self.separator).map(String.init)
+        if let index = names.firstIndex(of: name) { names.remove(at: index) } else { names.append(name) }
+        openProjects = names.joined(separator: String(Self.separator))
+    }
+
+    /// A project's fold in いつでも: its name and count, and while folded, the next of its tasks.
+    private func foldHeader(_ name: String, tasks: [TaskItem], open: Bool) -> some View {
+        let color = name.isEmpty ? nil : ProjectColor.color(for: store.colorName(forProject: name))
+        return Button { withAnimation(.snappy) { toggle(name) } } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Circle().fill(color ?? Color.secondary.opacity(0.5)).frame(width: 9, height: 9)
+                    Text(name.isEmpty ? "プロジェクトなし" : name).font(.subheadline.weight(.bold)).lineLimit(1)
+                    Text("\(tasks.count)件").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    Spacer(minLength: 0)
+                    Image(systemName: open ? "chevron.up" : "chevron.down").font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                if !open, let next = tasks.first {
+                    Text("次：\(next.title)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        .padding(.leading, 17)
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color(uiColor: .secondarySystemGroupedBackground)))
+            .contentShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(name.isEmpty ? "プロジェクトなし" : name)、\(tasks.count)件")
+        .accessibilityValue(open ? "展開中" : "折りたたみ")
+        .accessibilityIdentifier("projectFold-\(name.isEmpty ? "none" : name)")
     }
 
     private func matchesSearch(_ task: TaskItem) -> Bool {
