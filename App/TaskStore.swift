@@ -58,6 +58,7 @@ final class TaskStore: ObservableObject {
     @Published private(set) var isBridgeSyncing = false
     @Published private(set) var bridgeSyncedAt: Date?
     @Published var bridgeError: String?
+    private var isRestoringBridge = false
     @Published private(set) var isSyncing = false
     @Published private(set) var isPreparingShare = false
     @Published var syncError: String?
@@ -876,6 +877,7 @@ final class TaskStore: ObservableObject {
         foregroundRefresh?.cancel(); foregroundRefresh = nil
         isForeground = active
         guard active else { return }
+        restoreBridgeIfNeeded()
         requestSync()
         foregroundRefresh = Task { [weak self] in
             while !Task.isCancelled {
@@ -921,6 +923,17 @@ final class TaskStore: ObservableObject {
             await synchronizeBridge()
             return bridgeError == nil
         } catch { bridgeError = error.localizedDescription; return false }
+    }
+
+    /// The connection was dropped without being turned off (restoring the previous save or starting over
+    /// clears it) while the link is still in the Keychain: connect again. Turning it off removes the link.
+    private func restoreBridgeIfNeeded() {
+        guard !bridgeOn, !isDemo, !loadFailed, !isRestoringBridge, let link = BridgeLink.load() else { return }
+        isRestoringBridge = true
+        Task { [weak self] in
+            _ = await self?.connectBridge(link)
+            self?.isRestoringBridge = false
+        }
     }
 
     func disconnectBridge() {
