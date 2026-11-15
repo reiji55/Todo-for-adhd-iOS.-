@@ -319,3 +319,82 @@ test("a task without its own deadline is due on its project's", async () => {
   assert.deepEqual(due.map((t: any) => [t.title, t.deadline, t.projectDeadline]), [["居間を片付ける", "2026-11-21", true]]);
   assert.ok(project.added);
 });
+
+test("lists: things carry several notes and named links; notes can be added after a thing is done", async () => {
+  const store = memoryStore();
+  const now = new Date("2026-11-14T01:00:00Z");
+  const added = payload(await call(store, "add_list_items", {
+    new_list: "旧裏カード保存研究",
+    items: [{
+      title: "スリーブの比較", notes: ["目的：退色を防ぐ", "手順：3種類で1か月"],
+      links: [{ url: "https://example.com/paper", title: "参考資料" }, { url: "https://claude.ai/chat/1" }],
+    }, { title: "旧形式", memo: "メモ1つ", link: "https://example.com/old" }],
+  }, now));
+  const [id, oldStyle] = added.added;
+  const record = store.records.find((r) => r.id === `item_${id}`)!;
+  assert.equal(decodeValue(record.fields.memo.value), "目的：退色を防ぐ\n\n手順：3種類で1か月", "older apps read every note");
+  assert.equal(decodeValue(record.fields.link.value), "https://example.com/paper", "and the first link");
+  let list = payload(await call(store, "get_lists", {}, now)).lists[0];
+  const item = list.open.find((i: any) => i.id === id);
+  assert.deepEqual(item.notes.map((n: any) => n.text), ["目的：退色を防ぐ", "手順：3種類で1か月"]);
+  assert.deepEqual(item.links.map((l: any) => [l.title, l.url]), [["参考資料", "https://example.com/paper"], [undefined, "https://claude.ai/chat/1"]]);
+  assert.deepEqual(list.open.find((i: any) => i.id === oldStyle).notes.map((n: any) => n.text), ["メモ1つ"]);
+  assert.equal(list.updated, "2026-11-14");
+
+  // Done, then how it went is added on a later day.
+  const later = new Date("2026-12-20T03:00:00Z");
+  await call(store, "check_list_items", { ids: [id], done: true }, later);
+  const update = payload(await call(store, "update_list_item", {
+    id, add_notes: ["結果：差はなかった"], add_links: [{ url: "https://example.com/result", title: "結果の写真" }],
+  }, later));
+  assert.deepEqual([update.notes, update.links], [3, 3]);
+  const history = payload(await call(store, "get_lists", { list: list.id }, later)).lists[0];
+  assert.equal(history.updated, "2026-12-20");
+  const done = history.done.find((i: any) => i.id === id);
+  assert.deepEqual(done.notes.map((n: any) => [n.text, n.day]).at(-1), ["結果：差はなかった", "2026-12-20"]);
+
+  // Replacing keeps the notes named by id, with their day, and drops the rest.
+  const first = done.notes[0];
+  await call(store, "update_list_item", { id, notes: [{ id: first.id, text: "目的：退色と反りを防ぐ" }, { text: "補足" }] }, later);
+  const book = materialize(store.records);
+  const saved = book.items.find((i) => i.id === id)!;
+  assert.deepEqual(saved.notes!.map((n) => n.text), ["目的：退色と反りを防ぐ", "補足"]);
+  assert.equal(saved.notes![0].createdAt, "2026-11-14T01:00:00Z");
+
+  // A thing saved with one memo and link is changed through them as the first of each.
+  await call(store, "update_list_item", { id: oldStyle, add_notes: ["2つ目"] }, later);
+  list = payload(await call(store, "get_lists", {}, later)).lists[0];
+  assert.deepEqual(list.open.find((i: any) => i.id === oldStyle).notes.map((n: any) => n.text), ["メモ1つ", "2つ目"]);
+
+  // Removing a thing still counts as a change to the list.
+  const end = new Date("2027-01-05T03:00:00Z");
+  await call(store, "update_list_item", { id: oldStyle, remove: true }, end);
+  assert.equal(payload(await call(store, "get_lists", {}, end)).lists[0].updated, "2027-01-05");
+});
+
+test("a plan made from a thing shows its notes and links rather than copying them", async () => {
+  const store = memoryStore();
+  const now = new Date("2026-11-14T01:00:00Z");
+  const added = payload(await call(store, "add_list_items", {
+    new_list: "問い合わせ", items: [{ title: "保管業者", notes: ["見積もりを頼む"], links: [{ url: "https://example.com/contact", title: "問い合わせ先" }] }],
+  }, now));
+  const plan = payload(await call(store, "add_tasks", { tasks: [{ title: "保管業者に電話", from_item: added.added[0] }] }, now));
+  const task = payload(await call(store, "get_task", { id: plan.added[0] }, now));
+  assert.equal(task.memo, undefined);
+  assert.deepEqual(task.fromItem.notes.map((n: any) => n.text), ["見積もりを頼む"]);
+  assert.equal(task.fromItem.links[0].title, "問い合わせ先");
+});
+
+test("ideas take several notes, and more can be added later", async () => {
+  const store = memoryStore();
+  const now = new Date("2026-11-14T01:00:00Z");
+  const idea = payload(await call(store, "add_idea", { text: "カセット構想", notes: ["外のアプリを起動", "機能パック"] }, now));
+  await call(store, "add_idea_notes", { id: idea.added, notes: ["仕上げのあとで相談"] }, new Date("2026-11-15T01:00:00Z"));
+  const ideas = payload(await call(store, "get_ideas", {}, now)).ideas;
+  assert.deepEqual(ideas[0].notes.map((n: any) => [n.text, n.day]), [
+    ["外のアプリを起動", "2026-11-14"], ["機能パック", "2026-11-14"], ["仕上げのあとで相談", "2026-11-15"],
+  ]);
+  const record = store.records.find((r) => r.id === `idea_${idea.added}`)!;
+  const notes = decodeValue(record.fields.notes.value) as any[];
+  for (const note of notes) for (const key of ["id", "text", "createdAt"]) assert.ok(note[key], key);
+});

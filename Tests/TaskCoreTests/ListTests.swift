@@ -70,6 +70,7 @@ final class ListTests: XCTestCase {
         XCTAssertTrue(book.ideas.isEmpty)
         XCTAssertEqual(book.openItems(in: list.id).first?.title, "『百年の孤独』")
         XCTAssertEqual(book.openItems(in: list.id).first?.memo, "文庫版が出た")
+        XCTAssertEqual(book.openItems(in: list.id).first?.notes.map(\.id), idea.notes.map(\.id), "each line stays its own note")
         XCTAssertFalse(book.moveIdea(idea.id, toList: list.id), "an idea already moved cannot move twice")
     }
 
@@ -138,5 +139,66 @@ final class ListTests: XCTestCase {
         XCTAssertEqual(book.headings(in: list.id), ["共通", "タコミート"])
         // The heading travels and older records without it still open.
         XCTAssertEqual(try NotebookCodec.decode(NotebookCodec.encode(book)).listItems.map(\.group), items.map(\.group))
+    }
+
+    func testAThingCarriesSeveralNotesAndNamedLinks() throws {
+        let list = StockList(name: "研究", createdAt: now)
+        let item = ListItem(listID: list.id, title: "旧裏カードの保存", createdAt: now,
+                            notes: [ItemNote(text: "目的：退色を防ぐ", createdAt: now), ItemNote(text: "結果：変化なし", createdAt: later(60))],
+                            links: [ItemLink(url: "https://example.com/a", title: "参考資料"), ItemLink(url: "https://example.com/b")])
+        let book = Notebook(lists: [list], listItems: [item])
+        let decoded = try NotebookCodec.decode(NotebookCodec.encode(book))
+        XCTAssertEqual(decoded, book)
+        XCTAssertEqual(decoded.listItems[0].notes.map(\.text), ["目的：退色を防ぐ", "結果：変化なし"])
+        XCTAssertEqual(decoded.listItems[0].links.map(\.label), ["参考資料", "example.com/b"])
+        // Older versions read the single memo and link written alongside.
+        let json = try JSONSerialization.jsonObject(with: NotebookCodec.encode(book)) as! [String: Any]
+        let saved = (json["listItems"] as! [[String: Any]])[0]
+        XCTAssertEqual(saved["memo"] as? String, "目的：退色を防ぐ\n\n結果：変化なし")
+        XCTAssertEqual(saved["link"] as? String, "https://example.com/a")
+    }
+
+    func testAThingSavedWithOneMemoAndLinkReadsThemAsTheFirstOfEach() throws {
+        let list = StockList(name: "行きたいところ", createdAt: now)
+        let id = UUID()
+        let old = """
+        {"version":1,"tasks":[],"ideas":[],"boardCards":[],"lists":[{"id":"\(list.id.uuidString)","name":"行きたいところ","createdAt":"2026-09-21T12:26:40Z"}],
+         "listItems":[{"id":"\(id.uuidString)","listID":"\(list.id.uuidString)","title":"美術館","memo":"月曜休み","link":"https://example.com","place":"","group":"","createdAt":"2026-09-21T12:26:40Z"}]}
+        """
+        let book = try NotebookCodec.decode(Data(old.utf8))
+        let item = try XCTUnwrap(book.listItems.first)
+        XCTAssertEqual(item.notes.map(\.text), ["月曜休み"])
+        XCTAssertEqual(item.links.map(\.url), ["https://example.com"])
+        XCTAssertEqual(item.notes.first?.id, id, "the same old record always reads the same way")
+        XCTAssertEqual(try NotebookCodec.decode(Data(old.utf8)), book)
+        XCTAssertEqual(try NotebookCodec.decode(NotebookCodec.encode(book)), book)
+    }
+
+    func testAListsLastChangeFollowsWhatHappensOnIt() {
+        let (start, list, items, _) = shopping()
+        var book = start
+        XCTAssertEqual(book.lastChange(of: list.id), later(2), "the last thing added")
+        book.setItemDone(items[0].id, true, at: later(30))
+        XCTAssertEqual(book.lastChange(of: list.id), later(30))
+        book.setItemDone(items[0].id, false, at: later(40))
+        XCTAssertEqual(book.lastChange(of: list.id), later(40), "putting a thing back is a change too")
+        book.listItems[1].notes.append(ItemNote(text: "低脂肪", createdAt: later(50)))
+        XCTAssertEqual(book.lastChange(of: list.id), later(50))
+        book.lists[0].updatedAt = later(60)
+        XCTAssertEqual(book.lastChange(of: list.id), later(60), "a thing removed leaves its mark on the list")
+    }
+
+    func testNotesAndLinksSyncBetweenDevices() throws {
+        let (book, _, items, _) = shopping()
+        var replica = SyncReplica()
+        try replica.apply(before: Notebook(), after: book, device: "seed", now: now)
+        var edited = book
+        edited.listItems[0].notes = [ItemNote(text: "6個入り", createdAt: later(5))]
+        edited.listItems[0].links = [ItemLink(url: "https://example.com/egg", title: "特売")]
+        try replica.apply(before: book, after: edited, device: "phone", now: later(5))
+        let merged = try replica.materialize()
+        let item = try XCTUnwrap(merged.listItem(items[0].id))
+        XCTAssertEqual(item.notes.map(\.text), ["6個入り"])
+        XCTAssertEqual(item.links.map(\.title), ["特売"])
     }
 }

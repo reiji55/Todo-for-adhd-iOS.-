@@ -71,9 +71,9 @@ struct ListsView: View {
                     }
                 }
                 ForEach(book.lists) { list in
-                    Button { onOpen(list.id) } label: { ListCard(list: list) }
-                        .buttonStyle(.plain)
+                    ListCardButton(list: list) { onOpen(list.id) }
                         .accessibilityIdentifier("openList-\(list.name)")
+                        .swipeToDelete { store.deleteList(list.id) }
                 }
             }
             .padding(16).frame(maxWidth: 820).frame(maxWidth: .infinity)
@@ -96,6 +96,30 @@ struct ListsView: View {
     }
 }
 
+/// A list's card; a sideways swipe shows its delete button instead of opening it.
+private struct ListCardButton: View {
+    @Environment(\.rowSwiping) private var swiping
+    let list: StockList
+    let onOpen: () -> Void
+
+    var body: some View {
+        Button { if !swiping { onOpen() } } label: { ListCard(list: list) }
+            .buttonStyle(.plain)
+    }
+}
+
+/// "今日更新", "昨日更新", "11/14更新": when a list last changed, small beside its name.
+enum ListUpdated {
+    static func text(_ date: Date, now: Date = Date()) -> String {
+        let calendar = Calendar.current
+        if calendar.isDate(date, inSameDayAs: now) { return "今日更新" }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
+            return "昨日更新"
+        }
+        return "\(date.shortDay)更新"
+    }
+}
+
 private struct ListCard: View {
     @EnvironmentObject private var store: TaskStore
     let list: StockList
@@ -106,6 +130,10 @@ private struct ListCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Text(list.name).font(.headline).foregroundStyle(.primary).lineLimit(1)
+                if let changed = store.notebook.lastChange(of: list.id) {
+                    Text(ListUpdated.text(changed)).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                        .fixedSize()
+                }
                 Spacer()
                 Text("\(open.count)件").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
                 Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
@@ -173,6 +201,11 @@ struct ListPage: View {
         let trip = book.tasks.filter { $0.listID == list.id && !$0.isComplete }.min { $0.createdAt < $1.createdAt }
         return ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                if let changed = book.lastChange(of: list.id) {
+                    Text(ListUpdated.text(changed)).font(.caption).foregroundStyle(.tertiary)
+                        .padding(.horizontal, 4).padding(.top, -8)
+                        .accessibilityIdentifier("listUpdated")
+                }
                 if let trip {
                     Button { editingTask = trip } label: { TripRow(task: trip) }.buttonStyle(.plain)
                 } else if !open.isEmpty {
@@ -186,6 +219,7 @@ struct ListPage: View {
                 VStack(spacing: 0) {
                     ForEach(loose) { item in
                         ListItemRow(item: item, onCheck: { store.setItemDone(item.id, true) }, onOpen: { opened = ListItemRouteID(id: item.id) })
+                            .swipeToDelete { store.deleteItem(item.id) }
                         Divider().padding(.leading, 52)
                     }
                     HStack(spacing: 12) {
@@ -228,7 +262,9 @@ struct ListPage: View {
                     if showDone {
                         VStack(spacing: 0) {
                             ForEach(done) { item in
-                                DoneItemRow(item: item) { store.setItemDone(item.id, false) }
+                                DoneItemRow(item: item, onRestore: { store.setItemDone(item.id, false) },
+                                            onOpen: { opened = ListItemRouteID(id: item.id) })
+                                    .swipeToDelete { store.deleteItem(item.id) }
                                 Divider().padding(.leading, 16)
                             }
                         }
@@ -311,6 +347,7 @@ struct ListPage: View {
                 ForEach(items) { item in
                     Divider().padding(.leading, 52)
                     ListItemRow(item: item, onCheck: { store.setItemDone(item.id, true) }, onOpen: { opened = ListItemRouteID(id: item.id) })
+                        .swipeToDelete { store.deleteItem(item.id) }
                 }
                 Divider().padding(.leading, 52)
                 if addingTo == heading {
@@ -374,6 +411,7 @@ private struct TripRow: View {
 
 private struct ListItemRow: View {
     @EnvironmentObject private var store: TaskStore
+    @Environment(\.rowSwiping) private var swiping
     let item: ListItem
     let onCheck: () -> Void
     let onOpen: () -> Void
@@ -381,13 +419,13 @@ private struct ListItemRow: View {
     var body: some View {
         let plan = store.notebook.plan(for: item.id)
         HStack(spacing: 12) {
-            Button(action: onCheck) {
+            Button { if !swiping { onCheck() } } label: {
                 Image(systemName: "circle").font(.title3).foregroundStyle(Palette.accent)
                     .frame(width: 28, height: 44).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("\(item.title)を済みにする")
-            Button(action: onOpen) {
+            Button { if !swiping { onOpen() } } label: {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(item.title).font(.body).foregroundStyle(.primary)
                         .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
@@ -400,8 +438,12 @@ private struct ListItemRow: View {
                                     .padding(.horizontal, 6).padding(.vertical, 2)
                                     .background(Palette.accent.opacity(0.12), in: Capsule())
                             }
-                            ForEach(marks, id: \.self) { mark in
-                                Image(systemName: mark).font(.caption2).foregroundStyle(.secondary)
+                            ForEach(marks) { mark in
+                                HStack(spacing: 2) {
+                                    Image(systemName: mark.symbol)
+                                    if mark.count > 1 { Text("\(mark.count)").monospacedDigit() }
+                                }
+                                .font(.caption2).foregroundStyle(.secondary)
                             }
                             if !item.place.isEmpty {
                                 Text(item.place).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -422,29 +464,47 @@ private struct ListItemRow: View {
         .padding(.horizontal, 12)
     }
 
-    /// Small marks for what else the item carries.
-    private var details: [String] {
-        var marks: [String] = []
-        if !item.memo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { marks.append("note.text") }
-        if !item.link.isEmpty { marks.append("link") }
-        if !item.place.isEmpty { marks.append("mappin") }
+    private struct Mark: Identifiable {
+        let symbol: String
+        let count: Int
+        var id: String { symbol }
+    }
+
+    /// Small marks for what else the item carries, with how many when more than one.
+    private var details: [Mark] {
+        var marks: [Mark] = []
+        if !item.notes.isEmpty { marks.append(Mark(symbol: "note.text", count: item.notes.count)) }
+        if !item.links.isEmpty { marks.append(Mark(symbol: "link", count: item.links.count)) }
+        if !item.place.isEmpty { marks.append(Mark(symbol: "mappin", count: 1)) }
         return marks
     }
 }
 
+/// A thing done: tap it to read its notes or add how it went; 戻す puts it back on the list.
 private struct DoneItemRow: View {
+    @Environment(\.rowSwiping) private var swiping
     let item: ListItem
     let onRestore: () -> Void
+    let onOpen: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.title).strikethrough().foregroundStyle(.secondary)
-                if let done = item.doneAt {
-                    Text(done.shortDay).font(.caption).foregroundStyle(.tertiary).monospacedDigit()
+            Button { if !swiping { onOpen() } } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title).strikethrough().foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        if let done = item.doneAt {
+                            Text(done.shortDay).monospacedDigit()
+                        }
+                        if !item.notes.isEmpty {
+                            Label("\(item.notes.count)", systemImage: "note.text").labelStyle(.titleAndIcon)
+                        }
+                    }
+                    .font(.caption).foregroundStyle(.tertiary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }
-            Spacer()
+            .buttonStyle(.plain)
             Button("戻す", action: onRestore).font(.subheadline.weight(.semibold)).buttonStyle(.borderless)
         }
         .padding(.horizontal, 16).frame(minHeight: 50)
@@ -463,6 +523,9 @@ struct ListItemSheet: View {
     @State private var confirmDelete = false
     @State private var readingPlace = false
     @State private var placeMissing = false
+    @FocusState private var focusedNote: UUID?
+    @FocusState private var focusedLink: UUID?
+    @Environment(\.openURL) private var openURL
 
     init(itemID: UUID) {
         self.itemID = itemID
@@ -503,15 +566,56 @@ struct ListItemSheet: View {
                         }
                     }
                 }
-                Section("メモ") {
-                    TextField("覚えておきたいこと", text: $draft.memo, axis: .vertical).lineLimit(2...8)
+                // As many notes as wanted: purpose, steps, how it went. Each keeps the day it was written.
+                Section {
+                    ForEach($draft.notes) { $note in
+                        VStack(alignment: .leading, spacing: 4) {
+                            TextField("メモ", text: $note.text, axis: .vertical).lineLimit(1...12)
+                                .focused($focusedNote, equals: note.id)
+                            Text(note.createdAt.shortDay).font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
+                        }
+                    }
+                    .onDelete { draft.notes.remove(atOffsets: $0) }
+                    Button {
+                        let note = ItemNote(text: "")
+                        draft.notes.append(note)
+                        focusedNote = note.id
+                    } label: { Label("メモを追加", systemImage: "plus") }
+                    .accessibilityIdentifier("addItemNote")
+                } header: {
+                    Text("メモ")
+                }
+                // Several links, each with an optional name (参考資料、問い合わせ先、会話…).
+                Section {
+                    ForEach($draft.links) { $link in
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                TextField("名前（任意）", text: $link.title).font(.subheadline.weight(.semibold))
+                                TextField("URL", text: $link.url)
+                                    .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                                    .focused($focusedLink, equals: link.id)
+                            }
+                            if let url = ListLinks.web(link.url) {
+                                Button { openURL(url) } label: {
+                                    Image(systemName: "safari").font(.title3).frame(width: 36, height: 36)
+                                }
+                                .buttonStyle(.borderless)
+                                .accessibilityLabel("\(link.label)を開く")
+                            }
+                        }
+                    }
+                    .onDelete { draft.links.remove(atOffsets: $0) }
+                    Button {
+                        let link = ItemLink(url: "")
+                        draft.links.append(link)
+                        focusedLink = link.id
+                    } label: { Label("リンクを追加", systemImage: "plus") }
+                    .accessibilityIdentifier("addItemLink")
+                } header: {
+                    Text("リンク")
                 }
                 Section {
-                    TextField("リンク（URL）", text: $draft.link)
-                        .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    if let url = ListLinks.web(draft.link) {
-                        Link(destination: url) { Label("リンクを開く", systemImage: "safari") }
-                    }
                     TextField("場所（店名や住所）", text: $draft.place)
                     if let latitude = draft.latitude, let longitude = draft.longitude {
                         let point = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
@@ -527,8 +631,9 @@ struct ListItemSheet: View {
                     if let url = ListLinks.maps(draft.place, latitude: draft.latitude, longitude: draft.longitude) {
                         Link(destination: url) { Label("地図で開く", systemImage: "map") }
                     }
-                    if !draft.hasCoordinate, let url = URL(string: draft.link.trimmingCharacters(in: .whitespacesAndNewlines)),
-                       MapLink.isMap(url) {
+                    if !draft.hasCoordinate, let url = draft.links.lazy
+                        .compactMap({ URL(string: $0.url.trimmingCharacters(in: .whitespacesAndNewlines)) })
+                        .first(where: MapLink.isMap) {
                         Button {
                             readingPlace = true
                             Task {
@@ -707,18 +812,30 @@ struct ListChecklistSection: View {
 struct ListSourceSection: View {
     @EnvironmentObject private var store: TaskStore
     let task: TaskItem
+    @State private var opened: ListPage.ListItemRouteID?
 
     var body: some View {
         if let itemID = task.listItemID, let item = store.listItem(itemID), let list = store.list(item.listID) {
             Section {
                 Label("リスト「\(list.name)」から", systemImage: "list.bullet").foregroundStyle(.secondary)
-                if let url = ListLinks.web(item.link) {
-                    Link(destination: url) { Label("リンクを開く", systemImage: "safari") }
+                ForEach(item.notes) { note in
+                    Text(note.text).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(item.links) { link in
+                    if let url = ListLinks.web(link.url) {
+                        Link(destination: url) { Label(link.label, systemImage: "safari").lineLimit(1) }
+                    }
                 }
                 if let url = ListLinks.maps(item.place, latitude: item.latitude, longitude: item.longitude) {
                     Link(destination: url) { Label(item.place.isEmpty ? "地図で開く" : "地図で開く：\(item.place)", systemImage: "map") }
                 }
+                // The thing itself, to add a note on how it went.
+                Button { opened = ListPage.ListItemRouteID(id: item.id) } label: {
+                    Label("項目を開く（メモを足す）", systemImage: "note.text.badge.plus")
+                }
+                .accessibilityIdentifier("openSourceItem")
             }
+            .sheet(item: $opened) { ListItemSheet(itemID: $0.id) }
         }
     }
 }

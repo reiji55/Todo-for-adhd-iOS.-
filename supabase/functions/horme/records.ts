@@ -23,16 +23,24 @@ export type Task = {
   /** Made from one thing on a list: when done, that thing moves to the list's history. */
   listItemID?: string | null;
 };
-/** A list of concrete things kept for later (places, books, groceries). Not a plan. */
-export type StockList = { id: string; name: string; createdAt: string };
-/** One thing on a list. Each is its own record (`item_<id>`). Done ones are the list's history. */
+/** A list of concrete things kept for later (places, books, groceries). Not a plan. `updatedAt`: when the
+ *  list itself last changed (renamed, or a thing removed). */
+export type StockList = { id: string; name: string; createdAt: string; updatedAt?: string | null };
+/** A web address kept with a thing, with an optional name. */
+export type ItemLink = { id: string; url: string; title: string };
+/** A note kept with a thing (or an idea), each written on its own day. */
+export type ItemNote = { id: string; text: string; createdAt: string };
+/** One thing on a list. Each is its own record (`item_<id>`). Done ones are the list's history.
+ *  `notes` and `links` hold as many as wanted; `memo` and `link` are what was written before there could be
+ *  several, still written (all notes, the first link) for older versions of the app. */
 export type ListItem = {
   id: string; listID: string; title: string; memo: string; link: string; place: string; createdAt: string;
   doneAt?: string | null;
   /** An optional heading it is listed under (a dish or aisle, an area, a genre). */
   group?: string;
+  notes?: ItemNote[]; links?: ItemLink[]; updatedAt?: string | null;
 };
-export type Idea = { id: string; text: string; createdAt: string };
+export type Idea = { id: string; text: string; createdAt: string; notes?: ItemNote[]; touchedAt?: string | null };
 export type Card = { id: string; title: string; purpose: string; goal: string; detail: string; createdAt: string; rank: number };
 export type Move = { toDay: string; time: string };
 export type Routine = {
@@ -154,6 +162,37 @@ export const dayKey = (iso: string | Date) => new Date(new Date(iso).getTime() +
 export const todayKey = (now = new Date()) => dayKey(now);
 /** Noon in Tokyo on that day, written without fractional seconds as the app's ISO 8601 decoder expects. */
 export const dayToISO = (key: string) => `${key}T03:00:00Z`;
+/** Mirrors ListItem.notes in Lists.swift: a thing saved before it could have several reads its memo as
+ *  the first note, under the thing's own id. */
+export function itemNotes(item: ListItem): ItemNote[] {
+  if (item.notes) return item.notes;
+  return item.memo?.trim() ? [{ id: item.id, text: item.memo, createdAt: item.createdAt }] : [];
+}
+
+/** Mirrors ListItem.links: its single link, when it was saved before there could be several. */
+export function itemLinks(item: ListItem): ItemLink[] {
+  if (item.links) return item.links;
+  return item.link?.trim() ? [{ id: item.id, url: item.link.trim(), title: "" }] : [];
+}
+
+/** The fields that hold a thing's notes and links, with the single memo and link older apps read. */
+export function noteAndLinkFields(notes: ItemNote[], links: ItemLink[]) {
+  const memo = notes.map((n) => n.text.trim()).filter(Boolean).join("\n\n");
+  return { notes, links, memo, link: links[0]?.url ?? "" };
+}
+
+/** Mirrors Notebook.lastChange(of:): the last time anything on a list changed. */
+export function lastChange(book: Book, list: StockList): string {
+  let last = list.updatedAt && list.updatedAt > list.createdAt ? list.updatedAt : list.createdAt;
+  for (const item of book.items) {
+    if (!same(item.listID, list.id)) continue;
+    for (const when of [item.createdAt, item.updatedAt, item.doneAt, ...itemNotes(item).map((n) => n.createdAt)]) {
+      if (when && when > last) last = when;
+    }
+  }
+  return last;
+}
+
 export const nowISO = (now = new Date()) => now.toISOString().replace(/\.\d{3}Z$/, "Z");
 export const newID = () => crypto.randomUUID().toUpperCase();
 export const addDays = (key: string, n: number) => {
@@ -242,7 +281,13 @@ export function taskItem(t: Task, book?: Book): AgendaItem {
     fromItem: book && t.listItemID ? (() => {
       const item = book.items.find((i) => same(i.id, t.listItemID!));
       const list = item && book.lists.find((l) => same(l.id, item.listID));
-      return item ? { id: item.id, title: item.title, list: list?.name ?? "" } : undefined;
+      if (!item) return undefined;
+      const notes = itemNotes(item), links = itemLinks(item);
+      return {
+        id: item.id, title: item.title, list: list?.name ?? "",
+        notes: notes.length ? notes.map((n) => ({ id: n.id, text: n.text, day: dayKey(n.createdAt) })) : undefined,
+        links: links.length ? links.map((l) => ({ id: l.id, title: l.title || undefined, url: l.url })) : undefined,
+      };
     })() : undefined,
     pieces: pieces.length ? pieces.map((p) => ({
       id: p.id, title: p.title, done: !!p.completedAt, date: p.plannedAt ? dayKey(p.plannedAt) : "anytime",

@@ -2,14 +2,56 @@ import Foundation
 
 /// A list of concrete things kept for later: places to go, books to read, things to buy. It is stock, not
 /// a plan: nothing in it shows on Today until it is made into a task or an event. One kind of list serves
-/// every use; an item may carry a memo, a link and a place.
+/// every use; an item may carry notes, links and a place.
 public struct StockList: Codable, Identifiable, Equatable {
     public var id: UUID
     public var name: String
     public var createdAt: Date
+    /// When the list itself last changed (renamed, or a thing on it removed). What its things say about
+    /// themselves is read from them: see `Notebook.lastChange(of:)`.
+    public var updatedAt: Date?
 
-    public init(id: UUID = UUID(), name: String, createdAt: Date = Date()) {
-        self.id = id; self.name = name; self.createdAt = createdAt
+    public init(id: UUID = UUID(), name: String, createdAt: Date = Date(), updatedAt: Date? = nil) {
+        self.id = id; self.name = name; self.createdAt = createdAt; self.updatedAt = updatedAt
+    }
+}
+
+/// A web address kept with a thing on a list, with an optional name (参考資料、問い合わせ先、会話のリンク…).
+public struct ItemLink: Codable, Identifiable, Equatable {
+    public var id: UUID
+    public var url: String
+    public var title: String
+
+    public init(id: UUID = UUID(), url: String, title: String = "") {
+        self.id = id; self.url = url; self.title = title
+    }
+
+    enum CodingKeys: String, CodingKey { case id, url, title }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        url = try c.decodeIfPresent(String.self, forKey: .url) ?? ""
+        title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
+    }
+
+    /// What it is called on screen: its name, else the address without its scheme.
+    public var label: String {
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty { return name }
+        let address = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        return address.replacingOccurrences(of: "https://", with: "").replacingOccurrences(of: "http://", with: "")
+    }
+}
+
+/// A note kept with a thing on a list: its purpose, steps, how it went, anything. As many as wanted, each
+/// written on its own day; they can be added after the thing is done.
+public struct ItemNote: Codable, Identifiable, Equatable {
+    public var id: UUID
+    public var text: String
+    public var createdAt: Date
+
+    public init(id: UUID = UUID(), text: String, createdAt: Date = Date()) {
+        self.id = id; self.text = text; self.createdAt = createdAt
     }
 }
 
@@ -17,9 +59,10 @@ public struct ListItem: Codable, Identifiable, Equatable {
     public var id: UUID
     public var listID: UUID
     public var title: String
-    public var memo: String
-    /// A web address, as written.
-    public var link: String
+    /// Notes, in the order they were written.
+    public var notes: [ItemNote]
+    /// Web addresses, in the order they were added.
+    public var links: [ItemLink]
     /// A place name or address, opened in Maps.
     public var place: String
     /// An optional heading it is listed under (a dish or aisle, an area, a genre). Empty: none.
@@ -31,29 +74,78 @@ public struct ListItem: Codable, Identifiable, Equatable {
     /// Where the place is, when a map link said: drawn as a small map on the list.
     public var latitude: Double?
     public var longitude: Double?
+    /// When it was last written to or checked; nil means only when it was added.
+    public var updatedAt: Date?
 
+    /// `memo` and `link` are what a thing carried before it could have several: each becomes the first.
     public init(id: UUID = UUID(), listID: UUID, title: String, memo: String = "", link: String = "", place: String = "",
                 group: String = "", createdAt: Date = Date(), doneAt: Date? = nil,
-                latitude: Double? = nil, longitude: Double? = nil) {
-        self.id = id; self.listID = listID; self.title = title; self.memo = memo; self.link = link; self.place = place
+                latitude: Double? = nil, longitude: Double? = nil,
+                notes: [ItemNote] = [], links: [ItemLink] = [], updatedAt: Date? = nil) {
+        self.id = id; self.listID = listID; self.title = title; self.place = place
         self.group = group; self.createdAt = createdAt; self.doneAt = doneAt
-        self.latitude = latitude; self.longitude = longitude
+        self.latitude = latitude; self.longitude = longitude; self.updatedAt = updatedAt
+        let memoText = memo.trimmingCharacters(in: .whitespacesAndNewlines)
+        let address = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The first of each takes the item's own id, so the same old record always reads the same way.
+        self.notes = (memoText.isEmpty ? [] : [ItemNote(id: id, text: memo, createdAt: createdAt)]) + notes
+        self.links = (address.isEmpty ? [] : [ItemLink(id: id, url: address)]) + links
     }
 
     public var hasCoordinate: Bool { latitude != nil && longitude != nil }
 
     public var isDone: Bool { doneAt != nil }
 
-    enum CodingKeys: String, CodingKey { case id, listID, title, memo, link, place, group, createdAt, doneAt, latitude, longitude }
+    /// Every note, one after another: what a thing carried before it could have several.
+    public var memo: String {
+        notes.map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+
+    /// The first web address.
+    public var link: String { links.first?.url ?? "" }
+
+    /// The last time anything about it changed.
+    public var lastChange: Date {
+        max(updatedAt ?? createdAt, doneAt ?? createdAt, notes.map(\.createdAt).max() ?? createdAt, createdAt)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, listID, title, memo, link, notes, links, place, group, createdAt, doneAt, latitude, longitude, updatedAt
+    }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         func text(_ key: CodingKeys) throws -> String { try c.decodeIfPresent(String.self, forKey: key) ?? "" }
+        let notes = try c.decodeIfPresent([ItemNote].self, forKey: .notes)
+        let links = try c.decodeIfPresent([ItemLink].self, forKey: .links)
+        // Written before notes and links: the single memo and link become the first of each.
         self.init(id: try c.decode(UUID.self, forKey: .id), listID: try c.decode(UUID.self, forKey: .listID),
-                  title: try c.decode(String.self, forKey: .title), memo: try text(.memo), link: try text(.link),
+                  title: try c.decode(String.self, forKey: .title),
+                  memo: notes == nil ? try text(.memo) : "", link: links == nil ? try text(.link) : "",
                   place: try text(.place), group: try text(.group), createdAt: try c.decode(Date.self, forKey: .createdAt),
                   doneAt: try c.decodeIfPresent(Date.self, forKey: .doneAt),
                   latitude: try c.decodeIfPresent(Double.self, forKey: .latitude),
-                  longitude: try c.decodeIfPresent(Double.self, forKey: .longitude))
+                  longitude: try c.decodeIfPresent(Double.self, forKey: .longitude),
+                  notes: notes ?? [], links: links ?? [],
+                  updatedAt: try c.decodeIfPresent(Date.self, forKey: .updatedAt))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(listID, forKey: .listID)
+        try c.encode(title, forKey: .title)
+        try c.encode(notes, forKey: .notes)
+        try c.encode(links, forKey: .links)
+        // The single memo and link are still written, for older versions of the app.
+        try c.encode(memo, forKey: .memo)
+        try c.encode(link, forKey: .link)
+        try c.encode(place, forKey: .place)
+        try c.encode(group, forKey: .group)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encodeIfPresent(doneAt, forKey: .doneAt)
+        try c.encodeIfPresent(latitude, forKey: .latitude)
+        try c.encodeIfPresent(longitude, forKey: .longitude)
+        try c.encodeIfPresent(updatedAt, forKey: .updatedAt)
     }
 }
 
@@ -61,6 +153,13 @@ public extension Notebook {
     func list(_ id: UUID) -> StockList? { lists.first { $0.id == id } }
 
     func listItem(_ id: UUID) -> ListItem? { listItems.first { $0.id == id } }
+
+    /// The last day anything on a list changed: a thing added, written to, checked off or removed.
+    func lastChange(of listID: UUID) -> Date? {
+        guard let list = list(listID) else { return nil }
+        let items = listItems.filter { $0.listID == listID }.map(\.lastChange)
+        return ([list.updatedAt ?? list.createdAt, list.createdAt] + items).max()
+    }
 
     /// What is still on the list, oldest first.
     func openItems(in listID: UUID) -> [ListItem] {
@@ -121,6 +220,7 @@ public extension Notebook {
         let listID = listItems[i].listID
         let previous = listItems[i].doneAt
         listItems[i].doneAt = done ? now : nil
+        listItems[i].updatedAt = now
         if done {
             guard !listItems.contains(where: { $0.listID == listID && !$0.isDone }) else { return }
             for k in tasks.indices where tasks[k].listID == listID && tasks[k].completedAt == nil && tasks[k].createdAt <= now {
@@ -162,19 +262,21 @@ public extension Notebook {
         let copy = StockList(name: name, createdAt: now)
         lists.append(copy)
         for (index, item) in openItems(in: id).enumerated() {
-            listItems.append(ListItem(listID: copy.id, title: item.title, memo: item.memo, link: item.link, place: item.place,
-                                      group: item.group, createdAt: now.addingTimeInterval(Double(index) / 1000)))
+            listItems.append(ListItem(listID: copy.id, title: item.title, place: item.place, group: item.group,
+                                      createdAt: now.addingTimeInterval(Double(index) / 1000),
+                                      latitude: item.latitude, longitude: item.longitude,
+                                      notes: item.notes, links: item.links))
         }
         return copy.id
     }
 
     /// An idea that has become something concrete moves onto a list: its text names the item, its added
-    /// lines become the memo, and the idea is gone.
+    /// lines become its notes, and the idea is gone.
     mutating func moveIdea(_ id: UUID, toList listID: UUID, at now: Date = Date()) -> Bool {
         guard let idea = ideas.first(where: { $0.id == id }), list(listID) != nil,
               !listItems.contains(where: { $0.id == id }) else { return false }
-        listItems.append(ListItem(id: idea.id, listID: listID, title: idea.text,
-                                  memo: idea.notes.map(\.text).joined(separator: "\n"), createdAt: now))
+        listItems.append(ListItem(id: idea.id, listID: listID, title: idea.text, createdAt: now,
+                                  notes: idea.notes.map { ItemNote(id: $0.id, text: $0.text, createdAt: $0.createdAt) }))
         ideas.removeAll { $0.id == id }
         return true
     }

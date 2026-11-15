@@ -602,7 +602,10 @@ final class TaskStore: ObservableObject {
         let text = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         commit { book in
-            if let i = book.lists.firstIndex(where: { $0.id == id }) { book.lists[i].name = text }
+            if let i = book.lists.firstIndex(where: { $0.id == id }) {
+                book.lists[i].name = text
+                book.lists[i].updatedAt = Date()
+            }
         }
     }
 
@@ -638,13 +641,20 @@ final class TaskStore: ObservableObject {
         }
         return commit { book in
             guard let i = book.listItems.firstIndex(where: { $0.id == item.id }) else { return }
+            let before = book.listItems[i]
             book.listItems[i].title = title
-            book.listItems[i].memo = item.memo
-            book.listItems[i].link = item.link.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Empty notes and links are left out; a link keeps its name.
+            book.listItems[i].notes = item.notes.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            book.listItems[i].links = item.links.compactMap { link in
+                let url = link.url.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !url.isEmpty else { return nil }
+                return ItemLink(id: link.id, url: url, title: link.title.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
             book.listItems[i].place = item.place.trimmingCharacters(in: .whitespacesAndNewlines)
             book.listItems[i].group = item.group.trimmingCharacters(in: .whitespacesAndNewlines)
             book.listItems[i].latitude = item.latitude
             book.listItems[i].longitude = item.longitude
+            if book.listItems[i] != before { book.listItems[i].updatedAt = Date() }
         }
     }
 
@@ -660,7 +670,11 @@ final class TaskStore: ObservableObject {
 
     func deleteItem(_ id: UUID) {
         guard let item = listItem(id) else { return }
-        if commit({ $0.listItems.removeAll { $0.id == id } }) { offerUndo("「\(item.title)」を削除しました") }
+        let saved = commit { book in
+            book.listItems.removeAll { $0.id == id }
+            if let i = book.lists.firstIndex(where: { $0.id == item.listID }) { book.lists[i].updatedAt = Date() }
+        }
+        if saved { offerUndo("「\(item.title)」を削除しました") }
     }
 
     /// What was shared into Horme from other apps since it last came to the front, put on its lists.

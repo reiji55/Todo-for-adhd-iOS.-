@@ -1,8 +1,8 @@
 // Horme's MCP tools. Each call reads the records, writes only the fields it changes (stamped as "claude"),
 // and lets the database merge them, so the app's own edits made at the same time survive.
 
-import { addDays, agenda, dayKey, dayToISO, isAlive, listProgress, materialize, newID, nowISO, piecesOf, taskItem, todayKey, Writer } from "./records.ts";
-import type { Book, ListItem, Milestone, Project, StockList, SyncRecord, Task } from "./records.ts";
+import { addDays, agenda, dayKey, dayToISO, isAlive, itemLinks, itemNotes, lastChange, listProgress, materialize, newID, noteAndLinkFields, nowISO, piecesOf, taskItem, todayKey, Writer } from "./records.ts";
+import type { Book, ItemLink, ItemNote, ListItem, Milestone, Project, StockList, SyncRecord, Task } from "./records.ts";
 
 export interface RecordStore {
   load(): Promise<SyncRecord[]>;
@@ -110,7 +110,7 @@ function checkItem(writer: Writer, book: Book, item: ListItem, done: boolean, no
   const previous = doneNow.has(item.id.toUpperCase()) ? doneNow.get(item.id.toUpperCase()) : item.doneAt ?? null;
   if (!!previous === done) return;
   const stamp = done ? nowISO(now) : null;
-  writer.set(`item_${item.id}`, { doneAt: stamp });
+  writer.set(`item_${item.id}`, { doneAt: stamp, updatedAt: nowISO(now) });
   doneNow.set(item.id.toUpperCase(), stamp);
   const trips = book.tasks.filter((t) => sameID(t.listID, item.listID));
   if (done) {
@@ -123,6 +123,38 @@ function checkItem(writer: Writer, book: Book, item: ListItem, done: boolean, no
   }
 }
 
+/** A thing's notes and links as read back: each note with the day it was written, each link with its name. */
+function notesAndLinks(item: ListItem) {
+  const notes = itemNotes(item), links = itemLinks(item);
+  return {
+    notes: notes.length ? notes.map((n) => ({ id: n.id, text: n.text, day: dayKey(n.createdAt) })) : undefined,
+    links: links.length ? links.map((l) => ({ id: l.id, title: l.title || undefined, url: l.url })) : undefined,
+  };
+}
+
+const LINK = {
+  type: "object",
+  properties: { url: { type: "string" }, title: { type: "string", description: "リンク名（任意。例：参考資料、問い合わせ先、Claudeとの会話）" } },
+  required: ["url"],
+};
+
+/** Links given to a tool, with ids. Empty addresses are left out. */
+function newLinks(input: unknown): ItemLink[] {
+  if (input === undefined || input === null) return [];
+  if (!Array.isArray(input)) throw new Error("links は { url, title } の配列で渡してください。");
+  return input.map((l: any) => ({
+    id: l?.id ? String(l.id).toUpperCase() : newID(), url: String(l?.url ?? "").trim(), title: String(l?.title ?? "").trim(),
+  })).filter((l) => l.url);
+}
+
+/** Notes given to a tool as text, each written now. */
+function newNotes(input: unknown, now: Date): ItemNote[] {
+  if (input === undefined || input === null) return [];
+  if (!Array.isArray(input)) throw new Error("notes は文字列の配列で渡してください。");
+  return input.map((text) => String(typeof text === "object" && text ? (text as any).text ?? "" : text ?? ""))
+    .filter((text) => text.trim()).map((text) => ({ id: newID(), text, createdAt: nowISO(now) }));
+}
+
 function listView(book: Book, list: StockList, history: boolean) {
   const mine = book.items.filter((i) => sameID(i.listID, list.id));
   const plan = (item: ListItem) => {
@@ -131,17 +163,17 @@ function listView(book: Book, list: StockList, history: boolean) {
     return t ? { id: t.id, kind: t.isEvent ? "event" : "task", date: t.plannedAt ? dayKey(t.plannedAt) : "anytime" } : undefined;
   };
   const brief = (item: ListItem) => ({
-    id: item.id, title: item.title, group: item.group || undefined, memo: item.memo || undefined, link: item.link || undefined,
+    id: item.id, title: item.title, group: item.group || undefined, ...notesAndLinks(item),
     place: item.place || undefined, plan: plan(item),
   });
   const trip = book.tasks.find((t) => sameID(t.listID, list.id) && !t.completedAt);
   const done = mine.filter((i) => i.doneAt).sort((a, b) => b.doneAt!.localeCompare(a.doneAt!));
   return {
-    id: list.id, name: list.name,
+    id: list.id, name: list.name, updated: dayKey(lastChange(book, list)),
     open: mine.filter((i) => !i.doneAt).map(brief),
     trip: trip ? { id: trip.id, date: trip.plannedAt ? dayKey(trip.plannedAt) : "anytime", ...listProgress(book, trip) } : undefined,
     doneCount: done.length,
-    done: history ? done.slice(0, 30).map((i) => ({ id: i.id, title: i.title, doneDay: dayKey(i.doneAt!) })) : undefined,
+    done: history ? done.slice(0, 30).map((i) => ({ id: i.id, title: i.title, doneDay: dayKey(i.doneAt!), ...notesAndLinks(i) })) : undefined,
   };
 }
 
@@ -252,7 +284,7 @@ export const tools: Tool[] = [
               memo: { type: "string", description: "本人用のメモ" },
               handoff: { type: "string", description: "Claude への引き継ぎ" },
               parent: { type: "string", description: "子タスクにするときの親タスクの id" },
-              from_item: { type: "string", description: "リストの項目から予定にするときのその項目の id。予定が済むと項目は履歴に移る" },
+              from_item: { type: "string", description: "リストの項目から予定にするときのその項目の id。予定が済むと項目は履歴に移る。項目のメモとリンクは予定から見える（get_task の fromItem）ので写さなくてよい" },
               from_list: { type: "string", description: "リスト全体をチェックしながら進めるタスク（買い物など）にするときのリストの id。全部チェックすると完了（タスクのみ）" },
             },
             required: ["title"],
@@ -290,7 +322,7 @@ export const tools: Tool[] = [
         const values: Args = {
           alive: true, id, title, scheduledTime: date === "anytime" ? "" : String(time).trim(),
           isMust: isEvent || parent ? false : !!input.must, isEvent, effort: "medium",
-          project: parent ? parent.project ?? "" : input.project ?? "", memo: input.memo ?? item?.memo ?? "",
+          project: parent ? parent.project ?? "" : input.project ?? "", memo: input.memo ?? "",
           handoff: input.handoff ?? "", resumeNote: "", createdAt: nowISO(now), notify: true,
         };
         if (date !== "anytime") values.plannedAt = dayToISO(date);
@@ -675,7 +707,8 @@ export const tools: Tool[] = [
     description:
       "ストックのリスト（行きたいところ・読みたい本・買うものなど、予定ではない具体的なもののストック）を読む。" +
       "open にまだの項目、plan にその項目から作った予定、trip にリスト全体から作ったタスク（買い物など）とチェックの進み具合が入る。" +
-      "list に id を渡すと、そのリストの済んだ項目（履歴）も入る。",
+      "項目の notes はメモ（書いた日つき、いくつでも）、links はリンク（名前つき、いくつでも）。updated はリストの中身が最後に変わった日。" +
+      "list に id を渡すと、そのリストの済んだ項目（履歴、メモつき）も入る。",
     inputSchema: { type: "object", properties: { list: { type: "string", description: "履歴まで読みたいリストの id" } } },
     run: ({ list }, { book }) => ({
       result: { lists: book.lists.map((l) => listView(book, l, !!list && sameID(l.id, list))) },
@@ -686,7 +719,9 @@ export const tools: Tool[] = [
     title: "リストに項目を足す",
     description:
       "リストに項目を足す。list にリストの id、または new_list に新しいリストの名前（同じ名前のリストがあればそこに足す）。" +
-      "項目は title（必須）と group（見出し：料理名や売り場、地域、ジャンルなど。まとめて表示される）・memo・link（URL）・place（店名や住所）。" +
+      "項目は title（必須）と group（見出し：料理名や売り場、地域、ジャンルなど。まとめて表示される）・notes（メモの配列。目的・手順・結果・補足などを別々に）・" +
+      "links（{ url, title } の配列。参考資料・問い合わせ先・会話などを別々に、title は任意の名前）・place（店名や住所）。" +
+      "リストは期限のないストックなので、締切や進み具合は持たせない。" +
       "分類は title に【】で書かず group に入れる。同じものを二重に足さないよう、先に get_lists で確認する。",
     inputSchema: {
       type: "object",
@@ -697,8 +732,11 @@ export const tools: Tool[] = [
           items: {
             type: "object",
             properties: {
-              title: { type: "string" }, group: { type: "string", description: "見出し（任意）" }, memo: { type: "string" },
-              link: { type: "string" }, place: { type: "string" },
+              title: { type: "string" }, group: { type: "string", description: "見出し（任意）" },
+              notes: { type: "array", items: { type: "string" }, description: "メモ。1つずつ別のメモになる" },
+              links: { type: "array", items: LINK },
+              place: { type: "string" },
+              memo: { type: "string", description: "（旧）メモ1つ。notes を使う" }, link: { type: "string", description: "（旧）リンク1つ。links を使う" },
             },
             required: ["title"],
           },
@@ -726,10 +764,14 @@ export const tools: Tool[] = [
         if (!title) throw new Error("title が空の項目があります。");
         const id = newID();
         // A second apart keeps them in the order given (the app reads whole seconds).
+        const createdAt = nowISO(new Date(now.getTime() + index * 1000));
+        const notes = newNotes([...(input.memo ? [input.memo] : []), ...(input.notes ?? [])], now)
+          .map((n) => ({ ...n, createdAt }));
+        const links = newLinks([...(input.link ? [{ url: input.link }] : []), ...(input.links ?? [])]);
         writer.set(`item_${id}`, {
-          alive: true, id, listID: target!.id, title, group: String(input.group ?? "").trim(), memo: String(input.memo ?? ""),
-          link: String(input.link ?? "").trim(),
-          place: String(input.place ?? "").trim(), createdAt: nowISO(new Date(now.getTime() + index * 1000)),
+          alive: true, id, listID: target!.id, title, group: String(input.group ?? "").trim(),
+          ...noteAndLinkFields(notes, links),
+          place: String(input.place ?? "").trim(), createdAt,
         });
         added.push(id);
       });
@@ -740,13 +782,26 @@ export const tools: Tool[] = [
     name: "update_list_item",
     title: "リストの項目を直す・消す",
     description:
-      "リストの項目の名前・見出し（group、空文字で外す）・メモ・リンク・場所を書き換える。渡した欄だけ変わる。remove=true で項目を消す（本人に頼まれたときだけ。" +
-      "済んだものは消さずに check_list_items で済みにする）。",
+      "リストの項目の名前・見出し（group、空文字で外す）・場所・メモ・リンクを書き換える。渡した欄だけ変わる。" +
+      "メモは add_notes で足す（済んだ項目にも、結果や補足を足せる）。notes に { id, text } の配列を渡すと全体を置き換える（id のあるものはそのメモを直し、入れなかったメモは消える）。" +
+      "リンクも同じく add_links で足し、links で全体を置き換える。" +
+      "remove=true で項目を消す（本人に頼まれたときだけ。済んだものは消さずに check_list_items で済みにする）。",
     inputSchema: {
       type: "object",
       properties: {
-        id: { type: "string" }, title: { type: "string" }, group: { type: "string" }, memo: { type: "string" },
-        link: { type: "string" }, place: { type: "string" }, remove: { type: "boolean" },
+        id: { type: "string" }, title: { type: "string" }, group: { type: "string" }, place: { type: "string" },
+        add_notes: { type: "array", items: { type: "string" }, description: "足すメモ。1つずつ別のメモになる" },
+        notes: {
+          type: "array", description: "メモ全体（置き換え）",
+          items: { type: "object", properties: { id: { type: "string" }, text: { type: "string" } }, required: ["text"] },
+        },
+        add_links: { type: "array", items: LINK, description: "足すリンク" },
+        links: {
+          type: "array", description: "リンク全体（置き換え）",
+          items: { ...LINK, properties: { id: { type: "string" }, ...LINK.properties } },
+        },
+        memo: { type: "string", description: "（旧）最初のメモを書き換える" }, link: { type: "string", description: "（旧）最初のリンクを書き換える" },
+        remove: { type: "boolean" },
       },
       required: ["id"],
     },
@@ -755,6 +810,7 @@ export const tools: Tool[] = [
       const writer = new Writer(records, "claude", now.getTime());
       if (args.remove) {
         writer.set(`item_${item.id}`, { alive: false });
+        writer.set(`list_${item.listID}`, { updatedAt: nowISO(now) });
         return { result: { removed: item.id }, changes: writer.changes };
       }
       const values: Args = {};
@@ -762,10 +818,43 @@ export const tools: Tool[] = [
         if (!String(args.title).trim()) throw new Error("名前は空にできません。");
         values.title = String(args.title).trim();
       }
-      for (const key of ["group", "memo", "link", "place"]) if (args[key] !== undefined) values[key] = String(args[key]).trim();
+      for (const key of ["group", "place"]) if (args[key] !== undefined) values[key] = String(args[key]).trim();
+
+      let notes = itemNotes(item), links = itemLinks(item);
+      const before = JSON.stringify([notes, links]);
+      if (args.notes !== undefined) {
+        if (!Array.isArray(args.notes)) throw new Error("notes は { id, text } の配列で渡してください。");
+        notes = (args.notes as Args[]).filter((n) => String(n?.text ?? "").trim()).map((n) => {
+          const kept = n.id ? notes.find((old) => sameID(old.id, n.id)) : undefined;
+          return kept ? { ...kept, text: String(n.text) } : { id: newID(), text: String(n.text), createdAt: nowISO(now) };
+        });
+      }
+      if (args.memo !== undefined) {
+        const text = String(args.memo);
+        if (notes.length) notes = text.trim() ? [{ ...notes[0], text }, ...notes.slice(1)] : notes.slice(1);
+        else notes = newNotes([text], now);
+      }
+      notes = [...notes, ...newNotes(args.add_notes, now)];
+      if (args.links !== undefined) {
+        links = newLinks(args.links).map((l) => {
+          const kept = links.find((old) => sameID(old.id, l.id));
+          return kept ? { ...kept, url: l.url, title: l.title } : l;
+        });
+      }
+      if (args.link !== undefined) {
+        const url = String(args.link).trim();
+        if (links.length) links = url ? [{ ...links[0], url }, ...links.slice(1)] : links.slice(1);
+        else links = newLinks([{ url }]);
+      }
+      links = [...links, ...newLinks(args.add_links)];
+      if (JSON.stringify([notes, links]) !== before) Object.assign(values, noteAndLinkFields(notes, links));
+
       if (!Object.keys(values).length) return { result: { changed: false } };
+      values.updatedAt = nowISO(now);
       writer.set(`item_${item.id}`, values);
-      return { result: { changed: true, id: item.id }, changes: writer.changes };
+      return {
+        result: { changed: true, id: item.id, notes: notes.length, links: links.length }, changes: writer.changes,
+      };
     },
   },
   {
@@ -783,24 +872,61 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: "get_ideas",
+    title: "アイデアを読む",
+    description: "アイデア（まだタスクにしない思いつき）を新しい順に読む。notes はあとから足したメモ（書いた日つき）。",
+    inputSchema: { type: "object", properties: {} },
+    run: (_args, { book }) => ({
+      result: {
+        ideas: [...book.ideas].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((i) => ({
+          id: i.id, text: i.text, day: dayKey(i.createdAt),
+          notes: i.notes?.length ? i.notes.map((n) => ({ id: n.id, text: n.text, day: dayKey(n.createdAt) })) : undefined,
+        })),
+      },
+    }),
+  },
+  {
     name: "add_idea",
     title: "アイデアを書き留める",
-    description: "アイデア（まだタスクにしない思いつき）を足す。",
-    inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
-    run: ({ text }, { records, now }) => {
+    description: "アイデア（まだタスクにしない思いつき）を足す。notes にメモをいくつでも添えられる（1つずつ別のメモになる）。",
+    inputSchema: {
+      type: "object",
+      properties: { text: { type: "string" }, notes: { type: "array", items: { type: "string" } } },
+      required: ["text"],
+    },
+    run: ({ text, notes }, { records, now }) => {
       const value = String(text ?? "").trim();
       if (!value) throw new Error("text が空です。");
       const writer = new Writer(records, "claude", now.getTime());
       const id = newID();
-      writer.set(`idea_${id}`, { alive: true, id, text: value, createdAt: nowISO(now) });
+      writer.set(`idea_${id}`, { alive: true, id, text: value, createdAt: nowISO(now), notes: newNotes(notes, now) });
       return { result: { added: id }, changes: writer.changes };
+    },
+  },
+  {
+    name: "add_idea_notes",
+    title: "アイデアにメモを足す",
+    description: "今あるアイデアにメモを足す（継ぎ足し）。1つずつ別のメモになる。id は get_ideas で確かめる。",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" }, notes: { type: "array", items: { type: "string" }, minItems: 1 } },
+      required: ["id", "notes"],
+    },
+    run: ({ id, notes }, { records, book, now }) => {
+      const idea = book.ideas.find((i) => sameID(i.id, id));
+      if (!idea) throw new Error(`アイデアが見つかりません: ${id}。先に get_ideas で id を確かめてください。`);
+      const added = newNotes(notes, now);
+      if (!added.length) throw new Error("notes が空です。");
+      const writer = new Writer(records, "claude", now.getTime());
+      writer.set(`idea_${idea.id}`, { notes: [...(idea.notes ?? []), ...added], touchedAt: nowISO(now) });
+      return { result: { id: idea.id, notes: (idea.notes?.length ?? 0) + added.length }, changes: writer.changes };
     },
   },
 ];
 
 export const instructions =
   "Horme（本人のタスク管理アプリ）の中身を読み書きする。種類はタスク（その日にやる・単発で終わる）、イベント（その日にある予定。済んだら印を付けられるが、やり残しにはならない）、" +
-  "ルーティン（くり返し）、アイデア（まだ決めていない思いつき）、リスト（行きたいところ・読みたい本・買うものなど、予定ではない具体的なもののストック。" +
+  "ルーティン（くり返し）、アイデア（まだ決めていない思いつき。メモを継ぎ足せる）、リスト（行きたいところ・読みたい本・買うものなど、予定ではない具体的なもののストック。期限や進み具合は持たない。項目ごとにメモとリンクをいくつでも持てる。" +
   "予定にするときは add_tasks の from_item / from_list でつなぐ）。ほかにボード（やり方の書き置き）と、プロジェクト（到達点・期限・途中の到達点を持つ大きな枠）がある。" +
   "大きなタスクは子タスクに分かれていることがある（pieces / parent）。日付と時間は子タスクが持ち、親タスクは締切と必須だけを持つ。子タスクがすべて済むと親も完了になる。" +
   "日付は日本時間。書き換える前に get_today / get_days で id と現状を確かめる。" +
