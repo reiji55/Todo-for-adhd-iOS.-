@@ -724,6 +724,9 @@ private struct UpcomingDeadlines: View {
     @EnvironmentObject private var store: TaskStore
     let now: Date
     let onOpen: (AgendaItem) -> Void
+    /// Projects whose tasks are shown under their row.
+    @State private var opened: Set<UUID> = []
+
     var body: some View {
         let calendar = Calendar.current
         let book = store.notebook
@@ -733,33 +736,22 @@ private struct UpcomingDeadlines: View {
             return later(due)
         }
         // A project's deadline counts once for all its open tasks that have none of their own.
-        let projects: [(project: Project, open: Int)] = book.projects.compactMap { project in
+        let projects: [(project: Project, tasks: [TaskItem])] = book.projects.compactMap { project in
             guard let due = project.deadline, later(due) else { return nil }
-            let open = book.tasks.filter { !$0.isComplete && book.projectDeadline(for: $0) != nil
-                && ProjectBook.key($0.project) == ProjectBook.key(project.name) }.count
-            return open > 0 ? (project, open) : nil
+            let tasks = book.tasks.filter { !$0.isComplete && book.projectDeadline(for: $0) != nil
+                && ProjectBook.key($0.project) == ProjectBook.key(project.name) }
+                .sorted(by: TaskBoard().scheduledOrder)
+            return tasks.isEmpty ? nil : (project, tasks)
         }
-        let rows: [DeadlineRow] = (upcoming.map { DeadlineRow.task($0) } + projects.map { DeadlineRow.project($0.project, open: $0.open) })
+        let rows: [DeadlineRow] = (upcoming.map { DeadlineRow.task($0) } + projects.map { DeadlineRow.project($0.project, tasks: $0.tasks) })
             .sorted { $0.due < $1.due }
         if !rows.isEmpty {
             TimetableFolder(title: "これからの締切", count: rows.count, identifier: "deadlineFolder",
                             detail: rows.first.map { "次 \($0.due.shortDay)" }) {
             ForEach(rows.prefix(5)) { row in
                 switch row {
-                case .project(let project, let open):
-                    Button { store.projectToOpen = ProjectBook.key(project.name) } label: {
-                        HStack(spacing: 8) {
-                            Text(project.deadline?.shortDay ?? "").font(.clock).foregroundStyle(Palette.must)
-                            Image(systemName: "flag.fill").font(.caption)
-                                .foregroundStyle(ProjectColor.color(for: store.colorName(forProject: project.name)) ?? Palette.accent)
-                                .frame(width: 14).accessibilityHidden(true)
-                            Text(project.name).lineLimit(1)
-                            Text("\(open)件").foregroundStyle(.secondary).monospacedDigit()
-                            Spacer(minLength: 0)
-                            Image(systemName: "chevron.right").foregroundStyle(.secondary)
-                        }.font(.subheadline).frame(minHeight: 40)
-                    }
-                    .accessibilityLabel("プロジェクト「\(project.name)」の期限 \(project.deadline?.shortDay ?? "")、締切のないタスク\(open)件")
+                case .project(let project, let tasks):
+                    projectRow(project, tasks: tasks)
                 case .task(let task):
                 Button { onOpen(AgendaItem(task: task)) } label: {
                     HStack(spacing: 8) {
@@ -780,9 +772,73 @@ private struct UpcomingDeadlines: View {
         }
     }
 
+    /// A project's deadline: its name opens the tasks it holds, the flag and arrow go to its page on the board.
+    @ViewBuilder
+    private func projectRow(_ project: Project, tasks: [TaskItem]) -> some View {
+        let open = opened.contains(project.id)
+        let color = ProjectColor.color(for: store.colorName(forProject: project.name)) ?? Palette.accent
+        HStack(spacing: 8) {
+            Button {
+                withAnimation(.snappy) {
+                    if open { opened.remove(project.id) } else { opened.insert(project.id) }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(project.deadline?.shortDay ?? "").font(.clock).foregroundStyle(Palette.must)
+                    Circle().fill(color).frame(width: 9, height: 9).frame(width: 14).accessibilityHidden(true)
+                    Text(project.name).lineLimit(1)
+                    Text("\(tasks.count)件").foregroundStyle(.secondary).monospacedDigit()
+                    Image(systemName: open ? "chevron.up" : "chevron.down").font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: 40).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("プロジェクト「\(project.name)」の期限 \(project.deadline?.shortDay ?? "")、締切のないタスク\(tasks.count)件")
+            .accessibilityValue(open ? "展開中" : "折りたたみ")
+            .accessibilityIdentifier("deadlineProject-\(project.name)")
+            // The flag says this goes to the project on the board.
+            Button { store.projectToOpen = ProjectBook.key(project.name) } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "flag.fill").foregroundStyle(color)
+                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                }
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 10).padding(.vertical, 7)
+                .background(Capsule().fill(color.opacity(0.14)))
+                .frame(minHeight: 40).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("ボードでプロジェクト「\(project.name)」を開く")
+            .accessibilityIdentifier("deadlineProjectBoard-\(project.name)")
+        }
+        .font(.subheadline)
+        if open {
+            ForEach(tasks) { task in
+                Button { onOpen(AgendaItem(task: task)) } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: task.isMust ? "star.fill" : "circle").font(.system(size: 7))
+                            .foregroundStyle(task.isMust ? Palette.must : Color.secondary).frame(width: 14)
+                        Text(task.title).fontWeight(task.isMust ? .bold : .regular)
+                            .foregroundStyle(task.isMust ? Palette.must : Color.primary).lineLimit(1)
+                        Spacer(minLength: 0)
+                        if let day = task.plannedAt {
+                            Text(day.shortDay).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                        }
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                    }
+                    .font(.subheadline).frame(minHeight: 36).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 52)
+            }
+        }
+    }
+
     private enum DeadlineRow: Identifiable {
         case task(TaskItem)
-        case project(Project, open: Int)
+        case project(Project, tasks: [TaskItem])
         var id: String {
             switch self {
             case .task(let task): return "task-\(task.id.uuidString)"

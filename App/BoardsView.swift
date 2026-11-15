@@ -166,10 +166,16 @@ struct AllTasksView: View {
     }
 
     private static let separator: Character = "\u{1F}"
-    private func isOpen(_ name: String) -> Bool { openProjects.split(separator: Self.separator).contains { $0 == name } }
+    /// The stored name of a fold. Tasks without a project have an empty name, which a split of the stored
+    /// names would drop, so they are kept under a mark of their own.
+    static func foldKey(_ name: String) -> String { name.isEmpty ? "\u{1E}none" : name }
+    private func isOpen(_ name: String) -> Bool {
+        openProjects.split(separator: Self.separator).contains { $0 == Self.foldKey(name) }
+    }
     private func toggle(_ name: String) {
+        let key = Self.foldKey(name)
         var names = openProjects.split(separator: Self.separator).map(String.init)
-        if let index = names.firstIndex(of: name) { names.remove(at: index) } else { names.append(name) }
+        if let index = names.firstIndex(of: key) { names.remove(at: index) } else { names.append(key) }
         openProjects = names.joined(separator: String(Self.separator))
     }
 
