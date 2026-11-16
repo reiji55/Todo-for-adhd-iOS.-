@@ -55,6 +55,8 @@ final class NowActivityController {
     /// Shows this on the lock screen, or takes it away when nil. Starting one needs the app in front;
     /// updating works from the background too.
     func show(_ state: State?) {
+        // Before the saved data is read there is nothing to say; keep what the lock screen shows.
+        guard !TaskStore.shared.loadFailed else { return }
         guard Self.enabled, ActivityAuthorizationInfo().areActivitiesEnabled, let state else { end(); return }
         let live = Activity<NowActivityAttributes>.activities.filter { $0.activityState == .active }
         if state == shown, !live.isEmpty { return }

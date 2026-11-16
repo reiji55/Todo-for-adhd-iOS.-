@@ -77,6 +77,18 @@ public struct SharedStoreState: Codable, Equatable {
     }
 }
 
+extension Data {
+    /// Written so it stays readable while the phone is locked after its first unlock: the app is woken in the
+    /// background (lock-screen buttons, sync) and must be able to read and save its data then.
+    func writeState(to url: URL) throws {
+        #if os(iOS)
+        try write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        #else
+        try write(to: url, options: .atomic)
+        #endif
+    }
+}
+
 /// A single atomic file holds both the local view and all unsent sync changes.
 /// The old notebook.json is read only for migration and is kept untouched.
 public struct SharedStoreRepository {
@@ -86,11 +98,19 @@ public struct SharedStoreRepository {
     public var legacy: NotebookRepository { NotebookRepository(url: directory.appendingPathComponent("notebook.json")) }
     public var safetyBackupURL: URL { directory.appendingPathComponent("before-sharing.json") }
     public var syncBackupURL: URL { directory.appendingPathComponent("before-sync.json") }
+    /// The bytes last read or written and found valid. Saving keeps the current file as the previous one only
+    /// when it is valid; when it is exactly what was last checked, checking it again (which rebuilds the whole
+    /// sync history) is skipped, so each edit stays quick.
+    private final class KnownGood { var data: Data? }
+    private let knownGood = KnownGood()
     public init(directory: URL) { self.directory = directory }
 
     public func load() throws -> SharedStoreState {
         if FileManager.default.fileExists(atPath: url.path) {
-            return try SharedStoreState.decode(Data(contentsOf: url))
+            let data = try Data(contentsOf: url)
+            let state = try SharedStoreState.decode(data)
+            knownGood.data = data
+            return state
         }
         let state = SharedStoreState(notebook: try legacy.load())
         try save(state)
@@ -103,10 +123,11 @@ public struct SharedStoreRepository {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         if FileManager.default.fileExists(atPath: url.path) {
             let previous = try Data(contentsOf: url)
-            _ = try SharedStoreState.decode(previous)
-            try previous.write(to: previousURL, options: .atomic)
+            if previous != knownGood.data { _ = try SharedStoreState.decode(previous) }
+            try previous.writeState(to: previousURL)
         }
-        try data.write(to: url, options: .atomic)
+        try data.writeState(to: url)
+        knownGood.data = data
     }
 
     public func backup(_ notebook: Notebook, beforeSharing: Bool) throws {
@@ -124,7 +145,7 @@ public struct SharedStoreRepository {
         }
         let state = SharedStoreState()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try state.encoded().write(to: url, options: .atomic)
+        try state.encoded().writeState(to: url)
         return state
     }
 
@@ -141,7 +162,7 @@ public struct SharedStoreRepository {
         state.connection = nil; state.replica = nil; state.lastSyncedAt = nil; state.bridge = nil
         let damaged = url.appendingPathExtension("unreadable-\(UUID().uuidString)")
         try FileManager.default.copyItem(at: url, to: damaged)
-        try state.encoded().write(to: url, options: .atomic)
+        try state.encoded().writeState(to: url)
         return state
     }
 }

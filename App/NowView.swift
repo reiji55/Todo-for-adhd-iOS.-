@@ -100,7 +100,7 @@ struct NowView: View {
         let closed = store.closedDay == DayKey.of(now)
         VStack(alignment: .leading, spacing: 14) {
             header(now: now, closed: closed)
-            if store.loadFailed {
+            if store.loadBroken {
                 Label("保存データを開けません。設定から復旧できます。", systemImage: "exclamationmark.triangle")
                     .font(.subheadline).foregroundStyle(.red)
             }

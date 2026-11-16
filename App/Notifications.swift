@@ -47,6 +47,8 @@ final class Reminders: NSObject, ObservableObject, UNUserNotificationCenterDeleg
 
     /// Rebuilds the next days' banners. Debounced so a burst of edits schedules once.
     func reschedule(_ book: Notebook) {
+        // Data not read yet (the phone was locked) must not clear what is already planned.
+        guard !TaskStore.shared.loadFailed else { return }
         pending?.cancel()
         pending = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(600))

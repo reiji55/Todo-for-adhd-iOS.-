@@ -62,7 +62,7 @@ struct SettingsView: View {
                     }
                     Text("このアプリのJSONバックアップ、または3日間タスクの tasks.txt・board.json を選べます。tasks.txt と board.json は重複を避けて追加します。")
                         .font(.caption).foregroundStyle(.secondary)
-                    if store.loadFailed {
+                    if store.loadBroken {
                         if store.canRecoverPrevious {
                             Button("直前の保存から復旧する") { store.recover() }
                         }

@@ -115,7 +115,7 @@ struct TodayView: View {
 
         LazyVStack(alignment: .leading, spacing: 10) {
             DaySwitcher(offset: $dayOffset, now: now, tomorrowCount: tomorrowCount)
-            if store.loadFailed {
+            if store.loadBroken {
                 Label("保存データを開けません。設定から復旧できます。", systemImage: "exclamationmark.triangle")
                     .font(.subheadline).foregroundStyle(.red)
             }

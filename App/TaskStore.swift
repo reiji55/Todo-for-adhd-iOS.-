@@ -36,6 +36,12 @@ final class TaskStore: ObservableObject {
     /// can be seen and undone; leaving the screen clears them. Never saved or synced.
     @Published private(set) var recentlyDone: Set<String> = []
     @Published private(set) var loadFailed = false
+    /// The file could not be read only because the phone is locked (the app was woken in the background,
+    /// for a lock-screen button or a sync). It is read again once the phone unlocks; nothing is wrong with it.
+    @Published private(set) var loadDeferred = false
+    /// The saved data really could not be read: offer recovery.
+    var loadBroken: Bool { loadFailed && !loadDeferred }
+    private var unlockObserver: NSObjectProtocol?
     /// Sample data shown in memory only. Saving, syncing, notifications and the Claude bridge leave the real
     /// data alone while it is on; ending demo mode or quitting the app brings the real data back.
     @Published private(set) var isDemo = false
@@ -90,7 +96,11 @@ final class TaskStore: ObservableObject {
             .appendingPathComponent("ThreeDays", isDirectory: true)
         repository = SharedStoreRepository(directory: directory)
         do { state = try repository.load(); notebook = state.notebook }
-        catch { loadFailed = true; self.error = "保存データを開けませんでした。\(error.localizedDescription)" }
+        catch { failedToLoad(error) }
+        unlockObserver = NotificationCenter.default.addObserver(forName: UIApplication.protectedDataDidBecomeAvailableNotification,
+                                                                object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.loadAgainIfDeferred() }
+        }
         network.pathUpdateHandler = { [weak self] path in
             let up = path.status == .satisfied
             Task { @MainActor [weak self] in
@@ -121,12 +131,53 @@ final class TaskStore: ObservableObject {
 #endif
     }
 
+    /// A read that failed because the phone is locked waits for the unlock; any other failure protects the file
+    /// and offers recovery in settings.
+    private func failedToLoad(_ error: Error) {
+        loadFailed = true
+        if Self.isLockedOut(error) {
+            loadDeferred = true
+        } else {
+            loadDeferred = false
+            self.error = "保存データを開けませんでした。\(error.localizedDescription)"
+        }
+    }
+
+    /// Reads the file again after a read the lock got in the way of.
+    func loadAgainIfDeferred() {
+        guard loadDeferred, UIApplication.shared.isProtectedDataAvailable else { return }
+        do {
+            state = try repository.load()
+            loadFailed = false; loadDeferred = false
+            if !isDemo { notebook = state.notebook }
+            moveCardsIntoProjectsOnce()
+            if notebook.needsStepConversion { scheduleStepConversion() }
+            if isForeground { restoreBridgeIfNeeded(); requestSync() }
+        } catch {
+            failedToLoad(error)
+        }
+    }
+
+    /// The phone is locked and its files are closed, or the read was refused for lack of access.
+    static func isLockedOut(_ error: Error) -> Bool {
+        if !UIApplication.shared.isProtectedDataAvailable { return true }
+        let ns = error as NSError
+        if ns.domain == NSCocoaErrorDomain && ns.code == NSFileReadNoPermissionError { return true }
+        if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError, underlying.domain == NSPOSIXErrorDomain,
+           underlying.code == Int(EPERM) || underlying.code == Int(EACCES) { return true }
+        return false
+    }
+
     /// The saved data, even while demo mode shows samples. Notifications are planned from this.
     var realNotebook: Notebook { state.notebook }
 
     @discardableResult
     func commit(_ update: (inout Notebook) -> Void) -> Bool {
-        guard isDemo || !loadFailed else { error = "読み込みに失敗したデータを保護しています。設定から直前の保存を復旧してください。"; return false }
+        guard isDemo || !loadFailed else {
+            error = loadDeferred ? "iPhoneのロックを解除してから、もう一度試してください。"
+                : "読み込みに失敗したデータを保護しています。設定から直前の保存を復旧してください。"
+            return false
+        }
         var next = notebook
         update(&next)
         next.clearCompletedContinuationNotes()
@@ -894,6 +945,7 @@ final class TaskStore: ObservableObject {
         foregroundRefresh?.cancel(); foregroundRefresh = nil
         isForeground = active
         guard active else { return }
+        loadAgainIfDeferred()
         restoreBridgeIfNeeded()
         requestSync()
         foregroundRefresh = Task { [weak self] in
