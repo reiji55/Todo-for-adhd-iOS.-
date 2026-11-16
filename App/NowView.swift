@@ -16,7 +16,7 @@ struct NowView: View {
     @State private var passed: [String] = PassedOver.load()
     /// Picked from ほかの候補, or kept in front while its 負荷 is changed; it leads until it is done or passed over.
     @State private var chosen: String?
-    @State private var work: TaskWork?
+    @State private var work: TaskWork? = TaskRunMemory.load()
     @State private var timetableOpen = false
     /// The thing tapped in 今日の流れ, for the timetable to bring into view and flash once.
     @State private var timetableFocus: String?
@@ -79,6 +79,8 @@ struct NowView: View {
             }
             .environmentObject(store)
         }
+        // Kept on the device, so coming back after iOS closed the app finds the task still running.
+        .onChange(of: work) { _, value in TaskRunMemory.save(value) }
         .onChange(of: store.notebook) { _, book in
             if let work, book.hasChildren(work.taskID) || !book.tasks.contains(where: {
                 $0.id == work.taskID && !$0.isComplete && !$0.isEvent
@@ -89,6 +91,8 @@ struct NowView: View {
             }
         }
         .onAppear {
+            // Back from demo mode, or from another tab: the run kept on the device.
+            if work == nil { work = TaskRunMemory.load() }
             energy = EnergyMemory.load()
             chosenFor = EnergyMemory.chosenFor()
             passed = PassedOver.load()
@@ -354,6 +358,30 @@ struct NowView: View {
     /// "12:00まで", or that nothing more is on today.
     static func stretchEnd(_ stretch: FreeStretch) -> String {
         stretch.until.map { "\(TimeSlot.clock($0))まで" } ?? "このあと予定なし"
+    }
+}
+
+/// The task being worked on, kept on this device only (demo mode keeps none).
+enum TaskRunMemory {
+    private static let key = "horme.taskRun"
+
+    static func load() -> TaskWork? {
+        let store = TaskStore.shared
+        guard !store.isDemo, let data = UserDefaults.standard.data(forKey: key),
+              let work = try? JSONDecoder().decode(TaskWork.self, from: data),
+              // Still something to work on: not finished, removed or split into pieces meanwhile.
+              let task = store.task(work.taskID), !task.isComplete, !task.isEvent, !store.hasChildren(task.id)
+        else { return nil }
+        return work
+    }
+
+    static func save(_ work: TaskWork?) {
+        guard !TaskStore.shared.isDemo else { return }
+        if let work, let data = try? JSONEncoder().encode(work) {
+            UserDefaults.standard.set(data, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
     }
 }
 

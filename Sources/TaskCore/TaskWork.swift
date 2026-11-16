@@ -1,8 +1,9 @@
 import Foundation
 
-/// Ordinary task timing is deliberately local to the current screen, not a persisted routine run
-/// or the legacy activeSession. Interruption discards it; the next start gets a fresh clock.
-public struct TaskWork: Equatable {
+/// A task being worked on, on this device. It is kept on the device (not synced), so it survives iOS closing
+/// the app in the background, like a routine's timer does. Interruption ends it; the next start gets a fresh
+/// clock, and a run from an earlier day is not shown as still running.
+public struct TaskWork: Codable, Equatable {
     public let taskID: UUID
     public let startedAt: Date
     public init(taskID: UUID, startedAt: Date) {
