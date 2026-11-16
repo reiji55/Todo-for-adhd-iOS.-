@@ -5,14 +5,26 @@ import Foundation
 // sync through iCloud like any other edit. Reads return plain text so a shortcut can hand it to an AI.
 
 enum HormeIntentError: Error, CustomLocalizedStringResourceConvertible {
-    case saveFailed(String), notFound, demo
+    case saveFailed(String), notFound, demo, locked, unreadable
     var localizedStringResource: LocalizedStringResource {
         switch self {
+        case .locked: return "iPhoneのロックを解除してから、もう一度お試しください。"
+        case .unreadable: return "Hormeの保存データを開けません。アプリを開いて、設定から復旧してください。"
         case .saveFailed(let reason): return "保存できませんでした。\(reason)"
         case .notFound: return "見つかりませんでした。削除されたか、別の端末で変更された可能性があります。"
         case .demo: return "Hormeがデモモード中です。設定からデモモードを終えてから、もう一度お試しください。"
         }
     }
+}
+
+/// The store for an action from outside the app: not showing samples, and with its data read. Without this an
+/// action run before the data could be read would answer from an empty book ("nothing today").
+@MainActor func hormeStore() throws -> TaskStore {
+    let store = TaskStore.shared
+    guard !store.isDemo else { throw HormeIntentError.demo }
+    store.loadAgainIfDeferred()
+    guard !store.loadFailed else { throw store.loadDeferred ? HormeIntentError.locked : HormeIntentError.unreadable }
+    return store
 }
 
 enum HormeDay: String, AppEnum {
@@ -90,8 +102,7 @@ struct GetTodayIntent: AppIntent {
     static var description = IntentDescription("今日の時間割（タスクとルーティン）、今日までの締切、前の日から残っているものを文章で返します。")
 
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
-        guard !TaskStore.shared.isDemo else { throw HormeIntentError.demo }
-        let text = PlainText.today(Date(), book: TaskStore.shared.notebook)
+        let text = PlainText.today(Date(), book: try hormeStore().notebook)
         return .result(value: text, dialog: "\(text)")
     }
 }
@@ -103,8 +114,7 @@ struct GetDayIntent: AppIntent {
     @Parameter(title: "日数", default: 1, inclusiveRange: (1, 31)) var days: Int
 
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        guard !TaskStore.shared.isDemo else { throw HormeIntentError.demo }
-        return .result(value: PlainText.week(from: date, days: days, book: TaskStore.shared.notebook))
+        return .result(value: PlainText.week(from: date, days: days, book: try hormeStore().notebook))
     }
 }
 
@@ -113,8 +123,7 @@ struct GetWeekIntent: AppIntent {
     static var description = IntentDescription("今日から7日分の予定と、日付を決めていないタスクを文章で返します。")
 
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        guard !TaskStore.shared.isDemo else { throw HormeIntentError.demo }
-        let book = TaskStore.shared.notebook
+        let book = try hormeStore().notebook
         return .result(value: PlainText.week(from: Date(), days: 7, book: book) + "\n\n" + PlainText.anytime(book: book))
     }
 }
@@ -132,8 +141,7 @@ struct AddTaskIntent: AppIntent {
     @Parameter(title: "メモ") var memo: String?
 
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<TaskEntity> & ProvidesDialog {
-        guard !TaskStore.shared.isDemo else { throw HormeIntentError.demo }
-        let store = TaskStore.shared
+        let store = try hormeStore()
         let calendar = Calendar.current
         let planned: Date? = date ?? {
             switch day {
@@ -162,8 +170,7 @@ struct AddEventIntent: AppIntent {
     @Parameter(title: "メモ") var memo: String?
 
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<TaskEntity> & ProvidesDialog {
-        guard !TaskStore.shared.isDemo else { throw HormeIntentError.demo }
-        let store = TaskStore.shared
+        let store = try hormeStore()
         var event = TaskItem(title: name.trimmingCharacters(in: .whitespacesAndNewlines), plannedAt: date, memo: memo ?? "", isEvent: true)
         if let start { event.slot = TimeSlot(start: ClockMinutes.minutes(start), duration: minutes) }
         guard !event.title.isEmpty else { throw HormeIntentError.saveFailed("予定の名前が空です。") }
@@ -178,10 +185,11 @@ struct CompleteTaskIntent: AppIntent {
     @Parameter(title: "タスク") var task: TaskEntity
 
     @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
-        guard !TaskStore.shared.isDemo else { throw HormeIntentError.demo }
-        let store = TaskStore.shared
+        let store = try hormeStore()
         guard let current = store.task(task.id) else { throw HormeIntentError.notFound }
-        if !current.isComplete { store.complete(current.id) }
+        if !current.isComplete {
+            guard store.complete(current.id) else { throw HormeIntentError.saveFailed(store.error ?? "") }
+        }
         return .result(dialog: current.isEvent ? "「\(current.title)」に済んだ印を付けました。" : "「\(current.title)」を完了にしました。")
     }
 }
@@ -195,11 +203,12 @@ struct MoveTaskIntent: AppIntent {
     @Parameter(title: "長さ（分）") var minutes: Int?
 
     @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
-        guard !TaskStore.shared.isDemo else { throw HormeIntentError.demo }
-        let store = TaskStore.shared
+        let store = try hormeStore()
         guard let current = store.task(task.id) else { throw HormeIntentError.notFound }
         let slot = start.map { TimeSlot(start: ClockMinutes.minutes($0), duration: minutes ?? current.slot?.duration ?? 60) }
-        store.move(AgendaItem(task: current), to: date, slot: slot)
+        guard store.move(AgendaItem(task: current), to: date, slot: slot) else {
+            throw HormeIntentError.saveFailed(store.error ?? "")
+        }
         return .result(dialog: "「\(current.title)」を\(PlainText.dayTitle(date))\(slot.map { " " + $0.label } ?? "")に動かしました。")
     }
 }
@@ -209,8 +218,7 @@ struct AddIdeaIntent: AppIntent {
     @Parameter(title: "内容") var text: String
 
     @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
-        guard !TaskStore.shared.isDemo else { throw HormeIntentError.demo }
-        let store = TaskStore.shared
+        let store = try hormeStore()
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw HormeIntentError.saveFailed("内容が空です。") }
         guard store.commit({ $0.ideas.insert(Idea(text: trimmed), at: 0) }) else { throw HormeIntentError.saveFailed(store.error ?? "") }
@@ -224,8 +232,7 @@ struct ReadCardIntent: AppIntent {
     @Parameter(title: "カード") var card: BoardCardEntity
 
     @MainActor func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        guard !TaskStore.shared.isDemo else { throw HormeIntentError.demo }
-        guard let found = TaskStore.shared.card(card.id) else { throw HormeIntentError.notFound }
+        guard let found = try hormeStore().card(card.id) else { throw HormeIntentError.notFound }
         return .result(value: found.shareText)
     }
 }

@@ -80,6 +80,10 @@ final class NowActivityController {
     /// 済んだ on the lock screen: checks it off (a task, an event, or today's turn of a routine).
     private func finish(_ id: String) {
         let store = TaskStore.shared
+        // With the data not read yet (the phone locked since it restarted) there is nothing to check off or
+        // move on to; the card stays as it is.
+        store.loadAgainIfDeferred()
+        guard !store.loadFailed else { return }
         let now = Date()
         if let item = Agenda.items(on: now, tasks: store.notebook.tasks, routines: store.notebook.routines)
             .first(where: { $0.id == id }), !item.isDone {
@@ -93,6 +97,8 @@ final class NowActivityController {
 
     /// 次の候補 on the lock screen: passes over it, as 入れ替える does on the card.
     private func pass(_ id: String) {
+        TaskStore.shared.loadAgainIfDeferred()
+        guard !TaskStore.shared.loadFailed else { return }
         var passed = PassedOver.load()
         passed.removeAll { $0 == id }
         passed.append(id)

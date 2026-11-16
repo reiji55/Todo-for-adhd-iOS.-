@@ -153,6 +153,21 @@ final class ScheduleTests: XCTestCase {
         XCTAssertTrue(off.isEmpty)
     }
 
+    func testRemindersKeepComingWhenTheAppIsNotOpenedForDays() {
+        let morning = calendar.date(from: DateComponents(year: 2026, month: 10, day: 30, hour: 9))!
+        let daily = Routine(title: "薬を飲む", time: "8:00-8:10", createdAt: day(-30))
+        let plan = ReminderPlan.requests(for: Notebook(routines: [daily]), now: morning, options: ReminderOptions(), calendar: calendar)
+        // Today's has passed; the next thirteen mornings are planned.
+        XCTAssertEqual(plan.count, 13)
+        XCTAssertEqual(Set(plan.map(\.id)).count, 13)
+        // With more than fits, the nearest ones are kept.
+        let many = (0..<8).map { Routine(title: "ルーティン\($0)", time: "\(10 + $0):00-\(10 + $0):30", createdAt: day(-30)) }
+        let full = ReminderPlan.requests(for: Notebook(routines: many), now: morning, options: ReminderOptions(), calendar: calendar)
+        XCTAssertEqual(full.count, 60)
+        XCTAssertEqual(full.map(\.date), full.map(\.date).sorted())
+        XCTAssertEqual(full.prefix(8).filter { calendar.isDate($0.date, inSameDayAs: morning) }.count, 8)
+    }
+
     func testPlainTextReadsWithoutTheApp() {
         let study = Routine(title: "金フレ", project: "TOEIC", weekdays: [6], time: "19:00-20:30", createdAt: day(-30))
         let call = TaskItem(title: "電話", plannedAt: friday, isMust: true, handoff: "番号を調べて", createdAt: day(-1))

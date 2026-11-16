@@ -65,6 +65,9 @@ final class Reminders: NSObject, ObservableObject, UNUserNotificationCenterDeleg
               status == .authorized || status == .provisional || status == .ephemeral else { return }
         let calendar = Calendar.current
         for plan in ReminderPlan.requests(for: book, now: Date(), options: options) {
+            // A newer plan is on its way (another edit came in): stop adding from this one, so nothing from
+            // it is added after the newer one has cleared the list.
+            guard !Task.isCancelled else { return }
             let content = UNMutableNotificationContent()
             content.title = plan.title
             content.body = plan.body

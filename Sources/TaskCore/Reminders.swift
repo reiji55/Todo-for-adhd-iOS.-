@@ -25,10 +25,11 @@ public struct ReminderOptions: Equatable {
     }
 }
 
-/// What to announce. iOS keeps at most 64 pending notifications, so only the next few days are planned
-/// and the plan is rebuilt whenever the data changes or the app comes back.
+/// What to announce. iOS keeps at most 64 pending notifications, so the plan holds the nearest ones only,
+/// and is rebuilt whenever the data changes or the app comes back. It looks two weeks ahead: with a plan of
+/// only a few days, someone who did not open the app for that long stopped being reminded at all.
 public enum ReminderPlan {
-    public static func requests(for book: Notebook, now: Date, options: ReminderOptions, days: Int = 3, limit: Int = 60,
+    public static func requests(for book: Notebook, now: Date, options: ReminderOptions, days: Int = 14, limit: Int = 60,
                                 calendar: Calendar = .current) -> [ReminderRequest] {
         var result: [ReminderRequest] = []
         let today = calendar.startOfDay(for: now)

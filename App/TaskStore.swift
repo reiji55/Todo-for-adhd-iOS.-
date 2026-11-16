@@ -152,7 +152,12 @@ final class TaskStore: ObservableObject {
         do {
             state = try repository.load()
             loadFailed = false; loadDeferred = false
-            if !isDemo { notebook = state.notebook }
+            if !isDemo {
+                notebook = state.notebook
+                // What is kept on this device was not readable either while the phone was locked.
+                closedDay = UserDefaults.standard.string(forKey: Self.closedDayKey)
+                routineRun = Self.loadRoutineRun()
+            }
             moveCardsIntoProjectsOnce()
             if notebook.needsStepConversion { scheduleStepConversion() }
             if isForeground { restoreBridgeIfNeeded(); requestSync() }
@@ -505,7 +510,8 @@ final class TaskStore: ObservableObject {
 
     /// Moves a row to another day and time. A routine moves for that one day only.
     /// No undo offer: a drag on the week grid is easy to drag back, and a banner there gets in the way.
-    func move(_ item: AgendaItem, to day: Date, slot: TimeSlot?) {
+    @discardableResult
+    func move(_ item: AgendaItem, to day: Date, slot: TimeSlot?) -> Bool {
         commit { book in
             switch item.source {
             case .task(let id): book.moveTask(id, to: day, slot: slot)
