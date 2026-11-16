@@ -88,7 +88,9 @@ final class CloudSyncTransport {
         let fetched = try await fetch(connection)
         var merged = local
         try merged.merge(fetched.values.map(\.value))
-        _ = try merged.materialize()
+        // What iCloud brought is read back whole as a check. With nothing new there is nothing to check: the
+        // records are the ones already saved here.
+        if merged != local { _ = try merged.materialize() }
         let database = database(for: connection)
         let zoneID = zoneID(for: connection)
         // Save a converted task before its source idea's deletion marker. If a

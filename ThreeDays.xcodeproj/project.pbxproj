@@ -532,6 +532,42 @@
 			<key>fileRef</key>
 			<string>38F948BCE8DF82572A28E72D</string>
 		</dict>
+		<key>B49E3D8EBE09F149291CA7D5</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>TaskStore+Projects.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>888B68FF3A92BAC6813C34A1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>B49E3D8EBE09F149291CA7D5</string>
+		</dict>
+		<key>8C85E7FB6949902F21FCB014</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>TaskStore+Stock.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>333B737337B841CDABB10F27</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>8C85E7FB6949902F21FCB014</string>
+		</dict>
 		<key>6DAF7D9F41E9A03D9DEBDC6E</key>
 		<dict>
 			<key>isa</key>
@@ -697,6 +733,8 @@
 				<string>D7EC28FB44C2452ADA963C88</string>
 				<string>9766BF91B4834C993208550A</string>
 				<string>38F948BCE8DF82572A28E72D</string>
+				<string>B49E3D8EBE09F149291CA7D5</string>
+				<string>8C85E7FB6949902F21FCB014</string>
 				<string>6DAF7D9F41E9A03D9DEBDC6E</string>
 				<string>BECE9A032FF7DDFCF09A5D7C</string>
 				<string>1C98320C256985784E553EBF</string>
@@ -1556,6 +1594,8 @@
 				<string>A9522195746DE633E01E2A8E</string>
 				<string>DC30919EF993D5033304E8C4</string>
 				<string>B83FEB1CEB0AD3E92CBC3BA6</string>
+				<string>888B68FF3A92BAC6813C34A1</string>
+				<string>333B737337B841CDABB10F27</string>
 				<string>A874B7DB4976D33CD1F4D42F</string>
 				<string>0F12C69EBBC0D0AA799B905A</string>
 				<string>5C130A923180BCEC41941248</string>
