@@ -35,18 +35,35 @@ public struct SharedStoreState: Codable, Equatable {
         replica = fresh
     }
 
-    public mutating func edit(_ next: Notebook) throws {
-        _ = try NotebookCodec.decode(NotebookCodec.encode(next))
-        if replica != nil {
-            try replica?.apply(before: notebook, after: next, device: deviceID)
+    /// Says that an edit was checked by `edit`: the book keeps its rules, and what changed writes and reads back.
+    /// A state saved with it need not be read back whole again (see `SharedStoreRepository.save(_:after:)`).
+    public struct CheckedEdit {
+        fileprivate init() {}
+    }
+
+    /// Takes an edited book. Only what changed is written out and read back as a check; the rest was checked
+    /// when it was loaded or last changed, and going through all of it on each edit made every tap slow.
+    @discardableResult
+    public mutating func edit(_ next: Notebook) throws -> CheckedEdit {
+        try NotebookCodec.validate(next)
+        if var updated = replica {
+            let changed = try updated.apply(before: notebook, after: next, device: deviceID)
+            try updated.check(changed)
+            replica = updated
             hasPendingChanges = true
+        } else {
+            try SyncReplica.checkChanges(from: notebook, to: next)
         }
         notebook = next
+        return CheckedEdit()
     }
 
     public mutating func receive(_ records: [SyncRecord]) throws {
-        guard replica != nil, replicaInUse else { throw NotebookError.invalidData }
+        guard let before = replica, replicaInUse else { throw NotebookError.invalidData }
         try replica?.merge(records)
+        // Nothing new arrived (the usual case right after sending an edit): what is shown already says what
+        // the records say, so they are not all read back again.
+        guard replica != before else { return }
         notebook = try replica!.materialize()
         let received = notebook
         if notebook.clearCompletedContinuationNotes() {
@@ -120,6 +137,18 @@ public struct SharedStoreRepository {
     public func save(_ state: SharedStoreState) throws {
         let data = try state.encoded()
         _ = try SharedStoreState.decode(data)
+        try write(data)
+    }
+
+    /// Saves a state right after `edit` checked the change it holds. The file as a whole is not read back:
+    /// it is the file this repository last read or wrote, plus that change. Before this repository has read or
+    /// written the file, everything is checked as in `save(_:)`.
+    public func save(_ state: SharedStoreState, after edit: SharedStoreState.CheckedEdit) throws {
+        guard knownGood.data != nil else { return try save(state) }
+        try write(state.encoded())
+    }
+
+    private func write(_ data: Data) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         if FileManager.default.fileExists(atPath: url.path) {
             let previous = try Data(contentsOf: url)

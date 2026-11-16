@@ -187,8 +187,8 @@ final class TaskStore: ObservableObject {
         if isDemo { remember(notebook); notebook = next; return true }
         do {
             var changed = state
-            try changed.edit(next)
-            try repository.save(changed)
+            let checked = try changed.edit(next)
+            try repository.save(changed, after: checked)
             remember(notebook)
             state = changed; notebook = next
             requestSync()
@@ -219,8 +219,8 @@ final class TaskStore: ObservableObject {
         if isDemo { notebook = previous; history.removeLast(); return }
         do {
             var changed = state
-            try changed.edit(previous)
-            try repository.save(changed)
+            let checked = try changed.edit(previous)
+            try repository.save(changed, after: checked)
             state = changed; notebook = previous; history.removeLast()
             requestSync()
         } catch { self.error = error.localizedDescription }

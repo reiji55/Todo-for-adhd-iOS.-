@@ -25,9 +25,13 @@ jobs:
         run: swift --version
       - name: Test task logic
         run: |
+          set +e
           if [ -n "${{ inputs.filter }}" ]; then
-            swift test --filter "${{ inputs.filter }}" 2>&1 | tail -150
+            swift test --filter "${{ inputs.filter }}" > test.log 2>&1
           else
-            swift test 2>&1 | tail -150
+            swift test > test.log 2>&1
           fi
-          exit ${PIPESTATUS[0]}
+          status=$?
+          # What matters at the end of the log: errors, failures, timings and the totals.
+          grep -nE "error:|warning: var|failed|TIMING|Executed [0-9]+ tests" test.log | tail -80
+          exit $status

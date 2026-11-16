@@ -311,6 +311,12 @@ public enum NotebookCodec {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let notebook = try decoder.decode(Notebook.self, from: data)
+        try validate(notebook)
+        return notebook
+    }
+
+    /// The rules every saved book keeps: one of each id, nothing without a name, a session only on an open task.
+    public static func validate(_ notebook: Notebook) throws {
         guard notebook.version == 1 else { throw NotebookError.unsupportedVersion }
         guard Set(notebook.tasks.map(\.id)).count == notebook.tasks.count,
               Set(notebook.ideas.map(\.id)).count == notebook.ideas.count,
@@ -334,6 +340,5 @@ public enum NotebookCodec {
                 throw NotebookError.invalidData
             }
         }
-        return notebook
     }
 }

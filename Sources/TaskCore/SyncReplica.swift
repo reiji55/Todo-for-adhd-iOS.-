@@ -69,13 +69,15 @@ public struct SyncReplica: Codable, Equatable {
         }
     }
 
-    public mutating func apply(before: Notebook, after: Notebook, device: String, now: Date = Date()) throws {
-        let old = try Self.flatten(before)
-        let new = try Self.flatten(after)
+    /// Records what changed between two books, and returns the ids of the records it wrote to.
+    @discardableResult
+    public mutating func apply(before: Notebook, after: Notebook, device: String, now: Date = Date()) throws -> Set<String> {
+        let (old, new) = try Self.changedFields(before, after)
         let wall = Int64(now.timeIntervalSince1970 * 1000)
         guard clock < Int64.max - 1 else { throw NotebookError.invalidData }
         clock = max(clock + 1, wall)
         let stamp = SyncStamp(tick: clock, device: device)
+        var changed: Set<String> = []
         for id in Set(old.keys).union(new.keys) {
             guard old[id] != new[id] else { continue }
             var record = records[id] ?? SyncRecord(id: id)
@@ -92,7 +94,132 @@ public struct SyncReplica: Codable, Equatable {
                 }
             }
             records[id] = record
+            changed.insert(id)
         }
+        return changed
+    }
+
+    /// What one record holds, read back as the thing it is.
+    private enum Thing {
+        case task(TaskItem), idea(Idea), card(rank: Int, BoardCard), routine(Routine), project(Project)
+        case list(StockList), item(ListItem), session(Session?)
+    }
+
+    /// Reads one record back; nil for a thing that is gone.
+    private static func thing(_ record: SyncRecord) throws -> Thing? {
+        guard try Self.object(record.fields["alive"]?.value) as? Bool == true else { return nil }
+        var object: [String: Any] = [:]
+        for (key, field) in record.fields where key != "alive" && !key.hasPrefix("step.")
+            && !key.hasPrefix("done.") && !key.hasPrefix("move.") && !key.hasPrefix("time.") && !key.hasPrefix("ms.") {
+            object[key] = try Self.object(field.value)
+        }
+        if record.id.hasPrefix("task_") {
+            var steps: [(Int, String, [String: Any])] = []
+            let ids = Set(record.fields.keys.filter { $0.hasPrefix("step.") }.compactMap {
+                $0.split(separator: ".").dropFirst().first.map(String.init)
+            })
+            for id in ids {
+                let prefix = "step.\(id)."
+                guard try Self.object(record.fields[prefix + "alive"]?.value) as? Bool == true else { continue }
+                guard let title = try Self.object(record.fields[prefix + "title"]?.value) as? String,
+                      let done = try Self.object(record.fields[prefix + "isDone"]?.value) as? Bool else {
+                    throw NotebookError.invalidData
+                }
+                let rank = try Self.object(record.fields[prefix + "rank"]?.value) as? Int ?? 0
+                steps.append((rank, id, ["id": id, "title": title, "isDone": done]))
+            }
+            object["steps"] = steps.sorted { $0.0 == $1.0 ? $0.1 < $1.1 : $0.0 < $1.0 }.map { $0.2 }
+            let task: TaskItem = try Self.decodeObject(object)
+            guard record.id == "task_\(task.id.uuidString)" else { throw NotebookError.invalidData }
+            return .task(task)
+        } else if record.id.hasPrefix("idea_") {
+            let idea: Idea = try Self.decodeObject(object)
+            guard record.id == "idea_\(idea.id.uuidString)" else { throw NotebookError.invalidData }
+            return .idea(idea)
+        } else if record.id.hasPrefix("card_") {
+            let rank = object.removeValue(forKey: "rank") as? Int ?? 0
+            let card: BoardCard = try Self.decodeObject(object)
+            guard record.id == "card_\(card.id.uuidString)" else { throw NotebookError.invalidData }
+            return .card(rank: rank, card)
+        } else if record.id.hasPrefix("routine_") {
+            // Each day's check and move is its own field, so different days edited on two devices both survive.
+            var done: [String] = []
+            var moves: [String: Any] = [:]
+            var durations: [String: Any] = [:]
+            for (key, field) in record.fields {
+                let value = try Self.object(field.value)
+                if key.hasPrefix("done."), value as? Bool == true { done.append(String(key.dropFirst(5))) }
+                if key.hasPrefix("move."), value is [String: Any] { moves[String(key.dropFirst(5))] = value }
+                if key.hasPrefix("time."), let seconds = value as? Int { durations[String(key.dropFirst(5))] = seconds }
+            }
+            object["doneDays"] = done.sorted()
+            object["moves"] = moves
+            object["durations"] = durations
+            let routine: Routine = try Self.decodeObject(object)
+            guard record.id == "routine_\(routine.id.uuidString)" else { throw NotebookError.invalidData }
+            return .routine(routine)
+        } else if record.id.hasPrefix("project_") {
+            // Each checkpoint is its own field, so one ＋1 and another checkpoint's edit both survive.
+            var milestones: [(rank: Int, value: [String: Any])] = []
+            for (key, field) in record.fields where key.hasPrefix("ms.") {
+                guard var value = try Self.object(field.value) as? [String: Any] else { continue }
+                let rank = value.removeValue(forKey: "rank") as? Int ?? 0
+                milestones.append((rank, value))
+            }
+            object["milestones"] = milestones.sorted {
+                $0.rank == $1.rank ? "\($0.value["id"] ?? "")" < "\($1.value["id"] ?? "")" : $0.rank < $1.rank
+            }.map(\.value)
+            let project: Project = try Self.decodeObject(object)
+            guard record.id == "project_\(project.id.uuidString)" else { throw NotebookError.invalidData }
+            return .project(project)
+        } else if record.id.hasPrefix("list_") {
+            let list: StockList = try Self.decodeObject(object)
+            guard record.id == "list_\(list.id.uuidString)" else { throw NotebookError.invalidData }
+            return .list(list)
+        } else if record.id.hasPrefix("item_") {
+            let item: ListItem = try Self.decodeObject(object)
+            guard record.id == "item_\(item.id.uuidString)" else { throw NotebookError.invalidData }
+            return .item(item)
+        } else if record.id == "session" {
+            // A session is one field to keep its task/step/time together.
+            return .session(try record.fields["value"].map { try decoder.decode(Session.self, from: $0.value) })
+        }
+        throw NotebookError.unsupportedVersion
+    }
+
+    /// Reads the named records back and checks the things they hold the way a whole book is checked when it
+    /// is loaded. After an edit this stands in for reading every record again: the others have not changed.
+    public func check(_ ids: Set<String>) throws {
+        var book = Notebook()
+        for id in ids {
+            guard let record = records[id] else { throw NotebookError.invalidData }
+            switch try Self.thing(record) {
+            case .task(let task)?: book.tasks.append(task)
+            case .idea(let idea)?: book.ideas.append(idea)
+            case .card(_, let card)?: book.boardCards.append(card)
+            case .routine(let routine)?: book.routines.append(routine)
+            case .project(let project)?: book.projects.append(project)
+            case .list(let list)?: book.lists.append(list)
+            case .item(let item)?: book.listItems.append(item)
+            case .session?, nil: continue
+            }
+        }
+        _ = try NotebookCodec.decode(NotebookCodec.encode(book))
+    }
+
+    /// Without a replica to write to: checks that what differs in `after` can be written as records and read
+    /// back, so a book that could not be loaded again is never saved.
+    public static func checkChanges(from before: Notebook, to after: Notebook) throws {
+        let new = try changedFields(before, after).new
+        var scratch = SyncReplica()
+        let stamp = SyncStamp(tick: 1, device: "check")
+        for (id, fields) in new {
+            var record = SyncRecord(id: id)
+            record.fields = fields.mapValues { SyncField(value: $0, stamp: stamp) }
+            record.fields["alive"] = SyncField(value: Data("true".utf8), stamp: stamp)
+            scratch.records[id] = record
+        }
+        try scratch.check(Set(new.keys))
     }
 
     public func materialize() throws -> Notebook {
@@ -105,83 +232,17 @@ public struct SyncReplica: Codable, Equatable {
         var items: [ListItem] = []
         var session: Session?
         for record in records.values {
-            guard try Self.object(record.fields["alive"]?.value) as? Bool == true else { continue }
-            var object: [String: Any] = [:]
-            for (key, field) in record.fields where key != "alive" && !key.hasPrefix("step.")
-                && !key.hasPrefix("done.") && !key.hasPrefix("move.") && !key.hasPrefix("time.") && !key.hasPrefix("ms.") {
-                object[key] = try Self.object(field.value)
+            switch try Self.thing(record) {
+            case .task(let task)?: tasks.append(task)
+            case .idea(let idea)?: ideas.append(idea)
+            case .card(let rank, let card)?: cards.append((rank, card))
+            case .routine(let routine)?: routines.append(routine)
+            case .project(let project)?: projects.append(project)
+            case .list(let list)?: lists.append(list)
+            case .item(let item)?: items.append(item)
+            case .session(let value)?: if let value { session = value }
+            case nil: continue
             }
-            if record.id.hasPrefix("task_") {
-                var steps: [(Int, String, [String: Any])] = []
-                let ids = Set(record.fields.keys.filter { $0.hasPrefix("step.") }.compactMap {
-                    $0.split(separator: ".").dropFirst().first.map(String.init)
-                })
-                for id in ids {
-                    let prefix = "step.\(id)."
-                    guard try Self.object(record.fields[prefix + "alive"]?.value) as? Bool == true else { continue }
-                    guard let title = try Self.object(record.fields[prefix + "title"]?.value) as? String,
-                          let done = try Self.object(record.fields[prefix + "isDone"]?.value) as? Bool else {
-                        throw NotebookError.invalidData
-                    }
-                    let rank = try Self.object(record.fields[prefix + "rank"]?.value) as? Int ?? 0
-                    steps.append((rank, id, ["id": id, "title": title, "isDone": done]))
-                }
-                object["steps"] = steps.sorted { $0.0 == $1.0 ? $0.1 < $1.1 : $0.0 < $1.0 }.map { $0.2 }
-                let task: TaskItem = try Self.decodeObject(object)
-                guard record.id == "task_\(task.id.uuidString)" else { throw NotebookError.invalidData }
-                tasks.append(task)
-            } else if record.id.hasPrefix("idea_") {
-                let idea: Idea = try Self.decodeObject(object)
-                guard record.id == "idea_\(idea.id.uuidString)" else { throw NotebookError.invalidData }
-                ideas.append(idea)
-            } else if record.id.hasPrefix("card_") {
-                let rank = object.removeValue(forKey: "rank") as? Int ?? 0
-                let card: BoardCard = try Self.decodeObject(object)
-                guard record.id == "card_\(card.id.uuidString)" else { throw NotebookError.invalidData }
-                cards.append((rank, card))
-            } else if record.id.hasPrefix("routine_") {
-                // Each day's check and move is its own field, so different days edited on two devices both survive.
-                var done: [String] = []
-                var moves: [String: Any] = [:]
-                var durations: [String: Any] = [:]
-                for (key, field) in record.fields {
-                    let value = try Self.object(field.value)
-                    if key.hasPrefix("done."), value as? Bool == true { done.append(String(key.dropFirst(5))) }
-                    if key.hasPrefix("move."), value is [String: Any] { moves[String(key.dropFirst(5))] = value }
-                    if key.hasPrefix("time."), let seconds = value as? Int { durations[String(key.dropFirst(5))] = seconds }
-                }
-                object["doneDays"] = done.sorted()
-                object["moves"] = moves
-                object["durations"] = durations
-                let routine: Routine = try Self.decodeObject(object)
-                guard record.id == "routine_\(routine.id.uuidString)" else { throw NotebookError.invalidData }
-                routines.append(routine)
-            } else if record.id.hasPrefix("project_") {
-                // Each checkpoint is its own field, so one ＋1 and another checkpoint's edit both survive.
-                var milestones: [(rank: Int, value: [String: Any])] = []
-                for (key, field) in record.fields where key.hasPrefix("ms.") {
-                    guard var value = try Self.object(field.value) as? [String: Any] else { continue }
-                    let rank = value.removeValue(forKey: "rank") as? Int ?? 0
-                    milestones.append((rank, value))
-                }
-                object["milestones"] = milestones.sorted {
-                    $0.rank == $1.rank ? "\($0.value["id"] ?? "")" < "\($1.value["id"] ?? "")" : $0.rank < $1.rank
-                }.map(\.value)
-                let project: Project = try Self.decodeObject(object)
-                guard record.id == "project_\(project.id.uuidString)" else { throw NotebookError.invalidData }
-                projects.append(project)
-            } else if record.id.hasPrefix("list_") {
-                let list: StockList = try Self.decodeObject(object)
-                guard record.id == "list_\(list.id.uuidString)" else { throw NotebookError.invalidData }
-                lists.append(list)
-            } else if record.id.hasPrefix("item_") {
-                let item: ListItem = try Self.decodeObject(object)
-                guard record.id == "item_\(item.id.uuidString)" else { throw NotebookError.invalidData }
-                items.append(item)
-            } else if record.id == "session" {
-                // A session is one field to keep its task/step/time together.
-                if let data = record.fields["value"]?.value { session = try Self.decoder().decode(Session.self, from: data) }
-            } else { throw NotebookError.unsupportedVersion }
         }
         tasks.sort { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
         ideas.sort { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
@@ -211,57 +272,93 @@ public struct SyncReplica: Codable, Equatable {
         return result
     }
 
-    private static func flatten(_ book: Notebook) throws -> [String: [String: Data]] {
-        var result: [String: [String: Data]] = [:]
-        for task in book.tasks {
-            var fields = try fieldsFor(task)
-            fields.removeValue(forKey: "steps")
-            for (index, step) in task.steps.enumerated() {
-                let prefix = "step.\(step.id.uuidString)."
-                fields[prefix + "alive"] = Data("true".utf8)
-                fields[prefix + "title"] = try jsonData(step.title)
-                fields[prefix + "isDone"] = try jsonData(step.isDone)
-                fields[prefix + "rank"] = try jsonData(index)
+    /// A card with its place on the board: moving a card changes its record though the card itself is the same.
+    private struct RankedCard: Equatable {
+        var rank: Int
+        var card: BoardCard
+    }
+
+    /// The fields of what differs between two books, as records hold them. Things equal in both are left out:
+    /// they cannot produce a change, and writing every one of them out on each edit made every tap slow.
+    private static func changedFields(_ before: Notebook, _ after: Notebook) throws
+        -> (old: [String: [String: Data]], new: [String: [String: Data]]) {
+        var old: [String: [String: Data]] = [:]
+        var new: [String: [String: Data]] = [:]
+        func compare<T: Equatable>(_ earlier: [T], _ later: [T], id: (T) -> String,
+                                   fields: (T) throws -> [String: Data]) throws {
+            guard earlier != later else { return }
+            let was = Dictionary(earlier.map { (id($0), $0) }, uniquingKeysWith: { _, last in last })
+            let now = Dictionary(later.map { (id($0), $0) }, uniquingKeysWith: { _, last in last })
+            for (key, value) in now where was[key] != value {
+                new[key] = try fields(value)
+                if let previous = was[key] { old[key] = try fields(previous) }
             }
-            result["task_\(task.id.uuidString)"] = fields
+            for (key, value) in was where now[key] == nil { old[key] = try fields(value) }
         }
-        for idea in book.ideas { result["idea_\(idea.id.uuidString)"] = try fieldsFor(idea) }
-        for (index, card) in book.boardCards.enumerated() {
-            var fields = try fieldsFor(card)
-            fields["rank"] = try jsonData(index)
-            result["card_\(card.id.uuidString)"] = fields
+        func ranked(_ cards: [BoardCard]) -> [RankedCard] {
+            cards.enumerated().map { RankedCard(rank: $0.offset, card: $0.element) }
         }
-        for routine in book.routines {
-            var fields = try fieldsFor(routine)
-            fields.removeValue(forKey: "doneDays"); fields.removeValue(forKey: "moves"); fields.removeValue(forKey: "durations")
-            for day in routine.doneDays { fields["done." + day] = try jsonData(true) }
-            for (day, seconds) in routine.durations { fields["time." + day] = try jsonData(seconds) }
-            for (day, move) in routine.moves {
-                fields["move." + day] = try jsonData(["toDay": move.toDay, "time": move.time])
-            }
-            result["routine_\(routine.id.uuidString)"] = fields
-        }
-        for project in book.projects {
-            var fields = try fieldsFor(project)
-            fields.removeValue(forKey: "milestones")
-            for (index, milestone) in project.milestones.enumerated() {
-                guard var value = try JSONSerialization.jsonObject(with: encoder().encode(milestone)) as? [String: Any] else {
-                    throw NotebookError.invalidData
-                }
-                value["rank"] = index
-                fields["ms." + milestone.id.uuidString] = try jsonData(value)
-            }
-            result["project_\(project.id.uuidString)"] = fields
-        }
+        try compare(before.tasks, after.tasks, id: { "task_\($0.id.uuidString)" }, fields: { try Self.taskFields($0) })
+        try compare(before.ideas, after.ideas, id: { "idea_\($0.id.uuidString)" }, fields: { try Self.fieldsFor($0) })
+        try compare(ranked(before.boardCards), ranked(after.boardCards), id: { "card_\($0.card.id.uuidString)" },
+                    fields: { try Self.cardFields($0) })
+        try compare(before.routines, after.routines, id: { "routine_\($0.id.uuidString)" }, fields: { try Self.routineFields($0) })
+        try compare(before.projects, after.projects, id: { "project_\($0.id.uuidString)" }, fields: { try Self.projectFields($0) })
         // Each thing on a list is its own record, so two people checking off a shopping list both count.
-        for list in book.lists { result["list_\(list.id.uuidString)"] = try fieldsFor(list) }
-        for item in book.listItems { result["item_\(item.id.uuidString)"] = try fieldsFor(item) }
-        if let session = book.activeSession { result["session"] = ["value": try encoder().encode(session)] }
-        return result
+        try compare(before.lists, after.lists, id: { "list_\($0.id.uuidString)" }, fields: { try Self.fieldsFor($0) })
+        try compare(before.listItems, after.listItems, id: { "item_\($0.id.uuidString)" }, fields: { try Self.fieldsFor($0) })
+        if before.activeSession != after.activeSession {
+            if let session = before.activeSession { old["session"] = ["value": try encoder.encode(session)] }
+            if let session = after.activeSession { new["session"] = ["value": try encoder.encode(session)] }
+        }
+        return (old, new)
+    }
+
+    private static func taskFields(_ task: TaskItem) throws -> [String: Data] {
+        var fields = try fieldsFor(task)
+        fields.removeValue(forKey: "steps")
+        for (index, step) in task.steps.enumerated() {
+            let prefix = "step.\(step.id.uuidString)."
+            fields[prefix + "alive"] = Data("true".utf8)
+            fields[prefix + "title"] = try jsonData(step.title)
+            fields[prefix + "isDone"] = try jsonData(step.isDone)
+            fields[prefix + "rank"] = try jsonData(index)
+        }
+        return fields
+    }
+
+    private static func cardFields(_ ranked: RankedCard) throws -> [String: Data] {
+        var fields = try fieldsFor(ranked.card)
+        fields["rank"] = try jsonData(ranked.rank)
+        return fields
+    }
+
+    private static func routineFields(_ routine: Routine) throws -> [String: Data] {
+        var fields = try fieldsFor(routine)
+        fields.removeValue(forKey: "doneDays"); fields.removeValue(forKey: "moves"); fields.removeValue(forKey: "durations")
+        for day in routine.doneDays { fields["done." + day] = try jsonData(true) }
+        for (day, seconds) in routine.durations { fields["time." + day] = try jsonData(seconds) }
+        for (day, move) in routine.moves {
+            fields["move." + day] = try jsonData(["toDay": move.toDay, "time": move.time])
+        }
+        return fields
+    }
+
+    private static func projectFields(_ project: Project) throws -> [String: Data] {
+        var fields = try fieldsFor(project)
+        fields.removeValue(forKey: "milestones")
+        for (index, milestone) in project.milestones.enumerated() {
+            guard var value = try JSONSerialization.jsonObject(with: encoder.encode(milestone)) as? [String: Any] else {
+                throw NotebookError.invalidData
+            }
+            value["rank"] = index
+            fields["ms." + milestone.id.uuidString] = try jsonData(value)
+        }
+        return fields
     }
 
     private static func fieldsFor<T: Encodable>(_ value: T) throws -> [String: Data] {
-        guard let object = try JSONSerialization.jsonObject(with: encoder().encode(value)) as? [String: Any] else {
+        guard let object = try JSONSerialization.jsonObject(with: encoder.encode(value)) as? [String: Any] else {
             throw NotebookError.invalidData
         }
         return try object.mapValues { try jsonData($0) }
@@ -274,16 +371,16 @@ public struct SyncReplica: Codable, Equatable {
         return try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
     }
     private static func decodeObject<T: Decodable>(_ object: [String: Any]) throws -> T {
-        try decoder().decode(T.self, from: jsonData(object))
+        try decoder.decode(T.self, from: jsonData(object))
     }
-    private static func encoder() -> JSONEncoder {
+    private static let encoder: JSONEncoder = {
         let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601; encoder.outputFormatting = [.sortedKeys]
         return encoder
-    }
-    private static func decoder() -> JSONDecoder {
+    }()
+    private static let decoder: JSONDecoder = {
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
         return decoder
-    }
+    }()
 }
 
 public struct ShareMergePreview {
