@@ -1,0 +1,33 @@
+name: 中身のロジックだけのテスト（短時間）
+
+# The data and sync logic (Sources/TaskCore) has no screens, so its tests also run on Linux in a couple of
+# minutes. Used while working on that logic; the full check stays in ios.yml.
+on:
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: 'swift test --filter に渡す名前（空なら全部）'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: Asia/Tokyo
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Test task logic
+        run: |
+          if [ -n "${{ inputs.filter }}" ]; then
+            swift test --filter "${{ inputs.filter }}" 2>&1 | tail -150
+          else
+            swift test 2>&1 | tail -150
+          fi
+          exit ${PIPESTATUS[0]}
