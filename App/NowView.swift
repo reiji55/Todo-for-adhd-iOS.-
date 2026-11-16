@@ -16,7 +16,8 @@ struct NowView: View {
     @State private var passed: [String] = PassedOver.load()
     /// Picked from ほかの候補, or kept in front while its 負荷 is changed; it leads until it is done or passed over.
     @State private var chosen: String?
-    @State private var work: TaskWork? = TaskRunMemory.load()
+    /// The task being worked on; read back from the device when the screen appears (see TaskRunMemory).
+    @State private var work: TaskWork?
     @State private var timetableOpen = false
     /// The thing tapped in 今日の流れ, for the timetable to bring into view and flash once.
     @State private var timetableFocus: String?
@@ -362,6 +363,7 @@ struct NowView: View {
 }
 
 /// The task being worked on, kept on this device only (demo mode keeps none).
+@MainActor
 enum TaskRunMemory {
     private static let key = "horme.taskRun"
 
