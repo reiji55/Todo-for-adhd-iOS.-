@@ -35,8 +35,8 @@ public struct SharedStoreState: Codable, Equatable {
         replica = fresh
     }
 
-    /// Says that an edit was checked by `edit`: the book keeps its rules, and what changed writes and reads back.
-    /// A state saved with it need not be read back whole again (see `SharedStoreRepository.save(_:after:)`).
+    /// Says that a change was checked by `edit` or `receive`: the book keeps its rules, and what changed writes
+    /// and reads back. A state saved with it need not be read back whole again (see `SharedStoreRepository.save(_:after:)`).
     public struct CheckedEdit {
         fileprivate init() {}
     }
@@ -59,11 +59,11 @@ public struct SharedStoreState: Codable, Equatable {
     }
 
     /// Takes the records a sync brought. When they hold nothing new (the usual case right after sending an
-    /// edit) what is shown already says what the records say: they are not all read back again, and the check
-    /// returned lets the state be saved without reading the whole file back, since all that differs from the
-    /// state before is what the caller notes about the sync itself.
+    /// edit) what is shown already says what the records say, and they are not all read back again. Otherwise
+    /// every record is read back into the book, which checks them all. Either way the state can then be saved
+    /// without reading the whole file back once more.
     @discardableResult
-    public mutating func receive(_ records: [SyncRecord]) throws -> CheckedEdit? {
+    public mutating func receive(_ records: [SyncRecord]) throws -> CheckedEdit {
         guard let before = replica, replicaInUse else { throw NotebookError.invalidData }
         try replica?.merge(records)
         guard replica != before else { return CheckedEdit() }
@@ -72,10 +72,12 @@ public struct SharedStoreState: Codable, Equatable {
         if notebook.clearCompletedContinuationNotes() {
             // An older client may complete a task without knowing the new field. Send an explicit
             // clear back, so a stale offline note cannot reappear if the task is later reopened.
-            try replica?.apply(before: received, after: notebook, device: deviceID)
+            if let cleared = try replica?.apply(before: received, after: notebook, device: deviceID) {
+                try replica?.check(cleared)
+            }
             hasPendingChanges = true
         }
-        return nil
+        return CheckedEdit()
     }
 
     public static func decode(_ data: Data) throws -> Self {
@@ -145,7 +147,7 @@ public struct SharedStoreRepository {
         try write(data)
     }
 
-    /// Saves a state right after `edit` checked the change it holds. The file as a whole is not read back:
+    /// Saves a state right after `edit` or `receive` checked the change it holds. The file as a whole is not read back:
     /// it is the file this repository last read or wrote, plus that change. Before this repository has read or
     /// written the file, everything is checked as in `save(_:)`.
     public func save(_ state: SharedStoreState, after edit: SharedStoreState.CheckedEdit) throws {
