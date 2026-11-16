@@ -220,7 +220,10 @@ export type AgendaItem = {
   /** For a task made from a whole list: the list and how much of it is checked off since. */
   list?: { id: string; name: string; done: number; total: number };
   /** For a task or event made from one thing on a list: that thing. */
-  fromItem?: { id: string; title: string; list: string };
+  fromItem?: {
+    id: string; title: string; list: string;
+    notes?: { id: string; text: string; day: string }[]; links?: { id: string; title?: string; url: string }[];
+  };
 };
 
 const same = (a: string | null | undefined, b: string) => !!a && a.toUpperCase() === b.toUpperCase();
