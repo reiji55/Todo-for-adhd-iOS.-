@@ -113,6 +113,8 @@ public struct TaskBoard {
             if let deferUntil = task.suggestionDeferredUntil, deferUntil > now { return false }
             if let planned = task.plannedAt, !isOnOrBeforeToday(planned, now: now) { return false }
             if let wanted, task.effort.rank > wanted.rank { return false }
+            // Next in a つながり: it waits for the one before it.
+            if let before = task.follows.flatMap({ byID[$0] }), !before.isComplete { return false }
             return true
         }
         func due(_ task: TaskItem) -> Date? { task.deadline ?? task.parentID.flatMap { byID[$0]?.deadline } }
@@ -128,6 +130,7 @@ public struct TaskBoard {
             if task.plannedAt.map({ calendar.isDate($0, inSameDayAs: now) }) == true { return 2 }
             if must(task) { return 3 }
             if let parent = task.parentID, underway.contains(parent) { return 4 }
+            if task.follows.flatMap({ byID[$0] })?.isComplete == true { return 4 }
             return 5
         }
         let ordered = pool.sorted { a, b in
@@ -150,7 +153,12 @@ public struct TaskBoard {
             case 1: reason = "中断したところから"; label = "続き"
             case 2: reason = "今日やる予定"; label = "今日の予定"
             case 3: reason = "落とせないもの（★必須）"; label = ""
-            case 4: reason = "途中まで進んでいるタスクの続き"; label = "続き"
+            case 4:
+                if let before = task.follows.flatMap({ byID[$0] }), before.isComplete {
+                    reason = "つながりの前のタスクが済んだ"; label = "「\(before.title)」の次"
+                } else {
+                    reason = "途中まで進んでいるタスクの続き"; label = "続き"
+                }
             default:
                 reason = wanted == task.effort ? "今の調子に合う負荷" : "しばらく手をつけていないもの"
                 // A task written down this week has not been waiting long.

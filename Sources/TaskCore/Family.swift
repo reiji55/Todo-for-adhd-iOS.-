@@ -94,6 +94,9 @@ public extension Notebook {
     /// task again, with no day until one is chosen.
     mutating func removeTask(_ id: UUID, at now: Date = Date()) {
         let parent = tasks.first { $0.id == id }?.parentID
+        // What came after it now follows what came before it, so the つながり stays whole.
+        let before = tasks.first { $0.id == id }?.follows
+        for i in tasks.indices where tasks[i].follows == id { tasks[i].follows = before }
         tasks.removeAll { $0.id == id || $0.parentID == id }
         if let active = activeSession, !tasks.contains(where: { $0.id == active.taskID }) { activeSession = nil }
         if let parent { settleParent(parent, at: now) }
