@@ -58,12 +58,15 @@ public struct SharedStoreState: Codable, Equatable {
         return CheckedEdit()
     }
 
-    public mutating func receive(_ records: [SyncRecord]) throws {
+    /// Takes the records a sync brought. When they hold nothing new (the usual case right after sending an
+    /// edit) what is shown already says what the records say: they are not all read back again, and the check
+    /// returned lets the state be saved without reading the whole file back, since all that differs from the
+    /// state before is what the caller notes about the sync itself.
+    @discardableResult
+    public mutating func receive(_ records: [SyncRecord]) throws -> CheckedEdit? {
         guard let before = replica, replicaInUse else { throw NotebookError.invalidData }
         try replica?.merge(records)
-        // Nothing new arrived (the usual case right after sending an edit): what is shown already says what
-        // the records say, so they are not all read back again.
-        guard replica != before else { return }
+        guard replica != before else { return CheckedEdit() }
         notebook = try replica!.materialize()
         let received = notebook
         if notebook.clearCompletedContinuationNotes() {
@@ -72,13 +75,15 @@ public struct SharedStoreState: Codable, Equatable {
             try replica?.apply(before: received, after: notebook, device: deviceID)
             hasPendingChanges = true
         }
+        return nil
     }
 
     public static func decode(_ data: Data) throws -> Self {
         let value = try JSONDecoder().decode(Self.self, from: data)
         guard value.version == 1 else { throw NotebookError.unsupportedVersion }
         guard !value.deviceID.isEmpty, value.replicaInUse == (value.replica != nil) else { throw NotebookError.invalidData }
-        _ = try NotebookCodec.decode(NotebookCodec.encode(value.notebook))
+        // The book was just read from these bytes; what is left to check is that it keeps its rules.
+        try NotebookCodec.validate(value.notebook)
         if let replica = value.replica {
             var validated = SyncReplica()
             try validated.merge(Array(replica.records.values))

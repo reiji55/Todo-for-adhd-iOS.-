@@ -1057,17 +1057,18 @@ final class TaskStore: ObservableObject {
             }
             guard generation == syncGeneration, state.connection == connection else { return }
             var next = state
-            try next.receive(Array(result.records.values))
+            // Nothing new from iCloud: only the note that everything is sent changes, and saving stays quick.
+            let nothingNew = try next.receive(Array(result.records.values))
             next.hasPendingChanges = next.replica?.records != result.records
             next.lastSyncedAt = Date()
             let changed = next.replica?.records != state.replica?.records || next.hasPendingChanges != state.hasPendingChanges
             if changed {
-                if !Self.sameContents(notebook, next.notebook) {
+                if nothingNew == nil, !Self.sameContents(notebook, next.notebook) {
                     try repository.backup(notebook, beforeSharing: false)
                     // Do not apply a stale whole-book undo over a remote change.
                     history = []; undoOffer = nil
                 }
-                try repository.save(next)
+                if let nothingNew { try repository.save(next, after: nothingNew) } else { try repository.save(next) }
                 state = next
                 // Redraw only when what is shown changed.
                 if notebook != next.notebook { notebook = next.notebook }
