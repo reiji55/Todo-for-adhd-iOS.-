@@ -49,6 +49,8 @@ final class TaskStore: ObservableObject {
     @Published private(set) var undoOffer: UndoOffer?
     /// A project to show on the board as soon as the screen in front of it closes (one just made from an idea).
     @Published var projectToOpen: String?
+    /// A task to open in the editor once the sheet in front has closed (one just made by gathering a つながり).
+    @Published var openAfterChange: TaskItem?
     /// A one-time handoff from an idea/project into Today's local task clock, never saved or synced.
     private var pendingTaskStart: TaskWork?
     /// A fresh nonce for an explicit start from outside 今日; consumers dismiss their own sheets.

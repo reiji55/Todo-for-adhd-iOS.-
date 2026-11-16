@@ -398,3 +398,25 @@ test("ideas take several notes, and more can be added later", async () => {
   const notes = decodeValue(record.fields.notes.value) as any[];
   for (const note of notes) for (const key of ["id", "text", "createdAt"]) assert.ok(note[key], key);
 });
+
+test("つながり: a next task is added after one, shown as its next, and kept whole when one is removed", async () => {
+  const store = memoryStore();
+  const now = new Date("2026-11-17T01:00:00Z");
+  const first = payload(await call(store, "add_tasks", { tasks: [{ title: "解約の申込みをする", project: "引っ越し" }] }, now)).added[0];
+  const next = payload(await call(store, "add_tasks", { tasks: [{ title: "保証金の返還を確認する", after: first }] }, now)).added[0];
+  const before = payload(await call(store, "add_tasks", { tasks: [{ title: "連絡先を調べる", before: first }] }, now)).added[0];
+  let task = payload(await call(store, "get_task", { id: next }, now));
+  assert.deepEqual([task.after.title, task.after.done, task.project], ["解約の申込みをする", false, "引っ越し"]);
+  assert.equal(payload(await call(store, "get_task", { id: before }, now)).next.title, "解約の申込みをする");
+  assert.equal(payload(await call(store, "get_task", { id: first }, now)).after.title, "連絡先を調べる");
+
+  await call(store, "remove_tasks", { ids: [first] }, now);
+  task = payload(await call(store, "get_task", { id: next }, now));
+  assert.equal(task.after.title, "連絡先を調べる", "the ones around a removed task join up");
+
+  await call(store, "update_task", { id: next, unlink: true }, now);
+  assert.equal(payload(await call(store, "get_task", { id: next }, now)).after, undefined);
+  assert.equal(payload(await call(store, "get_task", { id: before }, now)).next, undefined);
+  const record = store.records.find((r) => r.id === `task_${next}`)!;
+  assert.equal(decodeValue(record.fields.follows.value), null, "the link is cleared, not left behind");
+});

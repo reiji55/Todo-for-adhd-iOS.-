@@ -148,6 +148,13 @@ struct TaskEditor: View {
                 }
                 ListChecklistSection(task: task)
                 ListSourceSection(task: task)
+                if !task.isEvent && !isPiece && store.task(task.id) != nil {
+                    ChainSection(taskID: task.id, onOpen: { otherTask = $0 }, onReplaced: { replacement in
+                        // Gathered into a new task, or scattered: this task is not what it was, so show the result.
+                        dismiss()
+                        if let replacement { DispatchQueue.main.async { store.openAfterChange = replacement } }
+                    })
+                }
                 if !task.isEvent && !isPiece && task.listID == nil { piecesSection }
                 if (!isWhole && task.plannedAt != nil && task.slot != nil) || (!task.isEvent && task.deadline != nil) {
                     Section {
@@ -300,6 +307,19 @@ struct TaskEditor: View {
                 pieces.remove(atOffsets: offsets)
             }
             .onMove { pieces.move(fromOffsets: $0, toOffset: $1) }
+            // ばらす: the pieces become a つながり, and this task goes. Offered once what is shown is saved.
+            if isWhole, !changed, store.hasChildren(task.id) {
+                Button {
+                    if let first = store.scatterPieces(of: task.id) {
+                        dismiss()
+                        DispatchQueue.main.async { store.openAfterChange = first }
+                    }
+                } label: {
+                    Label("ばらして、つながりにする", systemImage: "link").font(.subheadline)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("scatterPieces")
+            }
             HStack(spacing: 6) {
                 Image(systemName: "plus").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.accent).frame(width: 36)
                 TextField(isWhole ? "子タスクを足す" : "子タスクに分ける", text: $newPiece).submitLabel(.done).onSubmit(addPiece)

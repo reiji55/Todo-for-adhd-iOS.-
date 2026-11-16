@@ -144,3 +144,55 @@ extension TaskStore {
         commit { $0.boardCards.move(fromOffsets: source, toOffset: destination) }
     }
 }
+
+/// The store's actions on つながり: adding before and after, and turning one into pieces or a project and back.
+extension TaskStore {
+    func chain(containing id: UUID) -> [TaskItem] { notebook.chain(containing: id) }
+
+    /// A new task right after this one (次にやること), or right before it (前にやること).
+    @discardableResult
+    func addLinked(_ title: String, to id: UUID, before: Bool = false) -> Bool {
+        let text = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return false }
+        guard task(id) != nil else { error = "このタスクは別の端末で削除されました。"; return false }
+        let added = TaskItem(title: text)
+        return commit { book in
+            if before { book.addTask(added, before: id) } else { book.addTask(added, after: id) }
+        }
+    }
+
+    /// Takes a task out of its つながり; the tasks on either side join up.
+    func unlink(_ id: UUID) {
+        if commit({ $0.unlink(id) }) { offerUndo("つながりから外しました") }
+    }
+
+    func dissolveChain(containing id: UUID) {
+        if commit({ $0.dissolveChain(containing: id) }) { offerUndo("つながりをほどきました") }
+    }
+
+    /// ひとまとめにする. Returns the new task, to open it.
+    @discardableResult
+    func gatherChain(containing id: UUID, title: String) -> TaskItem? {
+        var made: UUID?
+        guard commit({ made = $0.gatherChain(containing: id, title: title) }), let made else {
+            if error == nil { error = "子タスクに分かれたタスクを含むつながりは、ひとまとめにできません。" }
+            return nil
+        }
+        offerUndo("「\(title)」にまとめました")
+        return task(made)
+    }
+
+    /// ばらす: the pieces become a つながり. Returns the first of them.
+    @discardableResult
+    func scatterPieces(of id: UUID) -> TaskItem? {
+        let title = task(id)?.title ?? ""
+        var first: UUID?
+        guard commit({ first = $0.scatterPieces(of: id) }), let first else { return nil }
+        offerUndo("「\(title)」をつながりにしました")
+        return task(first)
+    }
+
+    func makeProject(ofChainContaining id: UUID, named name: String) {
+        if commit({ $0.makeProject(ofChainContaining: id, named: name) }) { offerUndo("プロジェクト「\(name)」にしました") }
+    }
+}

@@ -144,6 +144,12 @@ struct RootView: View {
             else { store.clearRecentlyDone() }
         }
         .onChange(of: store.notebook.lists) { _, _ in store.publishListNames() }
+        .onChange(of: store.openAfterChange) { _, task in
+            guard let task else { return }
+            store.openAfterChange = nil
+            // After the editor in front has gone.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { editor = TaskRoute(task: task, original: store.task(task.id)) }
+        }
         .onChange(of: store.projectToOpen) { _, key in
             if key != nil { selectedTab = Tab.board.rawValue; compactColumn = .detail }
         }

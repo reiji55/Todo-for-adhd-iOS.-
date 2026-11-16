@@ -268,7 +268,8 @@ export const tools: Tool[] = [
     description:
       "タスクかイベントを追加する。date を省くと今日、\"anytime\" で日付なし（タスクのみ）。同じものを二重に足さないよう、先に get_today / get_days で確認する。" +
       "kind=\"event\" はその日にある予定（買い物、人に会う）で、必須や締切はなく、やり残しにもならない。くり返すものは add_routine でルーティンにする。" +
-      "parent にタスクの id を渡すと、そのタスクの子タスクとして足す（子タスクの date を省くと日付なし。ただし最初の子タスクは親の日付と時間を引き継ぎ、親は締切と必須だけを持つ形になる）。",
+      "parent にタスクの id を渡すと、そのタスクの子タスクとして足す（子タスクの date を省くと日付なし。ただし最初の子タスクは親の日付と時間を引き継ぎ、親は締切と必須だけを持つ形になる）。" +
+      "after にタスクの id を渡すと、そのタスクの次（つながり）として足す。前のタスクが済むまで候補に出ない。before で、そのタスクの前に足す（それより先に必要なこと）。date を省くと日付なし。",
     inputSchema: {
       type: "object",
       properties: {
@@ -284,6 +285,8 @@ export const tools: Tool[] = [
               memo: { type: "string", description: "本人用のメモ" },
               handoff: { type: "string", description: "Claude への引き継ぎ" },
               parent: { type: "string", description: "子タスクにするときの親タスクの id" },
+              after: { type: "string", description: "つながりで、このタスクの次に足すときの前のタスクの id" },
+              before: { type: "string", description: "つながりで、このタスクの前に足すときのタスクの id" },
               from_item: { type: "string", description: "リストの項目から予定にするときのその項目の id。予定が済むと項目は履歴に移る。項目のメモとリンクは予定から見える（get_task の fromItem）ので写さなくてよい" },
               from_list: { type: "string", description: "リスト全体をチェックしながら進めるタスク（買い物など）にするときのリストの id。全部チェックすると完了（タスクのみ）" },
             },
@@ -302,6 +305,10 @@ export const tools: Tool[] = [
         if (!title) throw new Error("title が空のタスクがあります。");
         const parent = input.parent ? find(book, input.parent) : undefined;
         const isEvent = input.kind === "event";
+        const anchor = input.after ? find(book, input.after) : input.before ? find(book, input.before) : undefined;
+        if (anchor && (parent || isEvent || anchor.parentID || anchor.isEvent)) {
+          throw new Error("つながり（after / before）は、子タスクでもイベントでもないタスクどうしで作れます。");
+        }
         if (parent) {
           if (parent.parentID) throw new Error("子タスクの下に子タスクは作れません。親タスクの id を渡してください。");
           if (parent.isEvent || isEvent) throw new Error("イベントには子タスクを作れません。");
@@ -310,7 +317,7 @@ export const tools: Tool[] = [
         const count = parent ? (newPieces.get(parent.id) ?? 0) : 0;
         const first = !!parent && earlier.length === 0 && count === 0;
         // A piece without a date has none, except the first, which takes over its parent's day and time.
-        let date = input.date ?? (parent ? (first && parent.plannedAt ? dayKey(parent.plannedAt) : "anytime") : todayKey(now));
+        let date = input.date ?? (parent ? (first && parent.plannedAt ? dayKey(parent.plannedAt) : "anytime") : anchor ? "anytime" : todayKey(now));
         let time = input.time ?? (first && parent && input.date === undefined ? parent.scheduledTime ?? "" : "");
         validDate(date); validTime(time);
         if (isEvent && date === "anytime") throw new Error("イベントには日付が必要です。");
@@ -322,11 +329,19 @@ export const tools: Tool[] = [
         const values: Args = {
           alive: true, id, title, scheduledTime: date === "anytime" ? "" : String(time).trim(),
           isMust: isEvent || parent ? false : !!input.must, isEvent, effort: "medium",
-          project: parent ? parent.project ?? "" : input.project ?? "", memo: input.memo ?? "",
+          project: parent ? parent.project ?? "" : input.project ?? anchor?.project ?? "", memo: input.memo ?? "",
           handoff: input.handoff ?? "", resumeNote: "", createdAt: nowISO(now), notify: true,
         };
         if (date !== "anytime") values.plannedAt = dayToISO(date);
         if (item) values.listItemID = item.id;
+        if (anchor && input.after) {
+          // What came after it now comes after the new one.
+          values.follows = anchor.id;
+          for (const t of book.tasks) if (sameID(t.follows, anchor.id)) writer.set(`task_${t.id}`, { follows: id });
+        } else if (anchor) {
+          if (anchor.follows) values.follows = anchor.follows;
+          writer.set(`task_${anchor.id}`, { follows: id });
+        }
         if (list) values.listID = list.id;
         if (!isEvent && !parent && input.deadline && input.deadline !== "anytime") values.deadline = dayToISO(input.deadline);
         if (parent) {
@@ -357,6 +372,7 @@ export const tools: Tool[] = [
         must: { type: "boolean" }, deadline: { type: "string", description: 'YYYY-MM-DD、空文字で締切を外す' },
         memo: { type: "string" }, handoff: { type: "string" },
         kind: { type: "string", enum: ["task", "event"], description: "種類を変える。event にすると必須と締切は外れる" },
+        unlink: { type: "boolean", description: "true でつながりから外す（前後のタスクはつながったまま）" },
       },
       required: ["id"],
     },
@@ -387,6 +403,10 @@ export const tools: Tool[] = [
         values.deadline = args.deadline ? dayToISO(args.deadline) : null;
       }
       if (args.kind !== undefined) values.isEvent = args.kind === "event";
+      if (args.unlink) {
+        for (const t of book.tasks) if (sameID(t.follows, task.id)) writer.set(`task_${t.id}`, { follows: task.follows ?? null });
+        values.follows = null;
+      }
       if (args.kind !== undefined ? args.kind === "event" : task.isEvent) {
         const planned = "plannedAt" in values ? values.plannedAt : task.plannedAt;
         if (!planned) throw new Error("イベントには日付が必要です。");
@@ -451,6 +471,8 @@ export const tools: Tool[] = [
       const parents = new Set<string>();
       for (const id of ids as string[]) {
         const task = find(book, id);
+        // What came after it now follows what came before it, so the つながり stays whole.
+        for (const t of book.tasks) if (sameID(t.follows, task.id)) writer.set(`task_${t.id}`, { follows: task.follows ?? null });
         for (const t of [task, ...piecesOf(book, task.id)]) { writer.set(`task_${t.id}`, { alive: false }); removed.add(t.id.toUpperCase()); }
         if (task.parentID) parents.add(task.parentID);
       }
@@ -929,6 +951,7 @@ export const instructions =
   "ルーティン（くり返し）、アイデア（まだ決めていない思いつき。メモを継ぎ足せる）、リスト（行きたいところ・読みたい本・買うものなど、予定ではない具体的なもののストック。期限や進み具合は持たない。項目ごとにメモとリンクをいくつでも持てる。" +
   "予定にするときは add_tasks の from_item / from_list でつなぐ）。ほかにボード（やり方の書き置き）と、プロジェクト（到達点・期限・途中の到達点を持つ大きな枠）がある。" +
   "大きなタスクは子タスクに分かれていることがある（pieces / parent）。日付と時間は子タスクが持ち、親タスクは締切と必須だけを持つ。子タスクがすべて済むと親も完了になる。" +
+  "タスクどうしは「つながり」で前後に結べる（after / next）。次のタスクは前が済むまで候補に出ない。あとから次にやることを足すときは add_tasks の after を使う。" +
   "日付は日本時間。書き換える前に get_today / get_days で id と現状を確かめる。" +
   "handoff は本人が「Claude にやってほしい」と残した依頼で、対応したら memo に結果を書いて handoff を空にする。" +
   "変更はアプリと iCloud に数十秒以内に反映される。タスク・イベント・ルーティン・プロジェクト・リストの追加や変更は本人に頼まれたときに行う。頼まれていないのに必須にしたり消したりはしない。";

@@ -22,6 +22,8 @@ export type Task = {
   listID?: string | null;
   /** Made from one thing on a list: when done, that thing moves to the list's history. */
   listItemID?: string | null;
+  /** つながり: the task that comes right before this one. It waits for that one before it is suggested. */
+  follows?: string | null;
 };
 /** A list of concrete things kept for later (places, books, groceries). Not a plan. `updatedAt`: when the
  *  list itself last changed (renamed, or a thing removed). */
@@ -219,6 +221,9 @@ export type AgendaItem = {
   pieces?: Piece[];
   /** For a task made from a whole list: the list and how much of it is checked off since. */
   list?: { id: string; name: string; done: number; total: number };
+  /** つながり: the task right before this one (waiting while it is open), and the next one not done yet. */
+  after?: { id: string; title: string; done: boolean };
+  next?: { id: string; title: string };
   /** For a task or event made from one thing on a list: that thing. */
   fromItem?: {
     id: string; title: string; list: string;
@@ -235,6 +240,19 @@ export function listProgress(book: Book, t: Task): { done: number; total: number
   const open = mine.filter((i) => !i.doneAt).length;
   const done = mine.filter((i) => i.doneAt && i.doneAt >= t.createdAt).length;
   return { done, total: done + open };
+}
+
+/** Mirrors Notebook.nextInChain: the next task not done yet after this one in its つながり. */
+export function nextInChain(book: Book, id: string): Task | undefined {
+  const seen = new Set([id.toUpperCase()]);
+  const after = (x: string) => book.tasks.filter((t) => same(t.follows, x)).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))[0];
+  let current = after(id);
+  while (current && !seen.has(current.id.toUpperCase())) {
+    seen.add(current.id.toUpperCase());
+    if (!current.completedAt) return current;
+    current = after(current.id);
+  }
+  return undefined;
 }
 
 /** The pieces of a task, in order. */
@@ -291,6 +309,14 @@ export function taskItem(t: Task, book?: Book): AgendaItem {
         notes: notes.length ? notes.map((n) => ({ id: n.id, text: n.text, day: dayKey(n.createdAt) })) : undefined,
         links: links.length ? links.map((l) => ({ id: l.id, title: l.title || undefined, url: l.url })) : undefined,
       };
+    })() : undefined,
+    after: book && t.follows ? (() => {
+      const before = book.tasks.find((p) => same(p.id, t.follows!));
+      return before ? { id: before.id, title: before.title, done: !!before.completedAt } : undefined;
+    })() : undefined,
+    next: book ? (() => {
+      const next = nextInChain(book, t.id);
+      return next ? { id: next.id, title: next.title } : undefined;
     })() : undefined,
     pieces: pieces.length ? pieces.map((p) => ({
       id: p.id, title: p.title, done: !!p.completedAt, date: p.plannedAt ? dayKey(p.plannedAt) : "anytime",

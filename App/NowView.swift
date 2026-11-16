@@ -465,6 +465,10 @@ private struct NowCard: View {
                     if let due = task?.deadline ?? parent?.deadline, !pick.label.contains("締切") {
                         Text("締切 \(ProjectText.day(due))").font(.caption).foregroundStyle(.secondary)
                     }
+                    // What comes after it in its つながり (or after the task it is a piece of).
+                    if let anchor = parent ?? task, let next = store.notebook.nextInChain(after: anchor.id) {
+                        Text("次：\(next.title)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
                     if hasInlineNotes {
                         ItemNotesView(item: pick.item, foreground: .secondary,
                                       includesContinuation: !pick.item.isRoutine)

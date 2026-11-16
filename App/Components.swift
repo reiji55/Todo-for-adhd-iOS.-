@@ -213,6 +213,7 @@ struct AgendaRow: View {
                     if !done, let task, let next = store.notebook.nextChild(of: task.id) {
                         Text("次：\(next.title)").font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     }
+                    if let task, task.parentID == nil { ChainHint(task: task) }
                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain)
             // The method of a routine (or a task) one tap away, at the end of its row.
