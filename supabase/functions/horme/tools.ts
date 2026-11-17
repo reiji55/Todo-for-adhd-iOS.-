@@ -208,6 +208,15 @@ function required(book: Book, today: string) {
   });
 }
 
+/** 期間タスク whose stretch holds today and that are not on today's list already, last day first. */
+function inPeriod(book: Book, today: string) {
+  return book.tasks.filter((t) => !t.completedAt && !t.isEvent && !t.parentID && t.periodStart && t.deadline
+    && dayKey(t.periodStart) <= today && today <= dayKey(t.deadline)
+    && !(t.plannedAt && dayKey(t.plannedAt) === today) && !(hasPieces(book, t) && firstPieceDay(book, t) === today))
+    .sort((a, b) => a.deadline!.localeCompare(b.deadline!))
+    .map((t) => taskItem(t, book));
+}
+
 /** ★ tasks still open and not due yet, nearest deadline first: kept together below today's plan in the app. */
 function musts(book: Book, today: string) {
   return book.tasks.filter((t) => t.isMust && !t.completedAt && !t.isEvent && !t.parentID
@@ -222,12 +231,18 @@ export const tools: Tool[] = [
     title: "今日を読む",
     description:
       "今日の時間割（タスク・イベント・ルーティン、時刻順。kind で見分ける）、今日までの締切（締切が今日・過ぎたもので今日の予定に入っていないもの）、" +
-      "必須（★＝本人が落とせないと決めたもの。締切が来るまでは今日に割り込まない。締切の近い順）、前の日から残っているタスクを返す。各項目の id を他のツールに渡す。書き換える前にまずこれを呼ぶ。" +
+      "必須（★＝本人が落とせないと決めたもの。締切が来るまでは今日に割り込まない。締切の近い順）、前の日から残っているタスク、" +
+      "periods（期間タスクのうち今日が期間に入っているもの。period は from〜to、to が締切）を返す。各項目の id を他のツールに渡す。書き換える前にまずこれを呼ぶ。" +
       "handoff は本人が「Claude にやってほしい」と書き残した依頼。held はルーティンのうち睡眠・仕事など時間を押さえているだけのもの。",
     inputSchema: { type: "object", properties: {} },
     run: (_, { book, now }) => {
       const today = todayKey(now);
-      return { result: { ...day(book, today), required: required(book, today), musts: musts(book, today), leftovers: leftovers(book, today) } };
+      return {
+        result: {
+          ...day(book, today), required: required(book, today), musts: musts(book, today), leftovers: leftovers(book, today),
+          periods: inPeriod(book, today),
+        },
+      };
     },
   },
   {
@@ -269,7 +284,8 @@ export const tools: Tool[] = [
       "タスクかイベントを追加する。date を省くと今日、\"anytime\" で日付なし（タスクのみ）。同じものを二重に足さないよう、先に get_today / get_days で確認する。" +
       "kind=\"event\" はその日にある予定（買い物、人に会う）で、必須や締切はなく、やり残しにもならない。くり返すものは add_routine でルーティンにする。" +
       "parent にタスクの id を渡すと、そのタスクの子タスクとして足す（子タスクの date を省くと日付なし。ただし最初の子タスクは親の日付と時間を引き継ぎ、親は締切と必須だけを持つ形になる）。" +
-      "after にタスクの id を渡すと、そのタスクの次（つながり）として足す。前のタスクが済むまで候補に出ない。before で、そのタスクの前に足す（それより先に必要なこと）。date を省くと日付なし。",
+      "after にタスクの id を渡すと、そのタスクの次（つながり）として足す。前のタスクが済むまで候補に出ない。before で、そのタスクの前に足す（それより先に必要なこと）。date を省くと日付なし。" +
+      "「12月中に」のように期間のあるものは期間タスクにする：period_from に始まりの日、deadline に終わりの日（その日が締切）。期間が始まるまでは候補に出ない。日付（date）は決めなければ省く。",
     inputSchema: {
       type: "object",
       properties: {
@@ -281,7 +297,8 @@ export const tools: Tool[] = [
               title: { type: "string" }, date: DATE, time: TIME, project: { type: "string" },
               kind: { type: "string", enum: ["task", "event"], description: "task（既定）か event" },
               must: { type: "boolean", description: "本人が必須と決めたものだけ true（タスクのみ）" },
-              deadline: { type: "string", description: "締切 YYYY-MM-DD" },
+              deadline: { type: "string", description: "締切 YYYY-MM-DD（期間タスクなら期間の終わりの日）" },
+              period_from: { type: "string", description: "期間タスクの始まりの日 YYYY-MM-DD。deadline と合わせて使う" },
               memo: { type: "string", description: "本人用のメモ" },
               handoff: { type: "string", description: "Claude への引き継ぎ" },
               parent: { type: "string", description: "子タスクにするときの親タスクの id" },
@@ -322,6 +339,13 @@ export const tools: Tool[] = [
         validDate(date); validTime(time);
         if (isEvent && date === "anytime") throw new Error("イベントには日付が必要です。");
         if (input.deadline) validDate(input.deadline);
+        if (input.period_from) {
+          validDate(input.period_from);
+          if (isEvent || parent || !input.deadline || input.deadline === "anytime" || input.period_from === "anytime") {
+            throw new Error("期間タスクは、子タスクでもイベントでもないタスクに、period_from（始まり）と deadline（終わり）の両方を渡して作ります。");
+          }
+          if (input.period_from > input.deadline) throw new Error("period_from は deadline より前の日にしてください。");
+        }
         const item = input.from_item ? findItem(book, input.from_item) : undefined;
         const list = input.from_list ? findList(book, input.from_list) : undefined;
         if (list && (isEvent || parent)) throw new Error("リスト全体からはタスク（子タスクでないもの）だけを作れます。");
@@ -344,6 +368,7 @@ export const tools: Tool[] = [
         }
         if (list) values.listID = list.id;
         if (!isEvent && !parent && input.deadline && input.deadline !== "anytime") values.deadline = dayToISO(input.deadline);
+        if (input.period_from) values.periodStart = dayToISO(input.period_from);
         if (parent) {
           values.parentID = parent.id;
           values.rank = Math.max(-1, ...earlier.map((p) => p.rank ?? 0)) + 1 + count;
@@ -363,13 +388,15 @@ export const tools: Tool[] = [
     name: "update_task",
     title: "タスクを直す",
     description:
-      "タスクやイベントの名前・日付・時間帯・プロジェクト・必須・締切・メモ・引き継ぎ・種類を書き換える。渡した欄だけ変わる。" +
+      "タスクやイベントの名前・日付・時間帯・プロジェクト・必須・締切・期間・メモ・引き継ぎ・種類を書き換える。渡した欄だけ変わる。" +
+      "期間タスクにするには period_from（始まり）と deadline（終わり）、期間をやめるには period_from を空文字に（締切は残る）。" +
       'date="anytime" で日付と時間を外す。引き継ぎ（handoff）は対応したら memo に何をしたか書いてから空にする。',
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "string" }, title: { type: "string" }, date: DATE, time: TIME, project: { type: "string" },
-        must: { type: "boolean" }, deadline: { type: "string", description: 'YYYY-MM-DD、空文字で締切を外す' },
+        must: { type: "boolean" }, deadline: { type: "string", description: 'YYYY-MM-DD、空文字で締切を外す（期間タスクなら期間ごと外れる）' },
+        period_from: { type: "string", description: "期間タスクの始まりの日 YYYY-MM-DD、空文字で期間をやめる" },
         memo: { type: "string" }, handoff: { type: "string" },
         kind: { type: "string", enum: ["task", "event"], description: "種類を変える。event にすると必須と締切は外れる" },
         unlink: { type: "boolean", description: "true でつながりから外す（前後のタスクはつながったまま）" },
@@ -381,8 +408,8 @@ export const tools: Tool[] = [
       if (hasPieces(book, task) && (args.date !== undefined || args.time !== undefined || args.kind === "event")) {
         throw new Error("子タスクに分かれたタスクには日付がありません。子タスクの日付を変えてください（get_task で子タスクの id がわかります）。");
       }
-      if (task.parentID && (args.must !== undefined || args.deadline !== undefined || args.project !== undefined || args.kind === "event")) {
-        throw new Error("子タスクには必須・締切・プロジェクトはありません（親タスクのものを使います）。");
+      if (task.parentID && (args.must !== undefined || args.deadline !== undefined || args.project !== undefined || args.period_from || args.kind === "event")) {
+        throw new Error("子タスクには必須・締切・期間・プロジェクトはありません（親タスクのものを使います）。");
       }
       const writer = new Writer(records, "claude", now.getTime());
       const values: Args = {};
@@ -402,6 +429,19 @@ export const tools: Tool[] = [
         if (args.deadline) validDate(args.deadline);
         values.deadline = args.deadline ? dayToISO(args.deadline) : null;
       }
+      if (args.period_from !== undefined) {
+        if (args.period_from) {
+          validDate(args.period_from);
+          const end = args.deadline !== undefined ? args.deadline : task.deadline ? dayKey(task.deadline) : "";
+          if (!end || end === "anytime" || args.period_from === "anytime") throw new Error("期間タスクには終わりの日（deadline）が必要です。");
+          if (args.period_from > end) throw new Error("period_from は deadline より前の日にしてください。");
+          values.periodStart = dayToISO(args.period_from);
+        } else {
+          values.periodStart = null;
+        }
+      }
+      // Without a deadline there is no stretch either.
+      if (args.deadline !== undefined && !args.deadline && task.periodStart) values.periodStart = null;
       if (args.kind !== undefined) values.isEvent = args.kind === "event";
       if (args.unlink) {
         for (const t of book.tasks) if (sameID(t.follows, task.id)) writer.set(`task_${t.id}`, { follows: task.follows ?? null });
@@ -410,8 +450,8 @@ export const tools: Tool[] = [
       if (args.kind !== undefined ? args.kind === "event" : task.isEvent) {
         const planned = "plannedAt" in values ? values.plannedAt : task.plannedAt;
         if (!planned) throw new Error("イベントには日付が必要です。");
-        for (const key of ["isMust", "deadline"]) delete values[key];
-        if (args.kind === "event") Object.assign(values, { isMust: false, deadline: null });
+        for (const key of ["isMust", "deadline", "periodStart"]) delete values[key];
+        if (args.kind === "event") Object.assign(values, { isMust: false, deadline: null, periodStart: null });
       }
       if (!Object.keys(values).length) return { result: { changed: false } };
       writer.set(`task_${task.id}`, values);
@@ -952,6 +992,7 @@ export const instructions =
   "予定にするときは add_tasks の from_item / from_list でつなぐ）。ほかにボード（やり方の書き置き）と、プロジェクト（到達点・期限・途中の到達点を持つ大きな枠）がある。" +
   "大きなタスクは子タスクに分かれていることがある（pieces / parent）。日付と時間は子タスクが持ち、親タスクは締切と必須だけを持つ。子タスクがすべて済むと親も完了になる。" +
   "タスクどうしは「つながり」で前後に結べる（after / next）。次のタスクは前が済むまで候補に出ない。あとから次にやることを足すときは add_tasks の after を使う。" +
+  "「○日から○日までの間にやる」ものは期間タスク（period：from〜to、to が締切）。期間が始まるまでは候補に出ず、期間中は毎日その日の画面に出る。" +
   "日付は日本時間。書き換える前に get_today / get_days で id と現状を確かめる。" +
   "handoff は本人が「Claude にやってほしい」と残した依頼で、対応したら memo に結果を書いて handoff を空にする。" +
   "変更はアプリと iCloud に数十秒以内に反映される。タスク・イベント・ルーティン・プロジェクト・リストの追加や変更は本人に頼まれたときに行う。頼まれていないのに必須にしたり消したりはしない。";

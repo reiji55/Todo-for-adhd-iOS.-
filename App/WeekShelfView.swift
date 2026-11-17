@@ -220,6 +220,16 @@ struct WeekShelfView: View {
                             .transition(.opacity)
                     }
                 }
+                // 期間タスク in their stretch today: one tag on today's row, under the shelves above it.
+                .overlay(alignment: .topLeading) {
+                    if calendar.isDate(day, inSameDayAs: now) {
+                        let stretch = store.notebook.periodTasks(on: now)
+                        if !stretch.isEmpty {
+                            PeriodTag(tasks: stretch, now: now) { onOpen(AgendaItem(task: $0)) }
+                                .padding(.leading, gutter + 8).offset(y: -10)
+                        }
+                    }
+                }
                 .background {
                     GeometryReader { row in
                         Color.clear.preference(key: ShelfRowFrames.self, value: [day: row.frame(in: .named(Self.space))])
@@ -517,6 +527,14 @@ private struct ShelfRow: View {
                 .foregroundStyle(today ? Palette.accent : (weekday == 1 ? Color.red.opacity(0.8) : (weekday == 7 ? Color.orange : Color.primary)))
                 .frame(width: gutter).padding(.top, 8)
                 .frame(maxHeight: .infinity, alignment: .top)
+                // Today keeps a green mark of its own, wherever the frame of the chosen day is.
+                .background {
+                    if today {
+                        RoundedRectangle(cornerRadius: 11).fill(Palette.accent.opacity(0.12))
+                            .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Palette.accent.opacity(0.45), lineWidth: 1.5))
+                            .padding(.horizontal, 2)
+                    }
+                }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -947,5 +965,59 @@ private struct SheetBlock: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(item.slot?.label ?? "") \(item.title)\(item.isDone ? " 済み" : "")")
         .accessibilityHint("タップで開く。長押しして動かすと時間や日を変えられます")
+    }
+}
+
+/// 期間タスク whose stretch holds today, as one small tag on today's row; a tap lists them.
+@MainActor
+struct PeriodTag: View {
+    let tasks: [TaskItem]
+    let now: Date
+    let onOpen: (TaskItem) -> Void
+    @State private var open = false
+
+    var body: some View {
+        Button { open = true } label: {
+            Text("期間 \(tasks.count)件")
+                .font(.system(size: 10, weight: .heavy)).foregroundStyle(Palette.accent)
+                .padding(.horizontal, 7).padding(.vertical, 2)
+                .background(Capsule().fill(Color(uiColor: .secondarySystemGroupedBackground)))
+                .overlay(Capsule().strokeBorder(Palette.accent.opacity(0.5), lineWidth: 1.2))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("期間タスク \(tasks.count)件")
+        .accessibilityHint("今日が期間に入っているタスクを見ます")
+        .accessibilityIdentifier("periodTag")
+        .popover(isPresented: $open) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("期間中のタスク").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                ForEach(tasks) { task in
+                    Button {
+                        open = false
+                        onOpen(task)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(task.title).font(.subheadline.weight(.semibold)).lineLimit(2).multilineTextAlignment(.leading)
+                            if let period = task.period {
+                                Text("\(period.text())・\(PeriodTag.left(period, now: now))")
+                                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(12)
+            .frame(width: 240)
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    /// "あと11日", or 今日まで on the last day.
+    static func left(_ period: TaskPeriod, now: Date) -> String {
+        let days = period.daysLeft(from: now)
+        return days <= 0 ? "今日まで" : "あと\(days)日"
     }
 }

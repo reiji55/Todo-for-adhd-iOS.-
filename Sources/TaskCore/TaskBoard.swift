@@ -94,7 +94,8 @@ public struct TaskBoard {
 
     /// Suggestions, never what is due (that is always shown) nor what is planned for a later day.
     ///
-    /// With no condition chosen they come by fixed tiers: due tomorrow, planned for today, ★, the next
+    /// With no condition chosen they come by fixed tiers: due tomorrow, planned for today, ★ and 期間タスク in
+    /// their stretch, the next
     /// piece of something under way, then the rest, the longest untouched first. With a condition chosen,
     /// only tasks no heavier than it are offered, the heaviest first and by those tiers within each weight:
     /// on a good day the list starts with heavy work and, as things are passed over, comes down to lighter
@@ -108,6 +109,15 @@ public struct TaskBoard {
         // Tasks in pieces already under way: their next pieces come before untouched ones.
         let underway = Set(tasks.filter { $0.isComplete }.compactMap(\.parentID))
         let wanted = energy.preferred
+        func due(_ task: TaskItem) -> Date? { task.deadline ?? task.parentID.flatMap { byID[$0]?.deadline } }
+        func must(_ task: TaskItem) -> Bool { task.isMust || (task.parentID.flatMap { byID[$0]?.isMust } ?? false) }
+        func periodStart(_ task: TaskItem) -> Date? { task.periodStart ?? task.parentID.flatMap { byID[$0]?.periodStart } }
+        /// The stretch it is in today, for a 期間タスク (or a piece of one).
+        func period(_ task: TaskItem) -> TaskPeriod? {
+            guard let start = periodStart(task), let end = due(task) else { return nil }
+            let period = TaskPeriod(start: start, end: end)
+            return period.contains(now, calendar: calendar) ? period : nil
+        }
         let pool = tasks.filter { task in
             guard !task.isComplete, !task.isEvent, !parents.contains(task.id), !isObligation(task, now: now) else { return false }
             if let deferUntil = task.suggestionDeferredUntil, deferUntil > now { return false }
@@ -115,10 +125,10 @@ public struct TaskBoard {
             if let wanted, task.effort.rank > wanted.rank { return false }
             // Next in a つながり: it waits for the one before it.
             if let before = task.follows.flatMap({ byID[$0] }), !before.isComplete { return false }
+            // 期間タスク: quiet until its first day.
+            if let begins = periodStart(task), calendar.startOfDay(for: begins) > today { return false }
             return true
         }
-        func due(_ task: TaskItem) -> Date? { task.deadline ?? task.parentID.flatMap { byID[$0]?.deadline } }
-        func must(_ task: TaskItem) -> Bool { task.isMust || (task.parentID.flatMap { byID[$0]?.isMust } ?? false) }
         // Interrupted with a note of where to pick up: it comes back first after what is due, so the
         // next start is from where the last one stopped.
         func interrupted(_ task: TaskItem) -> Bool {
@@ -128,7 +138,8 @@ public struct TaskBoard {
             if let date = due(task), calendar.startOfDay(for: date) <= tomorrow { return 0 }
             if interrupted(task) { return 1 }
             if task.plannedAt.map({ calendar.isDate($0, inSameDayAs: now) }) == true { return 2 }
-            if must(task) { return 3 }
+            // ★ and what is in its stretch now stand together.
+            if must(task) || period(task) != nil { return 3 }
             if let parent = task.parentID, underway.contains(parent) { return 4 }
             if task.follows.flatMap({ byID[$0] })?.isComplete == true { return 4 }
             return 5
@@ -152,7 +163,13 @@ public struct TaskBoard {
                 reason = label
             case 1: reason = "中断したところから"; label = "続き"
             case 2: reason = "今日やる予定"; label = "今日の予定"
-            case 3: reason = "落とせないもの（★必須）"; label = ""
+            case 3:
+                if let period = period(task) {
+                    reason = "期間 \(period.text(calendar: calendar)) の中"
+                    label = "期間中・あと\(period.daysLeft(from: now, calendar: calendar))日"
+                } else {
+                    reason = "落とせないもの（★必須）"; label = ""
+                }
             case 4:
                 if let before = task.follows.flatMap({ byID[$0] }), before.isComplete {
                     reason = "つながりの前のタスクが済んだ"; label = "「\(before.title)」の次"

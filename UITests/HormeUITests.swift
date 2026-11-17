@@ -353,16 +353,23 @@ final class HormeUITests: XCTestCase {
         XCTAssertTrue(untimed.exists)
         XCTAssertEqual(untimed.frame.midX, railX, accuracy: 1, "untimed controls share the timed rail axis")
         capture(app, "timetable-untimed-control-outside-card")
-        let deadlines = schedule.buttons["deadlineFolder"]
-        reveal(deadlines, in: app, scroll: schedule)
-        XCTAssertTrue(deadlines.exists)
-        XCTAssertEqual(deadlines.value as? String, "折りたたみ")
-        tapVisible(deadlines, in: app, scroll: schedule)
-        XCTAssertTrue(app.navigationBars["時間割"].exists, "expanding deadlines must stay on the timetable")
-        XCTAssertEqual(deadlines.value as? String, "展開中")
-        XCTAssertTrue(schedule.staticTexts["来週の資料"].waitForExistence(timeout: 5))
-        reveal(schedule.staticTexts["来週の資料"], in: app, scroll: schedule)
-        capture(app, "timetable-deadlines-expanded")
+        // A 期間タスク in its stretch stands under the day, with 今日へ.
+        let period = schedule.staticTexts["期間のあるタスク"]
+        reveal(period, in: app, scroll: schedule)
+        XCTAssertTrue(period.exists)
+        capture(app, "timetable-period-section")
+        // Upcoming deadlines and ★ live in すべて now; tasks without a day open from the foot of the timetable.
+        XCTAssertFalse(schedule.buttons["deadlineFolder"].exists)
+        let undated = schedule.buttons["undatedTasks"]
+        reveal(undated, in: app, scroll: schedule)
+        XCTAssertTrue(undated.exists)
+        tapVisible(undated, in: app, scroll: schedule)
+        XCTAssertTrue(app.navigationBars["日付未確定のタスク"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["来週の資料"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["toToday"].firstMatch.exists)
+        capture(app, "timetable-undated-tasks")
+        app.navigationBars["日付未確定のタスク"].buttons["閉じる"].tap()
+        XCTAssertTrue(app.navigationBars["時間割"].waitForExistence(timeout: 5), "closing the list stays on the timetable")
         app.terminate()
 
         let dark = launch("timetable", dark: true)

@@ -420,3 +420,28 @@ test("つながり: a next task is added after one, shown as its next, and kept 
   const record = store.records.find((r) => r.id === `task_${next}`)!;
   assert.equal(decodeValue(record.fields.follows.value), null, "the link is cleared, not left behind");
 });
+
+test("期間タスク: made with period_from and deadline, listed on the days of its stretch, and taken off again", async () => {
+  const store = memoryStore();
+  const now = new Date("2026-11-17T01:00:00Z");
+  const id = payload(await call(store, "add_tasks", {
+    tasks: [{ title: "12月中にアポ", date: "anytime", period_from: "2026-12-01", deadline: "2026-12-31" }],
+  }, now)).added[0];
+  assert.deepEqual(payload(await call(store, "get_task", { id }, now)).period, { from: "2026-12-01", to: "2026-12-31" });
+  assert.deepEqual(payload(await call(store, "get_today", {}, now)).periods, [], "not before its first day");
+  const inDecember = payload(await call(store, "get_today", {}, new Date("2026-12-05T01:00:00Z"))).periods;
+  assert.deepEqual(inDecember.map((t: any) => t.title), ["12月中にアポ"]);
+
+  const bad = await call(store, "add_tasks", { tasks: [{ title: "終わりがない", period_from: "2026-12-01" }] }, now);
+  assert.equal(bad.result.isError, true, "a stretch needs its last day");
+
+  await call(store, "update_task", { id, period_from: "" }, now);
+  const task = payload(await call(store, "get_task", { id }, now));
+  assert.equal(task.period, undefined);
+  assert.equal(task.deadline, "2026-12-31", "the deadline stays");
+  await call(store, "update_task", { id, period_from: "2026-12-10" }, now);
+  await call(store, "update_task", { id, deadline: "" }, now);
+  assert.equal(payload(await call(store, "get_task", { id }, now)).period, undefined, "no deadline, no stretch");
+  const record = store.records.find((r) => r.id === `task_${id}`)!;
+  assert.equal(decodeValue(record.fields.periodStart.value), null);
+});

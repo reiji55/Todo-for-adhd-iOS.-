@@ -47,7 +47,9 @@ extension Notebook {
             TaskItem(title: "友達とランチ", plannedAt: now, scheduledTime: "12:00-13:30", memo: "駅前のお店", isEvent: true),
             TaskItem(title: "買い物に行く", plannedAt: day(2), isEvent: true),
             TaskItem(title: "図書館に本を返す", plannedAt: day(-1)),
-            TaskItem(title: "気になる資料を読む", effort: .medium)
+            TaskItem(title: "気になる資料を読む", effort: .medium),
+            // 期間タスク: some day from two days ago to ten days on.
+            TaskItem(title: "歯医者の予約を取る", deadline: day(10), effort: .light, createdAt: earlier, periodStart: day(-2))
         ], ideas: [
             Idea(text: "散歩中に聞ける勉強メモを作れそう", notes: [IdeaNote(text: "通勤の15分で聞ける長さにする")])
         ], boardCards: [

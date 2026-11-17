@@ -7,8 +7,11 @@ struct AllTasksView: View {
     @State private var mode: Mode = .tasks
     @State private var search = ""
     @State private var showDone = false
-    /// The projects opened in いつでも, kept between visits (names joined by a separator).
+    /// The projects opened, kept between visits (names joined by a separator).
     @AppStorage("allOpenProjects") private var openProjects = ""
+    /// How the tasks are laid out: by project under the deadlines, or all by nearest deadline.
+    @AppStorage("allTasksOrder") private var order = Order.project.rawValue
+    enum Order: String, CaseIterable { case project = "プロジェクト別", deadline = "締切が近い順" }
     let onOpen: (AgendaItem) -> Void
     let onEditRoutine: (Routine) -> Void
 
@@ -75,6 +78,9 @@ struct AllTasksView: View {
         }
     }
 
+    /// What the person holds, not split by day (the day is a mark on each row; today is the timetable, moving
+    /// days is the week). On top what has a deadline and ★, then everything else by project; or all of it by
+    /// the nearest deadline.
     @ViewBuilder private var taskList: some View {
         let book = store.notebook
         // Top level only: a task in pieces is one card, and a piece is found through its task.
@@ -84,62 +90,31 @@ struct AllTasksView: View {
         }
         // Checked off here a moment ago: keep in place, struck through, until the person leaves.
         let open = matches.filter { !$0.isComplete || store.recentlyDone.contains(AgendaItem(task: $0).id) }
-        let board = TaskBoard()
-        let now = Date()
-        let calendar = Calendar.current
-        // Due today or earlier, ★ or not: above everything.
-        let required = open.filter { task in
-            var reopened = task
-            reopened.completedAt = nil
-            return board.isObligation(reopened, now: now)
-        }
-        // ★ without a day of their own yet, kept together. Those with a day stay on it, marked.
-        let musts = open.filter { $0.isMust && !required.contains($0) && listedDay($0) == nil }
-            .sorted { ($0.deadline ?? .distantFuture, $0.createdAt) < ($1.deadline ?? .distantFuture, $1.createdAt) }
-        let remaining = open.filter { !required.contains($0) && !musts.contains($0) }
-        let byDay = Dictionary(grouping: remaining.filter { listedDay($0) != nil }) { listedDay($0)! }
-        let days = byDay.keys.sorted()
-        let undated = remaining.filter { listedDay($0) == nil }
         let done = matches.filter { $0.isComplete && !open.contains($0) }
             .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
-        // The ★ group stands where its nearest deadline falls among the days: on 11/6 with the nearest on
-        // 11/8, after 11/6 and 11/7. Without a deadline, after the last day, before いつでも.
-        let nearest = musts.compactMap(\.deadline).min().map { calendar.startOfDay(for: $0) }
-        let mustsBefore = nearest.flatMap { day in days.first { $0 >= day } }
-
         let openCount = open.filter { !$0.isComplete }.count
         Text(store.isDemo ? "未完了 \(openCount)件。予定日や調子にかかわらず、すべてここにあります。横にスワイプすると削除できます。" : "未完了 \(openCount)件")
             .font(.caption).foregroundStyle(.secondary)
+        HStack(spacing: 6) {
+            ForEach(Order.allCases, id: \.rawValue) { choice in
+                Button { withAnimation(.snappy) { order = choice.rawValue } } label: {
+                    Text(choice.rawValue).font(.caption.weight(.bold))
+                        .foregroundStyle(order == choice.rawValue ? Color.white : Color.secondary)
+                        .padding(.horizontal, 11).padding(.vertical, 5)
+                        .background(Capsule().fill(order == choice.rawValue ? Palette.accent : Color(uiColor: .secondarySystemGroupedBackground)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(order == choice.rawValue ? .isSelected : [])
+                .accessibilityIdentifier("allOrder-\(choice == .project ? "project" : "deadline")")
+            }
+        }
         if open.isEmpty {
             ContentUnavailableView(search.isEmpty ? "タスクはありません" : "見つかりませんでした", systemImage: "checklist",
                                    description: Text(search.isEmpty ? "右下の＋から、タイトルだけで登録できます。" : "別の言葉で検索してみてください。"))
-        }
-        if !required.isEmpty {
-            SectionHeading(title: "今日までの締切 \(required.count)件", color: Palette.must)
-            ForEach(required) { task in
-                row(task, reason: board.obligationReason(task, now: now), raised: listedDay(task).map(calendar.isDateInToday) == true)
-            }
-        }
-        ForEach(days, id: \.self) { day in
-            if !musts.isEmpty && mustsBefore == day { mustSection(musts, nearest: nearest) }
-            SectionHeading(title: dayTitle(day, now: now))
-            // Today's things are lifted off the page so they stand out from the rest; a task in pieces
-            // with a piece today shows its pieces.
-            ForEach(byDay[day]!.sorted(by: TaskBoard().scheduledOrder)) { task in
-                row(task, raised: calendar.isDateInToday(day), startsOpen: calendar.isDateInToday(day))
-            }
-        }
-        if !musts.isEmpty && mustsBefore == nil { mustSection(musts, nearest: nearest) }
-        if !undated.isEmpty {
-            SectionHeading(title: "いつでも \(undated.count)件", subtitle: "日付を決めていないもの・プロジェクトごと")
-            // Folded by project, those without one first. A search opens them all so every match shows.
-            ForEach(Self.folds(undated), id: \.name) { fold in
-                let open = !search.isEmpty || isOpen(fold.name)
-                foldHeader(fold.name, tasks: fold.tasks, open: open)
-                if open {
-                    ForEach(fold.tasks) { task in row(task).padding(.leading, 14) }
-                }
-            }
+        } else if order == Order.deadline.rawValue {
+            byDeadline(open)
+        } else {
+            byProject(open)
         }
         Toggle("完了したタスクを表示（\(done.count)件）", isOn: $showDone).font(.subheadline).padding(.vertical)
         if showDone {
@@ -153,7 +128,103 @@ struct AllTasksView: View {
         }
     }
 
-    /// いつでも's tasks by project: those without one first, then each project where its first task stands.
+    /// 締切・★ on top: what has a deadline of its own and projects with one (nearest first), then ★ without one.
+    /// Below, everything else by project, those without one first.
+    @ViewBuilder private func byProject(_ open: [TaskItem]) -> some View {
+        let book = store.notebook
+        let now = Date()
+        let calendar = Calendar.current
+        let dated = open.filter { $0.deadline != nil }
+        let musts = open.filter { $0.isMust && $0.deadline == nil }
+            .sorted { (listedDay($0) ?? .distantFuture, $0.createdAt) < (listedDay($1) ?? .distantFuture, $1.createdAt) }
+        // A project's deadline counts once for its open tasks that have none of their own.
+        let projects: [(project: Project, tasks: [TaskItem])] = book.projects.compactMap { project in
+            guard project.deadline != nil else { return nil }
+            let tasks = open.filter { !$0.isComplete && $0.deadline == nil && ProjectBook.key($0.project) == ProjectBook.key(project.name) }
+                .sorted(by: TaskBoard().scheduledOrder)
+            return tasks.isEmpty ? nil : (project, tasks)
+        }
+        let rows = (dated.map { DeadlineEntry.task($0) } + projects.map { DeadlineEntry.project($0.project, tasks: $0.tasks) })
+            .sorted { ($0.due, $0.id) < ($1.due, $1.id) }
+        let top = Set(dated.map(\.id) + musts.map(\.id))
+        let rest = open.filter { !top.contains($0.id) }
+            .sorted { (listedDay($0) ?? .distantFuture, $0.createdAt) < (listedDay($1) ?? .distantFuture, $1.createdAt) }
+        if !rows.isEmpty || !musts.isEmpty {
+            SectionHeading(title: "締切・★ \(dated.count + musts.count)件", subtitle: "締切が近い順", color: Palette.must)
+            ForEach(rows) { entry in
+                switch entry {
+                case .task(let task):
+                    row(task, reason: dueReason(task, now: now), raised: listedDay(task).map(calendar.isDateInToday) == true, showsDay: true)
+                case .project(let project, let tasks):
+                    ProjectDeadlineCard(project: project, tasks: tasks, now: now, onOpen: onOpen)
+                }
+            }
+            ForEach(musts) { task in row(task, showsDay: true) }
+        }
+        ForEach(Self.folds(rest), id: \.name) { fold in
+            let unfolded = !search.isEmpty || isOpen(fold.name)
+            foldHeader(fold.name, tasks: fold.tasks, open: unfolded)
+            if unfolded {
+                ForEach(fold.tasks) { task in
+                    row(task, raised: listedDay(task).map(calendar.isDateInToday) == true, showsDay: true).padding(.leading, 14)
+                }
+            }
+        }
+    }
+
+    /// Everything by the nearest deadline (its own, else its project's); then those without one, by day.
+    @ViewBuilder private func byDeadline(_ open: [TaskItem]) -> some View {
+        let book = store.notebook
+        let now = Date()
+        let calendar = Calendar.current
+        let due: (TaskItem) -> Date? = { task in task.deadline ?? book.projectDeadline(for: task) }
+        let withDue = open.filter { due($0) != nil }.sorted { (due($0)!, $0.createdAt) < (due($1)!, $1.createdAt) }
+        let without = open.filter { due($0) == nil }
+            .sorted { (listedDay($0) ?? .distantFuture, $0.createdAt) < (listedDay($1) ?? .distantFuture, $1.createdAt) }
+        if !withDue.isEmpty {
+            SectionHeading(title: "締切あり \(withDue.count)件", color: Palette.must)
+            ForEach(withDue) { task in
+                row(task, reason: dueReason(task, due: due(task), now: now),
+                    raised: listedDay(task).map(calendar.isDateInToday) == true, showsDay: true)
+            }
+        }
+        if !without.isEmpty {
+            SectionHeading(title: "締切なし \(without.count)件")
+            ForEach(AllTasksView.chainOrdered(without)) { task in
+                row(task, raised: listedDay(task).map(calendar.isDateInToday) == true, showsDay: true)
+            }
+        }
+    }
+
+    /// "今日が締切", "締切を過ぎています", "あと3日" (a project's: "プロジェクトの期限まであと3日").
+    private func dueReason(_ task: TaskItem, due: Date? = nil, now: Date) -> String? {
+        guard let date = due ?? task.deadline else { return nil }
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: date)).day ?? 0
+        let own = task.deadline != nil
+        if days < 0 { return own ? "締切を過ぎています" : "プロジェクトの期限を過ぎています" }
+        if days == 0 { return own ? "今日が締切" : "プロジェクトの期限が今日" }
+        return own ? "あと\(days)日" : "プロジェクトの期限まであと\(days)日"
+    }
+
+    private enum DeadlineEntry: Identifiable {
+        case task(TaskItem)
+        case project(Project, tasks: [TaskItem])
+        var id: String {
+            switch self {
+            case .task(let task): return "task-\(task.id.uuidString)"
+            case .project(let project, _): return "project-\(project.id.uuidString)"
+            }
+        }
+        var due: Date {
+            switch self {
+            case .task(let task): return task.deadline ?? .distantFuture
+            case .project(let project, _): return project.deadline ?? .distantFuture
+            }
+        }
+    }
+
+    /// Tasks by project: those without one first, then each project where its first task stands.
     static func folds(_ tasks: [TaskItem]) -> [(name: String, tasks: [TaskItem])] {
         var order: [String] = []
         var byName: [String: [TaskItem]] = [:]
@@ -201,7 +272,7 @@ struct AllTasksView: View {
         openProjects = names.joined(separator: String(Self.separator))
     }
 
-    /// A project's fold in いつでも: its name and count, and while folded, the next of its tasks.
+    /// A project's fold: its name and count, and while folded, the next of its tasks.
     private func foldHeader(_ name: String, tasks: [TaskItem], open: Bool) -> some View {
         let color = name.isEmpty ? nil : ProjectColor.color(for: store.colorName(forProject: name))
         return Button { withAnimation(.snappy) { toggle(name) } } label: {
@@ -244,19 +315,12 @@ struct AllTasksView: View {
         return task.plannedAt.map { calendar.startOfDay(for: $0) }
     }
 
-    /// ★ not given a day yet, nearest deadline first.
-    @ViewBuilder private func mustSection(_ musts: [TaskItem], nearest: Date?) -> some View {
-        SectionHeading(title: "★ 必須 \(musts.count)件",
-                       subtitle: nearest.map { "日付を決めていないもの。いちばん近い締切 \($0.shortDay)" } ?? "日付を決めていないもの",
-                       color: Palette.must)
-        ForEach(musts) { task in row(task) }
-    }
-
-    @ViewBuilder private func row(_ task: TaskItem, reason: String? = nil, raised: Bool = false, startsOpen: Bool = false) -> some View {
+    @ViewBuilder private func row(_ task: TaskItem, reason: String? = nil, raised: Bool = false, startsOpen: Bool = false,
+                                  showsDay: Bool = false) -> some View {
         if store.hasChildren(task.id) {
             ParentTaskCard(parent: task, reason: reason, startsOpen: startsOpen, raised: raised) { onOpen(AgendaItem(task: $0)) }
         } else {
-            AgendaRow(item: AgendaItem(task: task), reason: reason, style: raised ? .raised : .card, onOpen: onOpen)
+            AgendaRow(item: AgendaItem(task: task), reason: reason, style: raised ? .raised : .card, showsDay: showsDay, onOpen: onOpen)
         }
     }
 
@@ -434,5 +498,94 @@ struct IndexFolders<Content: View>: View {
                                            topTrailingRadius: mode.tabAlignment == .trailing ? 0 : Self.radius)
         return shape.fill(mode.color.opacity(front ? Self.frontTint : Self.backTint))
             .background(shape.fill(Palette.paper))
+    }
+}
+
+/// A project's deadline among the deadlines in すべて: its name opens the tasks that go by it, the flag and
+/// arrow go to its page on the board.
+@MainActor
+struct ProjectDeadlineCard: View {
+    @EnvironmentObject private var store: TaskStore
+    let project: Project
+    let tasks: [TaskItem]
+    let now: Date
+    let onOpen: (AgendaItem) -> Void
+    @State private var open = false
+
+    var body: some View {
+        let color = ProjectColor.color(for: store.colorName(forProject: project.name)) ?? Palette.accent
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Button { withAnimation(.snappy) { open.toggle() } } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "flag.fill").font(.caption).foregroundStyle(color).frame(width: 18)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(left).font(.caption2.weight(.semibold)).foregroundStyle(Palette.must)
+                            HStack(spacing: 6) {
+                                Text(project.name).font(.body.weight(.medium)).lineLimit(1)
+                                Text("\(tasks.count)件").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                                Image(systemName: open ? "chevron.up" : "chevron.down").font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text("プロジェクトの期限 \(project.deadline?.shortDay ?? "")").font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("プロジェクト「\(project.name)」の期限 \(project.deadline?.shortDay ?? "")、締切のないタスク\(tasks.count)件")
+                .accessibilityValue(open ? "展開中" : "折りたたみ")
+                .accessibilityIdentifier("deadlineProject-\(project.name)")
+                // The flag says this goes to the project on the board.
+                Button { store.projectToOpen = ProjectBook.key(project.name) } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "flag.fill").foregroundStyle(color)
+                        Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10).padding(.vertical, 7)
+                    .background(Capsule().fill(color.opacity(0.14)))
+                    .frame(minHeight: 40).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("ボードでプロジェクト「\(project.name)」を開く")
+                .accessibilityIdentifier("deadlineProjectBoard-\(project.name)")
+            }
+            .padding(.vertical, 9).padding(.horizontal, 12)
+            if open {
+                ForEach(tasks) { task in
+                    Button { onOpen(AgendaItem(task: task)) } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: task.isMust ? "star.fill" : "circle").font(.system(size: 7))
+                                .foregroundStyle(task.isMust ? Palette.must : Color.secondary).frame(width: 14)
+                            Text(task.title).fontWeight(task.isMust ? .bold : .regular)
+                                .foregroundStyle(task.isMust ? Palette.must : Color.primary).lineLimit(1)
+                            Spacer(minLength: 0)
+                            if let day = task.plannedAt {
+                                Text(day.shortDay).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                            }
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        }
+                        .font(.subheadline).frame(minHeight: 36).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 38).padding(.trailing, 12)
+                }
+                .padding(.bottom, 6)
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color(uiColor: .secondarySystemGroupedBackground)))
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 3).padding(.vertical, 10)
+        }
+    }
+
+    /// "あと3日", "今日まで", "期限を過ぎています".
+    private var left: String {
+        guard let due = project.deadline else { return "" }
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: due)).day ?? 0
+        return days < 0 ? "期限を過ぎています" : days == 0 ? "今日が期限" : "あと\(days)日"
     }
 }

@@ -79,7 +79,10 @@ struct ParentTaskCard: View {
                                 if parent.isMust {
                                     Image(systemName: "star.fill").font(.caption2).foregroundStyle(Palette.must).accessibilityLabel("必須")
                                 }
-                                if let deadline = parent.deadline, !parent.isComplete {
+                                if let period = parent.period, !parent.isComplete {
+                                    Text("期間 \(period.text())").font(.caption2.weight(.semibold)).foregroundStyle(Palette.accent)
+                                        .monospacedDigit()
+                                } else if let deadline = parent.deadline, !parent.isComplete {
                                     Text("締切 \(deadline.shortDay)").font(.caption2.weight(.semibold)).foregroundStyle(Palette.must)
                                 }
                                 if !parent.project.isEmpty { ProjectTag(name: parent.project) }

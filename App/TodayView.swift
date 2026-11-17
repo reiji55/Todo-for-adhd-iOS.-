@@ -63,12 +63,12 @@ struct TodayView: View {
         return LazyVStack(alignment: .leading, spacing: 10) {
             DaySwitcher(offset: $dayOffset, now: now)
             SectionHeading(title: "\(DaySwitcher.name(for: dayOffset))の時間割")
-            if items.isEmpty {
+            if items.isEmpty && held.isEmpty {
                 Text("\(DaySwitcher.name(for: dayOffset))の予定はありません。")
                     .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 6)
             }
-            if !timed.isEmpty {
-                TimedSchedule(items: timed, held: held, now: now, showsNow: false, onOpen: onOpen).padding(.bottom, 6)
+            if !timed.isEmpty || !held.isEmpty {
+                TimedSchedule(items: timed, held: held, now: now, showsNow: false, onOpen: onOpen, allHeld: true).padding(.bottom, 6)
             }
             if !untimed.isEmpty {
                 Text("時間を決めていない").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, timed.isEmpty ? 0 : 8)
@@ -93,20 +93,20 @@ struct TodayView: View {
             return copy
         }
         let calendar = Calendar.current
-        // Held time (sleep, work) is context for the week grid, not something to do; keep it out of this list.
-        let agenda = Agenda.items(on: now, tasks: tasks, routines: store.notebook.routines).filter { !$0.isBlock }
-        // Finished things stay where they were, struck through, so a look back at the day shows what it held.
-        let visible = agenda
+        let day = Agenda.items(on: now, tasks: tasks, routines: store.notebook.routines)
+        // Held time (sleep, work) is laid out as bands, not as things to do.
+        let agenda = day.filter { !$0.isBlock }
+        let held = day.filter { $0.isBlock && $0.slot != nil }
+        let onToday: (TaskItem) -> Bool = { task in
+            task.plannedAt.map { calendar.isDate($0, inSameDayAs: now) } == true
+                || store.children(of: task.id).contains { !$0.isComplete && $0.plannedAt.map { calendar.isDate($0, inSameDayAs: now) } == true }
+        }
         // Today's planned work is already in the timetable; this list is what would otherwise be missed.
         // A task in pieces is left out when one of its pieces is in today's timetable.
-        let required = board.obligations(placement, now: now).filter { task in
-            task.plannedAt.map { calendar.isDate($0, inSameDayAs: now) } != true
-                && !store.children(of: task.id).contains { !$0.isComplete && $0.plannedAt.map { calendar.isDate($0, inSameDayAs: now) } == true }
-        }
-        // ★ kept together below today's plan, folded: those not already on it above.
-        let musts = board.musts(placement, now: now).filter { task in
-            task.plannedAt.map { calendar.isDate($0, inSameDayAs: now) } != true
-                && !store.children(of: task.id).contains { !$0.isComplete && $0.plannedAt.map { calendar.isDate($0, inSameDayAs: now) } == true }
+        let required = board.obligations(placement, now: now).filter { !onToday($0) }
+        // 期間タスク in their stretch today, not on today's list already and not due today (that is above).
+        let stretch = store.notebook.periodTasks(on: now).filter { task in
+            !onToday(task) && !required.contains { $0.id == task.id }
         }
         let leftovers = board.pastPlanned(tasks, now: now)
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
@@ -148,25 +148,43 @@ struct TodayView: View {
                 Spacer()
                 GapSuggestionToggle()
             }
-            if visible.isEmpty {
-                Text(agenda.isEmpty ? "今日の予定はまだありません。右下の＋から足せます。" : "今日の予定はすべて終わりました。")
+            if agenda.isEmpty && held.isEmpty {
+                Text("今日の予定はまだありません。右下の＋から足せます。")
                     .font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 6)
             }
-            // Timed things sit on a raised timeline; the rest are outlined, not placed yet.
-            let timed = visible.filter { $0.slot != nil }
-            let untimed = visible.filter { $0.slot == nil }
-            if !timed.isEmpty {
-                TimedSchedule(items: timed, held: Agenda.items(on: now, tasks: tasks, routines: store.notebook.routines)
-                    .filter { $0.isBlock && $0.slot != nil }, now: now, showsNow: true, onOpen: onOpen,
-                              suggestions: Self.gapSuggestions(store.notebook, now: now)).padding(.bottom, 6)
+            // Timed things sit on a raised timeline, with the held time of the day as bands between them; the
+            // rest are outlined, not placed yet.
+            let timed = agenda.filter { $0.slot != nil }
+            let untimed = agenda.filter { $0.slot == nil }
+            if !timed.isEmpty || !held.isEmpty {
+                TimedSchedule(items: timed, held: held, now: now, showsNow: true, onOpen: onOpen,
+                              suggestions: Self.gapSuggestions(store.notebook, now: now), allHeld: true).padding(.bottom, 6)
             }
             if !untimed.isEmpty {
                 Text("時間を決めていない").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, timed.isEmpty ? 0 : 8)
                 ForEach(untimed) { item in UntimedAgendaRow(item: item, onOpen: onOpen) }
             }
-            if !musts.isEmpty { MustFolder(tasks: musts, now: now, onOpen: onOpen).padding(.top, 6) }
-            UpcomingDeadlines(now: now, onOpen: onOpen)
-
+            if !stretch.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Text("期間中").font(.subheadline.weight(.bold))
+                        Text("\(stretch.count)件").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                    }
+                    ForEach(stretch) { task in
+                        if store.hasChildren(task.id) {
+                            ParentTaskCard(parent: task, reason: task.period.map { PeriodTag.left($0, now: now) }) { onOpen(AgendaItem(task: $0)) }
+                        } else {
+                            AgendaRow(item: AgendaItem(task: task), reason: task.period.map { PeriodTag.left($0, now: now) },
+                                      onToday: { store.putOnToday(task, now: now) }, onOpen: onOpen)
+                        }
+                    }
+                }
+                .padding(.top, 8)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("periodSection")
+            }
+            UndatedTasksLink(onOpen: onOpen)
+                .padding(.top, 12)
         }
         .frame(maxWidth: 760).frame(maxWidth: .infinity)
     }
@@ -213,75 +231,11 @@ private struct TimetableFolder<Content: View>: View {
     }
 }
 
-/// ★ tasks, what cannot be dropped, folded below today's plan. Folded, it still says how many there are
-/// and how near the nearest deadline is; a tap opens the list, nearest deadline first.
-@MainActor
-private struct MustFolder: View {
-    @EnvironmentObject private var store: TaskStore
-    let tasks: [TaskItem]
-    let now: Date
-    let onOpen: (AgendaItem) -> Void
-    @State private var open = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button { withAnimation(.snappy) { open.toggle() } } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "chevron.down").font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary).rotationEffect(.degrees(open ? 180 : 0))
-                    Text("必須").font(.headline).foregroundStyle(Palette.must)
-                    Text("\(tasks.count)件").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary).monospacedDigit()
-                    Spacer(minLength: 6)
-                    if let nearest {
-                        Text(nearest).font(.caption.weight(.semibold)).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                }
-                .padding(.horizontal, 14).frame(minHeight: 48)
-                .background(RaisedCardBackground(cornerRadius: 16))
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("必須 \(tasks.count)件。\(nearest ?? "")")
-            .accessibilityIdentifier("mustFolder")
-            .accessibilityValue(open ? "展開中" : "折りたたみ")
-            .accessibilityHint(open ? "たたみます" : "広げます")
-            if open {
-                ForEach(tasks) { task in
-                    let current = store.task(task.id) ?? task
-                    if store.hasChildren(task.id) {
-                        ParentTaskCard(parent: current, reason: plan(of: current)) { onOpen(AgendaItem(task: $0)) }
-                    } else {
-                        AgendaRow(item: AgendaItem(task: current), reason: plan(of: current), onOpen: onOpen)
-                    }
-                }
-                .transition(.opacity)
-            }
-        }
-    }
-
-    /// "次の締切 11/08（あと2日）".
-    private var nearest: String? {
-        guard let due = tasks.compactMap(\.deadline).min() else { return nil }
-        let calendar = Calendar.current
-        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: due)).day ?? 0
-        return "次の締切 \(due.shortDay)（\(days <= 1 ? "明日" : "あと\(days)日")）"
-    }
-
-    /// The day it is planned for, when it has one: ahead, or left from before.
-    private func plan(of task: TaskItem) -> String? {
-        let day = store.hasChildren(task.id)
-            ? store.children(of: task.id).filter { !$0.isComplete }.compactMap(\.plannedAt).min()
-            : task.plannedAt
-        guard let day else { return nil }
-        let calendar = Calendar.current
-        return calendar.startOfDay(for: day) < calendar.startOfDay(for: now) ? "\(day.shortDay) から残っている" : "\(day.shortDay) にやる予定"
-    }
-}
-
 /// Cards share a rail, but each connector stops before the control so an empty circle stays empty.
 /// The day's timed things on their timeline. Those that fall in time held for something else (sleep, work)
 /// sit together on a faint hatched band named for it, so a task put into working hours shows as such.
-/// Held time with nothing in it is left to the week and 今日の流れ.
+/// With `allHeld`, held time with nothing in it shows too, as a band of its own, and on today the free
+/// time between bands and things shows as a gap, so a day held only for sleep and work still reads.
 @MainActor
 struct TimedSchedule: View {
     let items: [AgendaItem]
@@ -291,83 +245,172 @@ struct TimedSchedule: View {
     let onOpen: (AgendaItem) -> Void
     /// Today only: the free time between things shows as a gap, with one of these when suggestions are on.
     var suggestions: [NowPick]? = nil
+    /// Held time with nothing in it shows as an empty band.
+    var allHeld = false
     @AppStorage(GapSuggestionToggle.key) private var suggestionsOn = true
 
     struct Part: Identifiable {
         let id: String
         let block: AgendaItem?
         var items: [AgendaItem]
+        /// From the band's start (or the first thing's) to the band's end or the last thing's, whichever is later.
+        var start: Int { block?.slot?.start ?? items.first?.slot?.start ?? 0 }
+        var end: Int { max(block?.slot?.end ?? 0, items.compactMap { $0.slot?.end }.max() ?? 0) }
     }
 
-    /// Runs of things in the same held time (or in none), in order.
-    static func parts(_ items: [AgendaItem], held: [AgendaItem]) -> [Part] {
-        var parts: [Part] = []
-        for item in items {
-            guard let start = item.slot?.start else { continue }
-            let block = held.first { block in
+    /// Runs of things in the same held time (or in none), in order. With `allHeld`, held time with nothing in
+    /// it is a part of its own, which also ends a run of free things around it.
+    static func parts(_ items: [AgendaItem], held: [AgendaItem], allHeld: Bool = false) -> [Part] {
+        func holder(_ start: Int) -> AgendaItem? {
+            held.first { block in
                 guard let slot = block.slot else { return false }
                 return slot.start <= start && start < slot.end
             }
+        }
+        let used = Set(items.compactMap { item in item.slot.flatMap { holder($0.start)?.id } })
+        let empty = allHeld ? held.filter { $0.slot != nil && !used.contains($0.id) } : []
+        // In order of start; held time first when both start together.
+        let entries = (items.compactMap { item in item.slot.map { (start: $0.start, isBlock: false, item: item) } }
+            + empty.compactMap { block in block.slot.map { (start: $0.start, isBlock: true, item: block) } })
+            .enumerated()
+            .sorted { a, b in
+                if a.element.start != b.element.start { return a.element.start < b.element.start }
+                if a.element.isBlock != b.element.isBlock { return a.element.isBlock }
+                return a.offset < b.offset
+            }
+            .map { $0.element }
+        var parts: [Part] = []
+        for entry in entries {
+            if entry.isBlock {
+                parts.append(Part(id: "held-\(entry.item.id)-empty", block: entry.item, items: []))
+                continue
+            }
+            let block = holder(entry.start)
             if let last = parts.last, last.block?.id == block?.id {
-                parts[parts.count - 1].items.append(item)
+                parts[parts.count - 1].items.append(entry.item)
             } else {
-                parts.append(Part(id: (block.map { "held-\($0.id)-" } ?? "free-") + item.id, block: block, items: [item]))
+                parts.append(Part(id: (block.map { "held-\($0.id)-" } ?? "free-") + entry.item.id, block: block, items: [entry.item]))
             }
         }
         return parts
     }
 
-    /// The part and the place in it where the line for now goes: before the first thing still to start,
-    /// kept out of a band whose time has not begun or has already ended.
-    static func nowPlace(_ parts: [Part], minute: Int) -> (part: Int, index: Int)? {
-        guard !parts.isEmpty else { return nil }
-        let all = parts.flatMap(\.items)
-        let next = all.firstIndex { ($0.slot?.start ?? Int.max) > minute } ?? all.count
-        var part = parts.count - 1, index = parts[part].items.count
-        var seen = 0
-        for (k, p) in parts.enumerated() {
-            if next < seen + p.items.count { part = k; index = next - seen; break }
-            seen += p.items.count
-        }
-        if index == 0, part > 0 {
-            let notYet = parts[part].block?.slot.map { minute < $0.start } ?? false
-            let stillIn = parts[part - 1].block?.slot.map { minute < $0.end } ?? false
-            if notYet || stillIn { part -= 1; index = parts[part].items.count }
-        }
-        return (part, index)
-    }
+    /// Where the line for now goes: in a part whose time holds now (before its first thing still to start),
+    /// before a part that has not begun, or after the last.
+    enum NowSpot: Equatable { case inPart(Int, Int), before(Int), after }
 
-    var body: some View {
-        let parts = Self.parts(items, held: held)
-        let place = showsNow ? Self.nowPlace(parts, minute: NowView.minute(of: now)) : nil
-        VStack(spacing: 12) {
-            ForEach(Array(parts.enumerated()), id: \.element.id) { k, part in
-                let nowAt = place.map { $0.part == k ? $0.index : -1 } ?? -1
-                if let block = part.block, let slot = block.slot {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 6) {
-                            RoundedRectangle(cornerRadius: 2).fill(HeldFill.label.opacity(0.6)).frame(width: 8, height: 8)
-                            Text(block.title).lineLimit(1)
-                            Text(slot.label).fontWeight(.semibold).foregroundStyle(HeldFill.label.opacity(0.8)).monospacedDigit()
-                        }
-                        .font(.caption.weight(.bold)).foregroundStyle(HeldFill.label)
-                        .padding(.leading, 6)
-                        .accessibilityElement(children: .combine)
-                        TimelinePanel(items: part.items, now: now, showsNow: showsNow, nowAt: nowAt, onOpen: onOpen)
-                    }
-                    .padding(.horizontal, 6).padding(.top, 10).padding(.bottom, 8)
-                    .background(HeldFill(cornerRadius: 16))
-                } else if let suggestions {
-                    freePart(part, nowAt: nowAt, suggestions: suggestions, gapsBefore: gapCount(before: k, parts: parts))
-                } else {
-                    TimelinePanel(items: part.items, now: now, showsNow: showsNow, nowAt: nowAt, onOpen: onOpen)
-                }
+    static func nowSpot(_ parts: [Part], minute: Int) -> NowSpot? {
+        guard !parts.isEmpty else { return nil }
+        for (k, part) in parts.enumerated() {
+            if minute < part.start { return .before(k) }
+            if minute < part.end {
+                return .inPart(k, part.items.firstIndex { ($0.slot?.start ?? Int.max) > minute } ?? part.items.count)
             }
         }
+        return .after
     }
 
     /// Free time of at least this many minutes between two things shows as a gap.
     static let gapMinutes = 20
+
+    /// The free time still to come before each part, and after the last until the day ends. Today only.
+    struct GapPlan {
+        var before: [Int: (start: Int, end: Int)] = [:]
+        var after: (start: Int, end: Int)?
+    }
+
+    static func gapPlan(_ parts: [Part], minute: Int) -> GapPlan {
+        var plan = GapPlan()
+        var reach = minute
+        for (k, part) in parts.enumerated() {
+            let start = max(reach, minute)
+            if part.start - start >= gapMinutes { plan.before[k] = (start, part.start) }
+            reach = max(reach, part.end)
+        }
+        let start = max(reach, minute)
+        if !parts.isEmpty, 24 * 60 - start >= gapMinutes { plan.after = (start, 24 * 60) }
+        return plan
+    }
+
+    var body: some View {
+        let parts = Self.parts(items, held: held, allHeld: allHeld)
+        let minute = NowView.minute(of: now)
+        let spot = showsNow ? Self.nowSpot(parts, minute: minute) : nil
+        // Free time between parts shows on today's timetable when held time is laid out in full.
+        let plan = suggestions != nil && allHeld ? Self.gapPlan(parts, minute: minute) : GapPlan()
+        let gapBase = gapIndexes(parts, plan: plan)
+        VStack(spacing: 12) {
+            ForEach(Array(parts.enumerated()), id: \.element.id) { k, part in
+                let gap = plan.before[k]
+                // Between parts, the line for now stands above the free time that begins now, or above a band.
+                if spot == .before(k), part.block != nil || gap != nil { nowLine }
+                if let gap, let suggestions {
+                    FreeGapRow(start: gap.start, end: gap.end, day: now, suggestions: suggestions,
+                               index: gapBase.before[k] ?? 0, showsSuggestion: suggestionsOn, onOpen: onOpen)
+                }
+                partView(part, nowAt: nowAt(spot, part: k, of: parts, plan: plan), gapsBefore: gapBase.inside[k] ?? 0)
+            }
+            if spot == .after, parts.last?.block != nil || plan.after != nil { nowLine }
+            if let gap = plan.after, let suggestions {
+                FreeGapRow(start: gap.start, end: gap.end, day: now, suggestions: suggestions,
+                           index: gapBase.after, showsSuggestion: suggestionsOn, onOpen: onOpen)
+            }
+        }
+    }
+
+    /// The line for now inside a part's own timeline, or -1 when it stands elsewhere.
+    private func nowAt(_ spot: NowSpot?, part k: Int, of parts: [Part], plan: GapPlan) -> Int {
+        switch spot {
+        case .inPart(k, let index)?: return index
+        case .before(k)? where parts[k].block == nil && plan.before[k] == nil: return 0
+        case .after? where k == parts.count - 1 && parts[k].block == nil && plan.after == nil: return parts[k].items.count
+        default: return -1
+        }
+    }
+
+    /// Which gap of the day each one is, in order, so each takes a different suggestion.
+    private func gapIndexes(_ parts: [Part], plan: GapPlan) -> (before: [Int: Int], inside: [Int: Int], after: Int) {
+        guard suggestions != nil else { return ([:], [:], 0) }
+        var before: [Int: Int] = [:], inside: [Int: Int] = [:]
+        var count = 0
+        for (k, part) in parts.enumerated() {
+            if plan.before[k] != nil { before[k] = count; count += 1 }
+            inside[k] = count
+            if part.block == nil { count += gaps(in: part).count }
+        }
+        return (before, inside, count)
+    }
+
+    @ViewBuilder private func partView(_ part: Part, nowAt: Int, gapsBefore: Int) -> some View {
+        if let block = part.block, let slot = block.slot {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 2).fill(HeldFill.label.opacity(0.6)).frame(width: 8, height: 8)
+                    Text(block.title).lineLimit(1)
+                    Text(slot.label).fontWeight(.semibold).foregroundStyle(HeldFill.label.opacity(0.8)).monospacedDigit()
+                }
+                .font(.caption.weight(.bold)).foregroundStyle(HeldFill.label)
+                .padding(.leading, 6)
+                .accessibilityElement(children: .combine)
+                if !part.items.isEmpty || nowAt >= 0 {
+                    TimelinePanel(items: part.items, now: now, showsNow: showsNow, nowAt: nowAt, onOpen: onOpen)
+                }
+            }
+            .padding(.horizontal, 6).padding(.top, 10).padding(.bottom, part.items.isEmpty && nowAt < 0 ? 10 : 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(HeldFill(cornerRadius: 16))
+            .accessibilityIdentifier(part.items.isEmpty ? "heldBand" : "heldPart")
+        } else if let suggestions {
+            freePart(part, nowAt: nowAt, suggestions: suggestions, gapsBefore: gapsBefore)
+        } else {
+            TimelinePanel(items: part.items, now: now, showsNow: showsNow, nowAt: nowAt, onOpen: onOpen)
+        }
+    }
+
+    /// The line for now on its own, between parts.
+    private var nowLine: some View {
+        TimelinePanel(items: [], now: now, showsNow: true, nowAt: 0, onOpen: onOpen)
+    }
 
     /// Where a free part breaks: after the item at each index, the free time that follows it (still to come).
     func gaps(in part: Part) -> [(after: Int, start: Int, end: Int)] {
@@ -388,10 +431,6 @@ struct TimedSchedule: View {
     static func line(_ nowAt: Int, lower: Int, upper: Int, last: Bool) -> Int {
         guard nowAt >= lower, nowAt < upper || (last && nowAt == upper) else { return -1 }
         return nowAt - lower
-    }
-
-    private func gapCount(before part: Int, parts: [Part]) -> Int {
-        parts.prefix(part).filter { $0.block == nil }.reduce(0) { $0 + gaps(in: $1).count }
     }
 
     /// A free part, broken into panels at its gaps. The line for now stays in the panel it falls in.
@@ -716,141 +755,6 @@ struct RaisedPanel: View {
             .shadow(color: dark ? Color.white.opacity(0.05) : .white, radius: 9, x: -5, y: -5)
             .overlay(shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(dark ? 0.1 : 0.85), Color.white.opacity(0)],
                                                        startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
-    }
-}
-
-@MainActor
-private struct UpcomingDeadlines: View {
-    @EnvironmentObject private var store: TaskStore
-    let now: Date
-    let onOpen: (AgendaItem) -> Void
-    /// Projects whose tasks are shown under their row.
-    @State private var opened: Set<UUID> = []
-
-    var body: some View {
-        let calendar = Calendar.current
-        let book = store.notebook
-        let later = { (due: Date) in calendar.startOfDay(for: due) > calendar.startOfDay(for: now) }
-        let upcoming = book.tasks.filter { task in
-            guard !task.isComplete, let due = task.deadline else { return false }
-            return later(due)
-        }
-        // A project's deadline counts once for all its open tasks that have none of their own.
-        let projects: [(project: Project, tasks: [TaskItem])] = book.projects.compactMap { project in
-            guard let due = project.deadline, later(due) else { return nil }
-            let tasks = book.tasks.filter { !$0.isComplete && book.projectDeadline(for: $0) != nil
-                && ProjectBook.key($0.project) == ProjectBook.key(project.name) }
-                .sorted(by: TaskBoard().scheduledOrder)
-            return tasks.isEmpty ? nil : (project, tasks)
-        }
-        let rows: [DeadlineRow] = (upcoming.map { DeadlineRow.task($0) } + projects.map { DeadlineRow.project($0.project, tasks: $0.tasks) })
-            .sorted { $0.due < $1.due }
-        if !rows.isEmpty {
-            TimetableFolder(title: "これからの締切", count: rows.count, identifier: "deadlineFolder",
-                            detail: rows.first.map { "次 \($0.due.shortDay)" }) {
-            ForEach(rows.prefix(5)) { row in
-                switch row {
-                case .project(let project, let tasks):
-                    projectRow(project, tasks: tasks)
-                case .task(let task):
-                Button { onOpen(AgendaItem(task: task)) } label: {
-                    HStack(spacing: 8) {
-                        Text(task.deadline?.shortDay ?? "").font(.clock).foregroundStyle(Palette.must)
-                        // ★ in bold and the color of must; the mark's place is kept so the names line up.
-                        Image(systemName: "star.fill").font(.caption).foregroundStyle(Palette.must)
-                            .opacity(task.isMust ? 1 : 0).frame(width: 14)
-                            .accessibilityHidden(!task.isMust).accessibilityLabel("必須")
-                        Text(task.title).fontWeight(task.isMust ? .bold : .regular)
-                            .foregroundStyle(task.isMust ? Palette.must : Color.primary).lineLimit(1)
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right").foregroundStyle(.secondary)
-                    }.font(.subheadline).frame(minHeight: 40)
-                }
-                }
-            }
-            }
-        }
-    }
-
-    /// A project's deadline: its name opens the tasks it holds, the flag and arrow go to its page on the board.
-    @ViewBuilder
-    private func projectRow(_ project: Project, tasks: [TaskItem]) -> some View {
-        let open = opened.contains(project.id)
-        let color = ProjectColor.color(for: store.colorName(forProject: project.name)) ?? Palette.accent
-        HStack(spacing: 8) {
-            Button {
-                withAnimation(.snappy) {
-                    if open { opened.remove(project.id) } else { opened.insert(project.id) }
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    Text(project.deadline?.shortDay ?? "").font(.clock).foregroundStyle(Palette.must)
-                    Circle().fill(color).frame(width: 9, height: 9).frame(width: 14).accessibilityHidden(true)
-                    Text(project.name).lineLimit(1)
-                    Text("\(tasks.count)件").foregroundStyle(.secondary).monospacedDigit()
-                    Image(systemName: open ? "chevron.up" : "chevron.down").font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 0)
-                }
-                .frame(minHeight: 40).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("プロジェクト「\(project.name)」の期限 \(project.deadline?.shortDay ?? "")、締切のないタスク\(tasks.count)件")
-            .accessibilityValue(open ? "展開中" : "折りたたみ")
-            .accessibilityIdentifier("deadlineProject-\(project.name)")
-            // The flag says this goes to the project on the board.
-            Button { store.projectToOpen = ProjectBook.key(project.name) } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: "flag.fill").foregroundStyle(color)
-                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
-                }
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 10).padding(.vertical, 7)
-                .background(Capsule().fill(color.opacity(0.14)))
-                .frame(minHeight: 40).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("ボードでプロジェクト「\(project.name)」を開く")
-            .accessibilityIdentifier("deadlineProjectBoard-\(project.name)")
-        }
-        .font(.subheadline)
-        if open {
-            ForEach(tasks) { task in
-                Button { onOpen(AgendaItem(task: task)) } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: task.isMust ? "star.fill" : "circle").font(.system(size: 7))
-                            .foregroundStyle(task.isMust ? Palette.must : Color.secondary).frame(width: 14)
-                        Text(task.title).fontWeight(task.isMust ? .bold : .regular)
-                            .foregroundStyle(task.isMust ? Palette.must : Color.primary).lineLimit(1)
-                        Spacer(minLength: 0)
-                        if let day = task.plannedAt {
-                            Text(day.shortDay).font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                        }
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-                    }
-                    .font(.subheadline).frame(minHeight: 36).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.leading, 52)
-            }
-        }
-    }
-
-    private enum DeadlineRow: Identifiable {
-        case task(TaskItem)
-        case project(Project, tasks: [TaskItem])
-        var id: String {
-            switch self {
-            case .task(let task): return "task-\(task.id.uuidString)"
-            case .project(let project, _): return "project-\(project.id.uuidString)"
-            }
-        }
-        var due: Date {
-            switch self {
-            case .task(let task): return task.deadline ?? .distantFuture
-            case .project(let project, _): return project.deadline ?? .distantFuture
-            }
-        }
     }
 }
 

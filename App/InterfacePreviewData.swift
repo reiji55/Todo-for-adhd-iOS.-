@@ -29,7 +29,9 @@ enum InterfacePreviewData {
                 TaskItem(title: "洗濯物をたたむ", plannedAt: now, createdAt: now),
                 TaskItem(title: "提出期限の確認", deadline: now, createdAt: now),
                 TaskItem(title: "必須の確認", isMust: true, createdAt: now),
-                TaskItem(title: "来週の資料", deadline: tomorrow, createdAt: now)
+                TaskItem(title: "来週の資料", deadline: tomorrow, createdAt: now),
+                TaskItem(title: "期間のあるタスク", deadline: calendar.date(byAdding: .day, value: 5, to: now), createdAt: now,
+                         periodStart: calendar.date(byAdding: .day, value: -2, to: now))
             ])
         }
         let parent = TaskItem(title: "案内メールを送る", deadline: now, isMust: true, project: "仕事", createdAt: now.addingTimeInterval(-1000))

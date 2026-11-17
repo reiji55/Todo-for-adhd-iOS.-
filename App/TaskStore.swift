@@ -528,6 +528,13 @@ final class TaskStore: ObservableObject {
         }
     }
 
+    /// 今日へ: a task not on any day yet goes on today, without a time. A task in pieces sends its next piece.
+    func putOnToday(_ task: TaskItem, now: Date = Date()) {
+        let target = hasChildren(task.id) ? notebook.nextChild(of: task.id) : task
+        guard let target else { return }
+        if move(AgendaItem(task: target), to: now, slot: nil) { offerUndo("「\(target.title)」を今日に入れました") }
+    }
+
     // MARK: Leftovers from earlier days
 
     func plan(_ ids: Set<UUID>, on day: Date?) {

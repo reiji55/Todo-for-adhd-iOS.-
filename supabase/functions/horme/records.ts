@@ -24,6 +24,8 @@ export type Task = {
   listItemID?: string | null;
   /** つながり: the task that comes right before this one. It waits for that one before it is suggested. */
   follows?: string | null;
+  /** 期間タスク: the first day of the stretch it is done in; the stretch ends on its deadline. */
+  periodStart?: string | null;
 };
 /** A list of concrete things kept for later (places, books, groceries). Not a plan. `updatedAt`: when the
  *  list itself last changed (renamed, or a thing removed). */
@@ -224,6 +226,8 @@ export type AgendaItem = {
   /** つながり: the task right before this one (waiting while it is open), and the next one not done yet. */
   after?: { id: string; title: string; done: boolean };
   next?: { id: string; title: string };
+  /** 期間タスク: the stretch it is to be done in (YYYY-MM-DD, both days included). */
+  period?: { from: string; to: string };
   /** For a task or event made from one thing on a list: that thing. */
   fromItem?: {
     id: string; title: string; list: string;
@@ -318,6 +322,7 @@ export function taskItem(t: Task, book?: Book): AgendaItem {
       const next = nextInChain(book, t.id);
       return next ? { id: next.id, title: next.title } : undefined;
     })() : undefined,
+    period: t.periodStart && t.deadline ? { from: dayKey(t.periodStart), to: dayKey(t.deadline) } : undefined,
     pieces: pieces.length ? pieces.map((p) => ({
       id: p.id, title: p.title, done: !!p.completedAt, date: p.plannedAt ? dayKey(p.plannedAt) : "anytime",
       time: p.scheduledTime || undefined,

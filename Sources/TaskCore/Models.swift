@@ -79,6 +79,9 @@ public struct TaskItem: Codable, Identifiable, Equatable {
     /// The task that comes right before this one (つながり). Top-level tasks only; a task in pieces keeps its
     /// order in its pieces. It waits for that one to be done before it is suggested.
     public var follows: UUID?
+    /// 期間タスク: the first day of the stretch it is to be done in; the stretch ends on its deadline. Before
+    /// that day it is not suggested. Top-level tasks only, like a deadline.
+    public var periodStart: Date?
 
     public init(id: UUID = UUID(), title: String, plannedAt: Date? = nil,
                 scheduledTime: String = "", deadline: Date? = nil, isMust: Bool = false,
@@ -87,7 +90,7 @@ public struct TaskItem: Codable, Identifiable, Equatable {
                 createdAt: Date = Date(), lastStartedAt: Date? = nil, completedAt: Date? = nil,
                 suggestionDeferredUntil: Date? = nil, notify: Bool = true, isEvent: Bool = false, milestoneID: UUID? = nil,
                 parentID: UUID? = nil, rank: Int = 0, continuationNote: String = "",
-                listID: UUID? = nil, listItemID: UUID? = nil, follows: UUID? = nil) {
+                listID: UUID? = nil, listItemID: UUID? = nil, follows: UUID? = nil, periodStart: Date? = nil) {
         self.id = id; self.title = title; self.plannedAt = plannedAt
         self.scheduledTime = scheduledTime; self.deadline = deadline; self.isMust = isMust
         self.effort = effort; self.project = project; self.memo = memo; self.handoff = handoff
@@ -97,6 +100,7 @@ public struct TaskItem: Codable, Identifiable, Equatable {
         self.milestoneID = milestoneID; self.parentID = parentID; self.rank = rank
         self.continuationNote = continuationNote
         self.listID = listID; self.listItemID = listItemID; self.follows = follows
+        self.periodStart = periodStart
     }
     public var isComplete: Bool { completedAt != nil }
     public var nextStep: Step? { steps.first { !$0.isDone } }
@@ -237,7 +241,7 @@ extension TaskItem {
     enum CodingKeys: String, CodingKey {
         case id, title, plannedAt, scheduledTime, deadline, isMust, effort, project, memo, handoff
         case resumeNote, steps, createdAt, lastStartedAt, completedAt, suggestionDeferredUntil, notify, isEvent, milestoneID
-        case parentID, rank, continuationNote, listID, listItemID, follows
+        case parentID, rank, continuationNote, listID, listItemID, follows, periodStart
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -263,7 +267,8 @@ extension TaskItem {
                   continuationNote: try text(.continuationNote),
                   listID: try c.decodeIfPresent(UUID.self, forKey: .listID),
                   listItemID: try c.decodeIfPresent(UUID.self, forKey: .listItemID),
-                  follows: try c.decodeIfPresent(UUID.self, forKey: .follows))
+                  follows: try c.decodeIfPresent(UUID.self, forKey: .follows),
+                  periodStart: try c.decodeIfPresent(Date.self, forKey: .periodStart))
     }
 }
 

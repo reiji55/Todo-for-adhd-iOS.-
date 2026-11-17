@@ -111,13 +111,13 @@ struct TaskEditor: View {
                             .buttonStyle(.borderless)
                             .accessibilityLabel("必須")
                             .accessibilityAddTraits(task.isMust ? .isSelected : [])
-                            .accessibilityHint("落とせないものの印です。時間割の下の「必須」にまとまり、候補で先に出ます")
+                            .accessibilityHint("落とせないものの印です。「すべて」の上の「締切・★」にまとまり、候補で先に出ます")
                         }
                     }
                 } header: {
                     projectHeader
                 } footer: {
-                    if task.isMust && !isPiece { Text("★必須：落とせないものの印。今日の上段には出さず、時間割の下の「必須」にまとめます。締切の日が来たら上段に出ます。").onlyInDemo() }
+                    if task.isMust && !isPiece { Text("★必須：落とせないものの印。「すべて」の上の「締切・★」にまとめ、候補で先に出します。締切の日が来たら時間割の上段に出ます。").onlyInDemo() }
                 }
                 Section {
                     if isWhole {
@@ -141,9 +141,13 @@ struct TaskEditor: View {
                         }
                     }
                     if !task.isEvent && !isPiece {
-                        // Without its own, the task goes by its project's deadline; the row says which.
-                        OptionalDateRow(title: "締切", date: $task.deadline,
-                                        placeholder: projectDeadline.map { "プロジェクトの期限 \($0.shortDay)" } ?? "未定")
+                        // A stretch ends on the deadline, so with one the 期間タスク row says both.
+                        if task.period == nil {
+                            // Without its own, the task goes by its project's deadline; the row says which.
+                            OptionalDateRow(title: "締切", date: $task.deadline,
+                                            placeholder: projectDeadline.map { "プロジェクトの期限 \($0.shortDay)" } ?? "未定")
+                        }
+                        PeriodRow(start: $task.periodStart, end: $task.deadline)
                     }
                 }
                 ListChecklistSection(task: task)
@@ -361,7 +365,7 @@ struct TaskEditor: View {
         task.title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
         // An event is a happening on a day, not a to-do: no must or deadline.
         if task.isEvent {
-            task.isMust = false; task.deadline = nil
+            task.isMust = false; task.deadline = nil; task.periodStart = nil
             if task.plannedAt == nil { task.plannedAt = Date() }
         }
         if task.isEvent || isPiece {

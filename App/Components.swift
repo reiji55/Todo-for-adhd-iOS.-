@@ -143,6 +143,10 @@ struct AgendaRow: View {
     var style: Style = .card
     var showsCheck = true
     var showsChildProgress = false
+    /// In lists not split by day: the day it is planned for, as a small mark.
+    var showsDay = false
+    /// 今日へ at the end of the row, for a task not on today yet.
+    var onToday: (() -> Void)? = nil
     let onOpen: (AgendaItem) -> Void
 
     private var task: TaskItem? {
@@ -177,7 +181,14 @@ struct AgendaRow: View {
                         if item.isMust {
                             Image(systemName: "star.fill").font(.caption2).foregroundStyle(Palette.must).accessibilityLabel("必須")
                         }
-                        if let deadline = task?.deadline, !done {
+                        if showsDay, !done, let day = task?.plannedAt {
+                            Text(DayMark.text(day)).font(.caption2.weight(.semibold)).foregroundStyle(Palette.accent)
+                                .monospacedDigit()
+                        }
+                        if let period = task?.period, !done {
+                            Text("期間 \(period.text())").font(.caption2.weight(.semibold)).foregroundStyle(Palette.accent)
+                                .monospacedDigit()
+                        } else if let deadline = task?.deadline, !done {
                             Text("締切 \(deadline.shortDay)").font(.caption2.weight(.semibold)).foregroundStyle(Palette.must)
                         }
                         if !item.project.isEmpty { ProjectTag(name: item.project) }
@@ -218,6 +229,17 @@ struct AgendaRow: View {
             }.buttonStyle(.plain)
             // The method of a routine (or a task) one tap away, at the end of its row.
             if let card = guide, let openGuide { GuideBookButton(card: card) { openGuide(card.id) } }
+            if let onToday, !done {
+                Button(action: onToday) {
+                    Text("今日へ").font(.caption.weight(.bold)).foregroundStyle(Palette.accent)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .overlay(Capsule().strokeBorder(Palette.accent, lineWidth: 1.2))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("「\(item.title)」を今日に入れる")
+                .accessibilityIdentifier("toToday")
+            }
         }
         .padding(.vertical, 9).padding(.leading, style == .timeline ? 0 : showsCheck ? 6 : 12)
         .padding(.trailing, style == .timeline || guide != nil ? 4 : 10)
@@ -495,4 +517,14 @@ private struct OnlyInDemo: ViewModifier {
 
 extension View {
     func onlyInDemo() -> some View { modifier(OnlyInDemo()) }
+}
+
+/// A day as a small mark on a row: 今日, 明日, or "11/18（水）".
+enum DayMark {
+    static func text(_ day: Date, calendar: Calendar = .current) -> String {
+        if calendar.isDateInToday(day) { return "今日" }
+        if calendar.isDateInTomorrow(day) { return "明日" }
+        if calendar.isDateInYesterday(day) { return "昨日" }
+        return day.formatted(.dateTime.month(.defaultDigits).day().weekday(.abbreviated))
+    }
 }
