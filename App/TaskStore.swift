@@ -563,10 +563,13 @@ final class TaskStore: ObservableObject {
     func upsertRoutine(_ routine: Routine) -> Bool {
         commit { book in
             if let i = book.routines.firstIndex(where: { $0.id == routine.id }) {
-                // Keep checks and moves made elsewhere while the editor was open.
+                // Keep what the editor does not edit, as it is now: checks, moves, timed days and the note of
+                // where it was left off may have changed (here or on another device) while the editor was open.
                 var merged = routine
                 merged.doneDays = book.routines[i].doneDays
                 merged.moves = book.routines[i].moves
+                merged.durations = book.routines[i].durations
+                merged.resumeNote = book.routines[i].resumeNote
                 book.routines[i] = merged
             } else { book.routines.append(routine) }
         }

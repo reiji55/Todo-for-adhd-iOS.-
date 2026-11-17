@@ -147,10 +147,9 @@ struct QuickAddSheet: View {
     private func makeTask() -> TaskItem {
         var task = TaskItem(title: trimmed, plannedAt: day, isEvent: isEvent)
         if day != nil { task.slot = slot }
-        if let source {
-            task.listItemID = source.id
-            task.memo = source.memo
-        }
+        // The thing's notes and links show in the task from the list itself; copying them would leave a second,
+        // stale set in the memo.
+        if let source { task.listItemID = source.id }
         if let wholeList, !isEvent { task.listID = wholeList.id }
         return task
     }

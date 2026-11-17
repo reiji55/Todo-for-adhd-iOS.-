@@ -1118,7 +1118,8 @@ struct ProjectEditor: View {
             .confirmationDialog("このプロジェクトを外しますか？", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("外す", role: .destructive) {
                     if let originalKey { store.deleteProject(originalKey) }
-                    dismiss()
+                    // Still there: taking it off could not be saved, and the alert says so over this form.
+                    if originalKey.flatMap({ store.savedProject($0) }) == nil { dismiss() }
                 }
             }
         }

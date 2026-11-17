@@ -121,8 +121,10 @@ struct SettingsView: View {
                     } else if url.pathExtension.lowercased() == "json" {
                         let book = try NotebookCodec.decode(data)
                         importedBook = book
-                        importSummary = "現在の内容を、バックアップのタスク\(book.tasks.count)件・アイデア\(book.ideas.count)件・ボードのカード\(book.boardCards.count)件・ルーティン\(book.routines.count)件に置き換えます。直前の内容は取り消し操作で戻せます。"
+                        // Everything is replaced, so everything is counted: lists and projects too.
+                        importSummary = "現在の内容を、バックアップのタスク\(book.tasks.count)件・アイデア\(book.ideas.count)件・ボードのカード\(book.boardCards.count)件・ルーティン\(book.routines.count)件・プロジェクト\(book.projects.count)件・リスト\(book.lists.count)件（項目\(book.listItems.count)件）に置き換えます。直前の内容は取り消し操作で戻せます。"
                         if store.connection != nil { importSummary += "\n\nこの置き換えと削除は、共有している他の端末にも反映されます。" }
+                        if store.bridgeOn { importSummary += "\n\nこの置き換えと削除は、Claudeとの連携先にも反映されます。" }
                     } else {
                         guard let text = String(data: data, encoding: .utf8) else { throw NotebookError.invalidData }
                         let parsed = TaskTextImporter.parse(text)

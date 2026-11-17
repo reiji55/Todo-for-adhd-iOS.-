@@ -274,7 +274,14 @@ struct PeelableSticky: View {
     private func peelOff() {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         withAnimation(.easeIn(duration: 0.34)) { gone = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.34) { store.deleteIdea(idea.id) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.34) {
+            store.deleteIdea(idea.id)
+            // Could not be removed (saving failed): the note comes back instead of staying invisible.
+            if store.idea(idea.id) != nil {
+                armed = false
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.68)) { gone = false; pull = .zero }
+            }
+        }
     }
 }
 

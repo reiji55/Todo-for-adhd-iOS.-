@@ -162,7 +162,29 @@ struct AllTasksView: View {
             if byName[name] == nil { order.append(name) }
             byName[name, default: []].append(task)
         }
-        return (order.filter(\.isEmpty) + order.filter { !$0.isEmpty }).map { ($0, byName[$0] ?? []) }
+        return (order.filter(\.isEmpty) + order.filter { !$0.isEmpty }).map { ($0, chainOrdered(byName[$0] ?? [])) }
+    }
+
+    /// The same tasks with those of a つながり next to each other, in its order: a task added as the next of
+    /// another sits right under it, not at the end of the list.
+    static func chainOrdered(_ tasks: [TaskItem]) -> [TaskItem] {
+        let ids = Set(tasks.map(\.id))
+        var after: [UUID: [TaskItem]] = [:]
+        for task in tasks {
+            if let before = task.follows, ids.contains(before) { after[before, default: []].append(task) }
+        }
+        guard !after.isEmpty else { return tasks }
+        var result: [TaskItem] = []
+        var seen = Set<UUID>()
+        func emit(_ task: TaskItem) {
+            guard seen.insert(task.id).inserted else { return }
+            result.append(task)
+            for next in after[task.id] ?? [] { emit(next) }
+        }
+        for task in tasks where task.follows.map(ids.contains) != true { emit(task) }
+        // Anything left is in a loop (edits crossed on two devices): keep it, in the order it came.
+        for task in tasks { emit(task) }
+        return result
     }
 
     private static let separator: Character = "\u{1F}"
