@@ -57,8 +57,18 @@ shot() {
 
 cleanup() { xcrun simctl shutdown "$SIMULATOR_ID" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
-xcrun simctl boot "$SIMULATOR_ID" || true
-xcrun simctl bootstatus "$SIMULATOR_ID" -b
+# A simulator that never finishes booting (seen on the iPad on busy runners) used to hold the step until the
+# whole job ran out of time. Booting gets five minutes; then the device is wiped and booted once more.
+boot() {
+  xcrun simctl boot "$SIMULATOR_ID" >/dev/null 2>&1 || true
+  perl -e 'alarm shift; exec @ARGV' 300 xcrun simctl bootstatus "$SIMULATOR_ID" -b
+}
+if ! boot; then
+  echo "::warning::$DEVICE_FAMILY simulator did not finish booting; wiping it and trying once more" >&2
+  xcrun simctl shutdown "$SIMULATOR_ID" >/dev/null 2>&1 || true
+  xcrun simctl erase "$SIMULATOR_ID" >/dev/null 2>&1 || true
+  boot
+fi
 xcrun simctl status_bar "$SIMULATOR_ID" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
 APP_PATH=DerivedData/Build/Products/Debug-iphonesimulator/ThreeDays.app
 python3 - "$APP_PATH/Info.plist" <<'PY'
