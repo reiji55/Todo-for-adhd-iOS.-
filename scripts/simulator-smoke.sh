@@ -328,7 +328,10 @@ for tab in "2" "2 -uiTimetable" "1" "0" "3" "4"; do
   # shellcheck disable=SC2086
   launch -uiTab $tab -uiDemo >/dev/null
   sleep 3
-  xcrun simctl launch "$SIMULATOR_ID" com.apple.Preferences >/dev/null 2>&1 || true
+  # Bounded like every launch: on a busy iPad simulator this once never returned and used up the step.
+  if ! perl -e 'alarm shift; exec @ARGV' 60 xcrun simctl launch "$SIMULATOR_ID" com.apple.Preferences >/dev/null 2>&1; then
+    echo "::warning::Settings did not open within a minute (tab $tab, $DEVICE_FAMILY)" >&2
+  fi
   sleep 4
   if ! pgrep -f 'ThreeDays.app/ThreeDays' >/dev/null; then echo "::warning::Horme was not running after leaving demo mode on tab $tab"; fi
   latest=$(crash_reports | head -1)
@@ -356,8 +359,16 @@ if faulting < len(threads):
     cp "$latest" "$RESULT_DIR/" || true
     before=$latest
   fi
-  # Back to the front without relaunching, as from the app switcher.
-  xcrun simctl launch "$SIMULATOR_ID" io.github.reiji55.threedays >/dev/null 2>&1 || true
+  # Back to the front without relaunching, as from the app switcher. When it does not come back within a
+  # minute, what its main thread is doing is printed: an app stuck coming back is a bug, not a slow runner.
+  if ! perl -e 'alarm shift; exec @ARGV' 60 xcrun simctl launch "$SIMULATOR_ID" io.github.reiji55.threedays >/dev/null 2>&1; then
+    echo "::error::Horme did not come back to the front within a minute (tab $tab, $DEVICE_FAMILY)" >&2
+    pid=$(pgrep -f 'ThreeDays.app/ThreeDays' | head -1 || true)
+    if [ -n "$pid" ]; then
+      ps -o pid,%cpu,stat,etime -p "$pid" >&2 || true
+      sample "$pid" 3 2>/dev/null | head -160 >&2 || true
+    fi
+  fi
   sleep 3
   latest=$(crash_reports | head -1)
   if [ -n "$latest" ] && [ "$latest" != "$before" ]; then
