@@ -9,7 +9,9 @@ enum InterfacePreviewData {
         let calendar = Calendar.current
         let minute = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
         let ongoing = TimeSlot(start: max(0, minute - 5), duration: 30).label
-        let later = TimeSlot(start: min(23 * 60, minute + 90), duration: 30).label
+        // Always after what is going on now: late in the evening an hour and a half on no longer fits, and
+        // capping it at 23:00 put it at the present minute, where it took the いま card.
+        let later = TimeSlot(start: minute + 90 <= 23 * 60 ? minute + 90 : minute + 30, duration: 30).label
         if scenario == "idea" {
             return Notebook(ideas: [Idea(text: "机を窓際に移したい", createdAt: now,
                                          notes: [IdeaNote(text: "まず机の上を空ける", createdAt: now)])])
