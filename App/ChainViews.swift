@@ -91,7 +91,7 @@ struct ChainSection: View {
 
     private var menu: some View {
         Menu {
-            Button("ひとまとめにする", systemImage: "list.bullet.indent") { name = ""; naming = .gather }
+            Button("ひとまとめにする", systemImage: "list.bullet.indent") { name = store.gatherName(containing: taskID); naming = .gather }
             Button("プロジェクトにする", systemImage: "flag") {
                 name = store.task(taskID)?.project ?? ""
                 naming = .project

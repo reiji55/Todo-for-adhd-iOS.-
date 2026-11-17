@@ -6,7 +6,8 @@ import UIKit
 /// pulled up from the bottom shows the chosen day and the next one hour by hour; swiping its dates
 /// moves a day at a time. Time held for sleep or work only tints the shelves it fills.
 ///
-/// A chip tapped on the shelves opens the sheet at its hour; a shelf with three or more opens a small
+/// A date tapped is chosen: the frame moves to it and the sheet's dates turn to it without the sheet
+/// coming up. A chip tapped on the shelves opens the sheet at its hour; a shelf with three or more opens a small
 /// balloon listing them all. A chip held and dragged goes to another day or time of day; the exact
 /// time is set afterwards in the sheet.
 @MainActor
@@ -204,18 +205,19 @@ struct WeekShelfView: View {
             }
             .padding(.top, 6)
             ForEach(days, id: \.self) { day in
-                // Only today is outlined: tapping a day already brings it up in the sheet below.
-                let isToday = calendar.isDate(day, inSameDayAs: now)
+                // The chosen day is outlined (today, until another date is tapped); the sheet below opens on it.
+                let isChosen = calendar.isDate(day, inSameDayAs: selectedDay)
                 let target = carry?.target.flatMap { calendar.isDate($0.day, inSameDayAs: day) ? $0.band : nil }
-                ShelfRow(day: day, now: now, gutter: gutter, targetBand: target, carrying: carry?.item.id,
+                ShelfRow(day: day, now: now, selected: selectedDay, gutter: gutter, targetBand: target, carrying: carry?.item.id,
                          onSelect: { select(day) },
                          onFocus: { band, item in focusOn(day: day, band: band, item: item) },
                          onCarry: { item, location in carried(item, from: day, to: location) },
                          onDrop: dropped)
                 .overlay {
-                    if isToday {
+                    if isChosen {
                         RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.7), lineWidth: 3.5)
                             .padding(.leading, gutter + 2).allowsHitTesting(false)
+                            .transition(.opacity)
                     }
                 }
                 .background {
@@ -298,11 +300,15 @@ struct WeekShelfView: View {
         store.offerUndo("「\(carry.item.title)」を\(target.day.formatted(.dateTime.month(.defaultDigits).day())) \(slot?.startLabel ?? target.band.title)へ")
     }
 
+    /// A tap on a date chooses it: the frame moves to that day and the sheet's dates turn to it, where the
+    /// sheet is (down, it stays down).
     private func select(_ day: Date) {
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-            selectedDay = Calendar.current.startOfDay(for: day)
+        let chosen = Calendar.current.startOfDay(for: day)
+        guard chosen != selectedDay else { return }
+        UISelectionFeedbackGenerator().selectionChanged()
+        withAnimation(.snappy(duration: 0.28)) {
+            selectedDay = chosen
             focus = nil
-            if detent == .peek { detent = .half }
         }
     }
 
@@ -483,6 +489,8 @@ private struct ShelfRow: View {
     @EnvironmentObject private var store: TaskStore
     let day: Date
     let now: Date
+    /// The day chosen in the week, outlined.
+    let selected: Date
     let gutter: CGFloat
     /// The shelf a carried chip would land on, when it is in this row.
     let targetBand: WeekShelfView.Band?
@@ -513,7 +521,8 @@ private struct ShelfRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("\(calendar.component(.day, from: day))日 \(items.filter { !$0.isBlock }.count)件")
-            .accessibilityHint("その日と次の日の時間割を開きます")
+            .accessibilityHint("この日を選びます。下の時間割もこの日から")
+            .accessibilityAddTraits(calendar.isDate(day, inSameDayAs: selected) ? .isSelected : [])
             ForEach(WeekShelfView.Band.allCases, id: \.rawValue) { band in
                 ShelfCell(day: day, band: band,
                           items: items.filter { !$0.isBlock && WeekShelfView.Band.of($0) == band },

@@ -307,13 +307,11 @@ struct TaskEditor: View {
                 pieces.remove(atOffsets: offsets)
             }
             .onMove { pieces.move(fromOffsets: $0, toOffset: $1) }
-            // ばらす: the pieces become a つながり, and this task goes. Offered once what is shown is saved.
+            // ばらす: the pieces become a つながり, and this task goes. Offered once what is shown is saved. The
+            // editor closes onto the list, where the つながり shows and 元に戻す is offered for a moment.
             if isWhole, !changed, store.hasChildren(task.id) {
                 Button {
-                    if let first = store.scatterPieces(of: task.id) {
-                        dismiss()
-                        DispatchQueue.main.async { store.openAfterChange = first }
-                    }
+                    if store.scatterPieces(of: task.id) != nil { dismiss() }
                 } label: {
                     Label("ばらして、つながりにする", systemImage: "link").font(.subheadline)
                 }

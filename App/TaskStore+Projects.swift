@@ -182,17 +182,51 @@ extension TaskStore {
         return task(made)
     }
 
-    /// ばらす: the pieces become a つながり. Returns the first of them.
+    /// ばらす: the pieces become a つながり. Returns the first of them. The task's name is kept on this device,
+    /// so ひとまとめにする on the same tasks offers it again.
     @discardableResult
     func scatterPieces(of id: UUID) -> TaskItem? {
         let title = task(id)?.title ?? ""
+        let pieces = children(of: id).map(\.id)
         var first: UUID?
         guard commit({ first = $0.scatterPieces(of: id) }), let first else { return nil }
+        if !isDemo { ScatteredNames.remember(title, for: pieces) }
         offerUndo("「\(title)」をつながりにしました")
         return task(first)
     }
 
+    /// The name to offer when gathering this つながり: what its tasks were pieces of, when they were scattered here.
+    func gatherName(containing id: UUID) -> String {
+        isDemo ? "" : ScatteredNames.name(for: chain(containing: id).map(\.id)) ?? ""
+    }
+
     func makeProject(ofChainContaining id: UUID, named name: String) {
         if commit({ $0.makeProject(ofChainContaining: id, named: name) }) { offerUndo("プロジェクト「\(name)」にしました") }
+    }
+}
+
+/// The names of tasks scattered into つながり on this device, newest first, so gathering the same tasks again
+/// needs no typing. Only a convenience: kept in this device's settings, not synced, and the last few only.
+enum ScatteredNames {
+    private static let key = "horme.scatteredNames"
+    private static let limit = 20
+    private struct Entry: Codable { var title: String; var ids: [UUID] }
+
+    static func remember(_ title: String, for ids: [UUID], defaults: UserDefaults = .standard) {
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !ids.isEmpty else { return }
+        let entries = [Entry(title: name, ids: ids)] + load(defaults).filter { Set($0.ids).isDisjoint(with: ids) }
+        if let data = try? JSONEncoder().encode(Array(entries.prefix(limit))) { defaults.set(data, forKey: key) }
+    }
+
+    /// The newest name whose tasks include any of these.
+    static func name(for ids: [UUID], defaults: UserDefaults = .standard) -> String? {
+        let wanted = Set(ids)
+        return load(defaults).first { !wanted.isDisjoint(with: $0.ids) }?.title
+    }
+
+    private static func load(_ defaults: UserDefaults) -> [Entry] {
+        guard let data = defaults.data(forKey: key) else { return [] }
+        return (try? JSONDecoder().decode([Entry].self, from: data)) ?? []
     }
 }
