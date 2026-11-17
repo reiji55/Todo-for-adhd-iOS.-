@@ -126,12 +126,17 @@ public struct Idea: Codable, Identifiable, Equatable {
     public var notes: [IdeaNote]
     /// When it was last opened or changed; nil means only when it was written.
     public var touchedAt: Date?
+    /// The label of the bundle it is in, among notes of the same kind; empty when it is on its own. Notes with
+    /// the same label are one bundle.
+    public var bundle: String
 
-    public init(id: UUID = UUID(), text: String, createdAt: Date = Date(), notes: [IdeaNote] = [], touchedAt: Date? = nil) {
+    public init(id: UUID = UUID(), text: String, createdAt: Date = Date(), notes: [IdeaNote] = [], touchedAt: Date? = nil,
+                bundle: String = "") {
         self.id = id; self.text = text; self.createdAt = createdAt; self.notes = notes; self.touchedAt = touchedAt
+        self.bundle = bundle
     }
 
-    enum CodingKeys: String, CodingKey { case id, text, createdAt, notes, touchedAt }
+    enum CodingKeys: String, CodingKey { case id, text, createdAt, notes, touchedAt, bundle }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -140,6 +145,7 @@ public struct Idea: Codable, Identifiable, Equatable {
         createdAt = try c.decode(Date.self, forKey: .createdAt)
         notes = try c.decodeIfPresent([IdeaNote].self, forKey: .notes) ?? []
         touchedAt = try c.decodeIfPresent(Date.self, forKey: .touchedAt)
+        bundle = try c.decodeIfPresent(String.self, forKey: .bundle) ?? ""
     }
 
     /// The last time it was written, opened or added to.

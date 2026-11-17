@@ -16,13 +16,19 @@ struct IdeasView: View {
     let onEditTask: (TaskItem) -> Void
     /// Opens 振り分け: the notes one at a time, each given a first step and a day.
     let onSort: () -> Void
+    /// A bundle opened.
+    @State private var openedBundle: BundleRoute?
+    /// Two notes dropped one on the other, waiting for the bundle's label.
+    @State private var pairing: [UUID] = []
+    @State private var bundleName = ""
 
     var body: some View {
         let now = max(Date(), refreshClock)
         let ideas = store.notebook.ideas
-        let warm = ideas.filter { $0.warmth(now: now) > 0 }
+        let entries = WallEntry.entries(store.notebook, now: now)
+        let warm = entries.filter { $0.warmth(now: now) > 0 }
             .sorted { ($0.warmth(now: now), $0.lastTouched) > ($1.warmth(now: now), $1.lastTouched) }
-        let cold = ideas.filter { $0.warmth(now: now) == 0 }.sorted { $0.lastTouched > $1.lastTouched }
+        let cold = entries.filter { $0.warmth(now: now) == 0 }.sorted { $0.lastTouched > $1.lastTouched }
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 if !ideas.isEmpty {
@@ -59,7 +65,8 @@ struct IdeasView: View {
                         Button("付箋を書く") { writing = true }.buttonStyle(.borderedProminent)
                     }
                 }
-                StickyWall(ideas: warm, now: now, selecting: placing != nil, onOpen: open, onPlan: { planning = IdeaPlan(idea: $0) })
+                StickyWall(entries: warm, now: now, selecting: placing != nil, onOpen: open, onPlan: { planning = IdeaPlan(idea: $0) },
+                           onOpenBundle: { openedBundle = BundleRoute(label: $0) }, onDrop: dropped)
                 if !cold.isEmpty {
                     HStack(spacing: 8) {
                         Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 1)
@@ -67,7 +74,8 @@ struct IdeasView: View {
                         Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 1)
                     }
                     .padding(.top, 8)
-                    StickyWall(ideas: cold, now: now, selecting: placing != nil, onOpen: open, onPlan: { planning = IdeaPlan(idea: $0) })
+                    StickyWall(entries: cold, now: now, selecting: placing != nil, onOpen: open, onPlan: { planning = IdeaPlan(idea: $0) },
+                               onOpenBundle: { openedBundle = BundleRoute(label: $0) }, onDrop: dropped)
                 }
             }
             .padding(16).frame(maxWidth: 820).frame(maxWidth: .infinity)
@@ -94,6 +102,17 @@ struct IdeasView: View {
         .sheet(item: $planning) { plan in
             IdeaToTasksSheet(idea: plan.idea, day: plan.day, slot: plan.slot, keepIdea: plan.slot != nil)
         }
+        .sheet(item: $openedBundle) { route in IdeaBundleSheet(label: route.label) }
+        .alert("束にする", isPresented: Binding(get: { !pairing.isEmpty }, set: { if !$0 { pairing = [] } })) {
+            TextField("ラベル（例：部屋のこと）", text: $bundleName)
+            Button("束ねる") {
+                store.bundleIdeas(pairing, label: bundleName)
+                pairing = []; bundleName = ""
+            }
+            Button("キャンセル", role: .cancel) { pairing = []; bundleName = "" }
+        } message: {
+            Text("似たものをひとつの束にまとめます。束からはいつでも外せます。")
+        }
         .onChange(of: store.taskStartRequest) { _, request in
             guard request != nil else { return }
             planning = nil; opened = nil; writing = false
@@ -102,6 +121,58 @@ struct IdeasView: View {
 }
 
 struct IdeaRoute: Identifiable { let id: UUID }
+struct BundleRoute: Identifiable { let label: String; var id: String { label } }
+
+extension IdeasView {
+    /// A note dropped on another: into the bundle the other is in, or, when it is on its own, a new bundle
+    /// once it has a label.
+    fileprivate func dropped(_ id: UUID, on target: WallEntry) {
+        guard let moved = store.idea(id) else { return }
+        switch target {
+        case .bundle(let label, _):
+            store.bundleIdeas([moved.id], label: label)
+        case .idea(let idea):
+            guard idea.id != moved.id else { return }
+            bundleName = ""
+            pairing = [idea.id, moved.id]
+        }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+}
+
+/// One place on the wall: a note on its own, or a bundle of notes under a label.
+enum WallEntry: Identifiable {
+    case idea(Idea)
+    case bundle(String, [Idea])
+
+    var id: String {
+        switch self {
+        case .idea(let idea): return idea.id.uuidString
+        case .bundle(let label, _): return "bundle-" + label
+        }
+    }
+
+    /// A bundle is as warm as its warmest note.
+    func warmth(now: Date) -> Int {
+        switch self {
+        case .idea(let idea): return idea.warmth(now: now)
+        case .bundle(_, let ideas): return ideas.map { $0.warmth(now: now) }.max() ?? 0
+        }
+    }
+
+    var lastTouched: Date {
+        switch self {
+        case .idea(let idea): return idea.lastTouched
+        case .bundle(_, let ideas): return ideas.map(\.lastTouched).max() ?? .distantPast
+        }
+    }
+
+    /// Every note on its own, and every bundle once.
+    static func entries(_ book: Notebook, now: Date) -> [WallEntry] {
+        let loose = book.ideas.filter { $0.bundle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.map { WallEntry.idea($0) }
+        return loose + book.ideaBundles.map { WallEntry.bundle($0.label, $0.ideas) }
+    }
+}
 
 /// A free stretch picked on the card, as the day and the time to work in it.
 struct FreeSlotPick: Equatable {
@@ -173,31 +244,118 @@ struct WarmthBar: View {
     }
 }
 
-/// Two columns of notes, the second set a little lower, as if stuck on a wall.
+/// Two columns of notes, the second set a little lower, as if stuck on a wall. A note held and dragged onto
+/// another bundles the two; a bundle is a pile with its label, opened with a tap.
 struct StickyWall: View {
-    let ideas: [Idea]
+    let entries: [WallEntry]
     let now: Date
     var selecting = false
     let onOpen: (Idea) -> Void
     let onPlan: (Idea) -> Void
+    var onOpenBundle: (String) -> Void = { _ in }
+    var onDrop: (UUID, WallEntry) -> Void = { _, _ in }
 
     var body: some View {
-        let left = ideas.enumerated().filter { $0.offset % 2 == 0 }.map(\.element)
-        let right = ideas.enumerated().filter { $0.offset % 2 == 1 }.map(\.element)
+        let left = entries.enumerated().filter { $0.offset % 2 == 0 }.map(\.element)
+        let right = entries.enumerated().filter { $0.offset % 2 == 1 }.map(\.element)
         HStack(alignment: .top, spacing: 14) {
             column(left, tilt: -1.2)
             column(right, tilt: 1.2).padding(.top, 16)
         }
     }
 
-    private func column(_ items: [Idea], tilt: Double) -> some View {
+    private func column(_ items: [WallEntry], tilt: Double) -> some View {
         VStack(spacing: 16) {
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, idea in
-                PeelableSticky(idea: idea, now: now, tilt: index % 2 == 0 ? tilt : -tilt * 0.6, selecting: selecting,
-                               onOpen: onOpen, onPlan: onPlan)
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, entry in
+                let lean = index % 2 == 0 ? tilt : -tilt * 0.6
+                Group {
+                    switch entry {
+                    case .idea(let idea):
+                        PeelableSticky(idea: idea, now: now, tilt: lean, selecting: selecting, onOpen: onOpen, onPlan: onPlan)
+                    case .bundle(let label, let ideas):
+                        StickyBundle(label: label, ideas: ideas, now: now, tilt: lean) { onOpenBundle(label) }
+                    }
+                }
+                .modifier(StickyDrop(entry: entry, onDrop: onDrop))
             }
         }
         .frame(maxWidth: .infinity, alignment: .top)
+    }
+}
+
+/// Where a dragged note can be let go: on another note, or on a bundle. Lit while one is over it.
+private struct StickyDrop: ViewModifier {
+    let entry: WallEntry
+    let onDrop: (UUID, WallEntry) -> Void
+    @State private var over = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if over {
+                    RoundedRectangle(cornerRadius: 10).strokeBorder(Palette.accent, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
+                        .padding(-6).allowsHitTesting(false)
+                }
+            }
+            .scaleEffect(over ? 1.04 : 1)
+            .animation(.snappy(duration: 0.18), value: over)
+            .dropDestination(for: String.self) { texts, _ in
+                guard let id = texts.first.flatMap(UUID.init(uuidString:)) else { return false }
+                if case .idea(let idea) = entry, idea.id == id { return false }
+                onDrop(id, entry)
+                return true
+            } isTargeted: { over = $0 }
+    }
+}
+
+/// A bundle on the wall: its notes stacked, the warmest on top, its label clipped above.
+struct StickyBundle: View {
+    let label: String
+    let ideas: [Idea]
+    let now: Date
+    let tilt: Double
+    let onOpen: () -> Void
+
+    var body: some View {
+        let top = ideas.max { ($0.warmth(now: now), $0.lastTouched) < ($1.warmth(now: now), $1.lastTouched) } ?? ideas.first
+        let behind = ideas.filter { $0.id != top?.id }.prefix(2)
+        Button(action: onOpen) {
+            if let top {
+                StickyNote(idea: top, now: now, tilt: tilt)
+                    .background {
+                        ZStack {
+                            ForEach(Array(behind.enumerated()).reversed(), id: \.element.id) { index, idea in
+                                let colors = StickyColor.colors(for: idea, warmth: idea.warmth(now: now))
+                                RoundedRectangle(cornerRadius: 6).fill(colors.paper)
+                                    .shadow(color: .black.opacity(0.22), radius: 3, y: 2)
+                                    .rotationEffect(.degrees(tilt + Double(index + 1) * 3.5))
+                                    .offset(x: CGFloat(index + 1) * 5, y: CGFloat(index + 1) * 6)
+                            }
+                        }
+                    }
+                    .overlay(alignment: .top) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "paperclip").font(.caption.weight(.bold))
+                            Text(label).font(.caption.weight(.heavy)).lineLimit(1)
+                            Text("\(ideas.count)").font(.caption2.weight(.heavy)).monospacedDigit()
+                                .padding(.horizontal, 5).background(Capsule().fill(Palette.accent.opacity(0.14)))
+                        }
+                        .foregroundStyle(Palette.accent)
+                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .background(Capsule().fill(Color(uiColor: .systemBackground)))
+                        .shadow(color: .black.opacity(0.18), radius: 3, y: 1)
+                        .offset(y: -12)
+                        .rotationEffect(.degrees(tilt))
+                    }
+                    .padding(.trailing, 8).padding(.bottom, 10)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("束「\(label)」、付箋\(ideas.count)枚")
+        .accessibilityHint("開くと、束の付箋が見られます")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("ideaBundle-\(label)")
     }
 }
 
@@ -230,7 +388,19 @@ struct PeelableSticky: View {
             }
             .contextMenu {
                 Button("タスクにする", systemImage: "arrow.up.right") { onPlan(idea) }
+                let bundles = store.notebook.ideaBundles.map(\.label)
+                if !bundles.isEmpty {
+                    Menu {
+                        ForEach(bundles, id: \.self) { label in
+                            Button(label) { store.bundleIdeas([idea.id], label: label) }
+                        }
+                    } label: { Label("束に入れる", systemImage: "paperclip") }
+                }
                 Button("はがす", systemImage: "trash", role: .destructive) { store.deleteIdea(idea.id) }
+            }
+            // Held and dragged onto another note, it bundles the two.
+            .draggable(idea.id.uuidString) {
+                StickyNote(idea: idea, now: now).frame(width: 160)
             }
             .overlay(alignment: .topLeading) { corner }
             // Lifting from the top-left, hinged at the bottom-right corner that is still stuck down.
@@ -707,5 +877,70 @@ private struct PeelPan: UIGestureRecognizerRepresentable {
                                shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool {
             otherGestureRecognizer.view is UIScrollView
         }
+    }
+}
+
+/// A bundle opened: its notes, each opened with a tap or taken out from its menu; the bundle renamed or untied.
+@MainActor
+struct IdeaBundleSheet: View {
+    @EnvironmentObject private var store: TaskStore
+    @Environment(\.dismiss) private var dismiss
+    @State var label: String
+    @State private var opened: IdeaRoute?
+    @State private var renaming = false
+    @State private var newLabel = ""
+
+    var body: some View {
+        let ideas = store.notebook.ideaBundles.first { $0.label == label }?.ideas ?? []
+        let now = Date()
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("付箋を長押しすると、束から外せます。").font(.caption).foregroundStyle(.secondary).onlyInDemo()
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 16) {
+                        ForEach(ideas) { idea in
+                            Button { opened = IdeaRoute(id: idea.id) } label: { StickyNote(idea: idea, now: now) }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button("束から外す", systemImage: "arrow.uturn.up") { store.bundleIdeas([idea.id], label: "") }
+                                }
+                                .accessibilityAction(named: "束から外す") { store.bundleIdeas([idea.id], label: "") }
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .background(Palette.paper)
+            .navigationTitle(label)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } }
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button("名前を変える", systemImage: "pencil") { newLabel = label; renaming = true }
+                        Button("束をほどく", systemImage: "square.stack.3d.down.right") {
+                            store.renameBundle(label, to: "")
+                            dismiss()
+                        }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                    .accessibilityLabel("束の操作")
+                }
+            }
+            .alert("束の名前", isPresented: $renaming) {
+                TextField("ラベル", text: $newLabel)
+                Button("保存") {
+                    let name = newLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !name.isEmpty else { return }
+                    store.renameBundle(label, to: name)
+                    label = name
+                }
+                Button("キャンセル", role: .cancel) {}
+            }
+            .sheet(item: $opened) { route in IdeaDetailSheet(ideaID: route.id) }
+            // The last note taken out: nothing is left to show.
+            .onChange(of: ideas.isEmpty) { _, empty in if empty { dismiss() } }
+        }
+        .presentationDetents([.medium, .large])
+        .storeErrorAlert()
     }
 }

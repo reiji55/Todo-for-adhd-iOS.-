@@ -29,7 +29,7 @@ export type Task = {
 };
 /** A list of concrete things kept for later (places, books, groceries). Not a plan. `updatedAt`: when the
  *  list itself last changed (renamed, or a thing removed). */
-export type StockList = { id: string; name: string; createdAt: string; updatedAt?: string | null };
+export type StockList = { id: string; name: string; createdAt: string; updatedAt?: string | null; rank?: number | null };
 /** A web address kept with a thing, with an optional name. */
 export type ItemLink = { id: string; url: string; title: string };
 /** A note kept with a thing (or an idea), each written on its own day. */
@@ -44,7 +44,8 @@ export type ListItem = {
   group?: string;
   notes?: ItemNote[]; links?: ItemLink[]; updatedAt?: string | null;
 };
-export type Idea = { id: string; text: string; createdAt: string; notes?: ItemNote[]; touchedAt?: string | null };
+/** `bundle`: the label of the bundle it is in (notes with the same label are one bundle); empty on its own. */
+export type Idea = { id: string; text: string; createdAt: string; notes?: ItemNote[]; touchedAt?: string | null; bundle?: string };
 export type Card = { id: string; title: string; purpose: string; goal: string; detail: string; createdAt: string; rank: number };
 export type Move = { toDay: string; time: string };
 export type Routine = {
@@ -136,7 +137,8 @@ export function materialize(records: SyncRecord[]): Book {
   }
   book.tasks.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   book.cards.sort((a, b) => a.rank - b.rank || a.id.localeCompare(b.id));
-  book.lists.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  // As the app shows them: put in order by hand (rank), and otherwise the newest first.
+  book.lists.sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0) || b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
   book.items.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   return book;
 }

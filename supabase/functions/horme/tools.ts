@@ -767,7 +767,7 @@ export const tools: Tool[] = [
     name: "get_lists",
     title: "リストを読む",
     description:
-      "ストックのリスト（行きたいところ・読みたい本・買うものなど、予定ではない具体的なもののストック）を読む。" +
+      "ストックのリスト（行きたいところ・読みたい本・買うものなど、予定ではない具体的なもののストック）を、アプリで並んでいる順（上から）に読む。" +
       "open にまだの項目、plan にその項目から作った予定、trip にリスト全体から作ったタスク（買い物など）とチェックの進み具合が入る。" +
       "項目の notes はメモ（書いた日つき、いくつでも）、links はリンク（名前つき、いくつでも）。updated はリストの中身が最後に変わった日。" +
       "list に id を渡すと、そのリストの済んだ項目（履歴、メモつき）も入る。",
@@ -815,7 +815,9 @@ export const tools: Tool[] = [
         if (!name) throw new Error("list（リストの id）か new_list（新しいリストの名前）を渡してください。");
         target = book.lists.find((l) => sameKey(l.name, name));
         if (!target) {
-          target = { id: newID(), name, createdAt: nowISO(now) };
+          // A new list goes on top, as in the app.
+          const rank = Math.min(0, ...book.lists.map((l) => l.rank ?? 0)) - 1;
+          target = { id: newID(), name, createdAt: nowISO(now), rank };
           writer.set(`list_${target.id}`, { alive: true, ...target });
           created = true;
         }
@@ -923,7 +925,7 @@ export const tools: Tool[] = [
     name: "check_list_items",
     title: "リストの項目を済みにする・戻す",
     description:
-      "リストの項目を済み（done=true、履歴に移る）にするか、リストに戻す。複数まとめて渡せる。" +
+      "リストの項目を済み（done=true、その場で線が引かれ、履歴にも残る）にするか、まだに戻す。複数まとめて渡せる。" +
       "リスト全体から作ったタスク（買い物など）は、まだの項目がなくなると完了になる。",
     inputSchema: { type: "object", properties: { ids: IDS, done: { type: "boolean" } }, required: ["ids", "done"] },
     run: ({ ids, done }, { records, book, now }) => {
@@ -936,12 +938,14 @@ export const tools: Tool[] = [
   {
     name: "get_ideas",
     title: "アイデアを読む",
-    description: "アイデア（まだタスクにしない思いつき）を新しい順に読む。notes はあとから足したメモ（書いた日つき）。",
+    description:
+      "アイデア（まだタスクにしない思いつき）を新しい順に読む。notes はあとから足したメモ（書いた日つき）。" +
+      "bundle は同じような付箋をまとめた束のラベル（同じラベルのものが1つの束）。",
     inputSchema: { type: "object", properties: {} },
     run: (_args, { book }) => ({
       result: {
         ideas: [...book.ideas].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((i) => ({
-          id: i.id, text: i.text, day: dayKey(i.createdAt),
+          id: i.id, text: i.text, day: dayKey(i.createdAt), bundle: i.bundle?.trim() || undefined,
           notes: i.notes?.length ? i.notes.map((n) => ({ id: n.id, text: n.text, day: dayKey(n.createdAt) })) : undefined,
         })),
       },
@@ -950,19 +954,48 @@ export const tools: Tool[] = [
   {
     name: "add_idea",
     title: "アイデアを書き留める",
-    description: "アイデア（まだタスクにしない思いつき）を足す。notes にメモをいくつでも添えられる（1つずつ別のメモになる）。",
+    description:
+      "アイデア（まだタスクにしない思いつき）を足す。notes にメモをいくつでも添えられる（1つずつ別のメモになる）。" +
+      "bundle に今ある束のラベルを渡すと、その束に入る。",
     inputSchema: {
       type: "object",
-      properties: { text: { type: "string" }, notes: { type: "array", items: { type: "string" } } },
+      properties: {
+        text: { type: "string" }, notes: { type: "array", items: { type: "string" } },
+        bundle: { type: "string", description: "入れる束のラベル（任意）" },
+      },
       required: ["text"],
     },
-    run: ({ text, notes }, { records, now }) => {
+    run: ({ text, notes, bundle }, { records, now }) => {
       const value = String(text ?? "").trim();
       if (!value) throw new Error("text が空です。");
       const writer = new Writer(records, "claude", now.getTime());
       const id = newID();
-      writer.set(`idea_${id}`, { alive: true, id, text: value, createdAt: nowISO(now), notes: newNotes(notes, now) });
+      writer.set(`idea_${id}`, {
+        alive: true, id, text: value, createdAt: nowISO(now), notes: newNotes(notes, now), bundle: String(bundle ?? "").trim(),
+      });
       return { result: { added: id }, changes: writer.changes };
+    },
+  },
+  {
+    name: "bundle_ideas",
+    title: "アイデアを束ねる・束から外す",
+    description:
+      "同じようなアイデアの付箋を1つの束にまとめる（label にラベル。同じラベルの束があればそこに入る）。label を空文字にすると束から外す。" +
+      "本人に頼まれたときに行う。id は get_ideas で確かめる。",
+    inputSchema: {
+      type: "object",
+      properties: { ids: IDS, label: { type: "string", description: "束のラベル。空文字で束から外す" } },
+      required: ["ids", "label"],
+    },
+    run: ({ ids, label }, { records, book, now }) => {
+      const name = String(label ?? "").trim();
+      const writer = new Writer(records, "claude", now.getTime());
+      for (const id of ids as string[]) {
+        const idea = book.ideas.find((i) => sameID(i.id, id));
+        if (!idea) throw new Error(`アイデアが見つかりません: ${id}。先に get_ideas で id を確かめてください。`);
+        if ((idea.bundle ?? "").trim() !== name) writer.set(`idea_${idea.id}`, { bundle: name });
+      }
+      return { result: { bundle: name || undefined, updated: ids.length }, changes: writer.changes };
     },
   },
   {
@@ -988,7 +1021,7 @@ export const tools: Tool[] = [
 
 export const instructions =
   "Horme（本人のタスク管理アプリ）の中身を読み書きする。種類はタスク（その日にやる・単発で終わる）、イベント（その日にある予定。済んだら印を付けられるが、やり残しにはならない）、" +
-  "ルーティン（くり返し）、アイデア（まだ決めていない思いつき。メモを継ぎ足せる）、リスト（行きたいところ・読みたい本・買うものなど、予定ではない具体的なもののストック。期限や進み具合は持たない。項目ごとにメモとリンクをいくつでも持てる。" +
+  "ルーティン（くり返し）、アイデア（まだ決めていない思いつき。メモを継ぎ足せる。同じようなものはラベルつきの束にまとめられる）、リスト（行きたいところ・読みたい本・買うものなど、予定ではない具体的なもののストック。期限や進み具合は持たない。項目ごとにメモとリンクをいくつでも持てる。" +
   "予定にするときは add_tasks の from_item / from_list でつなぐ）。ほかにボード（やり方の書き置き）と、プロジェクト（到達点・期限・途中の到達点を持つ大きな枠）がある。" +
   "大きなタスクは子タスクに分かれていることがある（pieces / parent）。日付と時間は子タスクが持ち、親タスクは締切と必須だけを持つ。子タスクがすべて済むと親も完了になる。" +
   "タスクどうしは「つながり」で前後に結べる（after / next）。次のタスクは前が済むまで候補に出ない。あとから次にやることを足すときは add_tasks の after を使う。" +

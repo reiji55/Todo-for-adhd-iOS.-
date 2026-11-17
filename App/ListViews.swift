@@ -1,5 +1,6 @@
 import MapKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ListRoute: Identifiable, Hashable { let id: UUID }
 
@@ -49,16 +50,22 @@ struct StockView: View {
     }
 }
 
-/// Every list, as a card with what is still on it.
+/// Every list, as a card with what is still on it: the newest on top, until they are put in order by holding
+/// one and dragging it.
 @MainActor
 struct ListsView: View {
     @EnvironmentObject private var store: TaskStore
     @State private var naming = false
     @State private var newName = ""
+    /// While a card is dragged: the order shown, and the card carried.
+    @State private var order: [UUID]?
+    @State private var dragging: UUID?
     let onOpen: (UUID) -> Void
 
     var body: some View {
         let book = store.notebook
+        let saved = book.orderedLists
+        let shown = order.map { ids in ids.compactMap { id in saved.first { $0.id == id } } } ?? saved
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 if book.lists.isEmpty {
@@ -70,20 +77,41 @@ struct ListsView: View {
                         Button("リストを作る") { naming = true }.buttonStyle(.borderedProminent)
                     }
                 }
-                ForEach(book.lists) { list in
+                ForEach(shown) { list in
                     ListCardButton(list: list) { onOpen(list.id) }
                         .accessibilityIdentifier("openList-\(list.name)")
                         .swipeToDelete { store.deleteList(list.id) }
+                        .opacity(dragging == list.id ? 0.4 : 1)
+                        .onDrag {
+                            dragging = list.id
+                            order = saved.map(\.id)
+                            return NSItemProvider(object: list.id.uuidString as NSString)
+                        } preview: {
+                            ListCard(list: list).frame(width: 320).environmentObject(store)
+                        }
+                        .onDrop(of: [.text], delegate: ListReorder(target: list.id, order: $order, dragging: $dragging) { ids in
+                            store.reorderLists(ids)
+                        })
+                        .accessibilityAction(named: "上へ") { move(list.id, by: -1, in: saved) }
+                        .accessibilityAction(named: "下へ") { move(list.id, by: 1, in: saved) }
                 }
             }
             .padding(16).frame(maxWidth: 820).frame(maxWidth: .infinity)
+            .animation(.snappy, value: order)
         }
+        // A drag let go away from the cards ends without moving anything.
+        .onChange(of: store.notebook.lists) { _, _ in if dragging == nil { order = nil } }
         .background(Palette.paper)
         .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
             ContextAddButton { naming = true }
                 .accessibilityLabel("リストを追加")
                 .accessibilityIdentifier("addList")
                 .padding(.trailing, 20).padding(.bottom, 10)
+        }
+        .onDrop(of: [.text], isTargeted: nil) { _ in
+            if let order { store.reorderLists(order) }
+            order = nil; dragging = nil
+            return true
         }
         .alert("新しいリスト", isPresented: $naming) {
             TextField("名前（例：行きたいところ）", text: $newName)
@@ -93,6 +121,41 @@ struct ListsView: View {
             }
             Button("キャンセル", role: .cancel) { newName = "" }
         }
+    }
+}
+
+extension ListsView {
+    /// Moves a list one place up or down (for VoiceOver, where there is no dragging).
+    fileprivate func move(_ id: UUID, by step: Int, in lists: [StockList]) {
+        var ids = lists.map(\.id)
+        guard let index = ids.firstIndex(of: id), ids.indices.contains(index + step) else { return }
+        ids.swapAt(index, index + step)
+        store.reorderLists(ids)
+    }
+}
+
+/// A card carried over the others: they make room as it passes, and the order is kept where it is let go.
+private struct ListReorder: DropDelegate {
+    let target: UUID
+    @Binding var order: [UUID]?
+    @Binding var dragging: UUID?
+    let commit: ([UUID]) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging, dragging != target, var ids = order,
+              let from = ids.firstIndex(of: dragging), let to = ids.firstIndex(of: target) else { return }
+        ids.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        order = ids
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+
+    func performDrop(info: DropInfo) -> Bool {
+        if let order { commit(order) }
+        order = nil
+        dragging = nil
+        return true
     }
 }
 
@@ -153,7 +216,7 @@ private struct ListCard: View {
     }
 }
 
-/// One list: what is on it, a line to add more, and what is done below, folded.
+/// One list: what is on it (what is checked off stays in its place, struck through) and a line to add more.
 @MainActor
 struct ListPage: View {
     @EnvironmentObject private var store: TaskStore
@@ -167,7 +230,6 @@ struct ListPage: View {
     @State private var renaming = false
     @State private var newName = ""
     @State private var confirmDelete = false
-    @State private var showDone = false
     /// Headings folded away.
     @State private var collapsed: Set<String> = []
     /// The heading a thing is being added under, and what is typed.
@@ -194,10 +256,10 @@ struct ListPage: View {
     private func content(_ list: StockList) -> some View {
         let book = store.notebook
         let open = book.openItems(in: list.id)
-        let groups = book.openGroups(in: list.id)
+        // A thing checked off stays where it is, struck through.
+        let groups = book.openGroups(in: list.id, includingDone: true)
         let loose = groups.first { $0.heading.isEmpty }?.items ?? []
         let headed = groups.filter { !$0.heading.isEmpty }
-        let done = book.doneItems(in: list.id)
         let trip = book.tasks.filter { $0.listID == list.id && !$0.isComplete }.min { $0.createdAt < $1.createdAt }
         return ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -218,7 +280,7 @@ struct ListPage: View {
                 }
                 VStack(spacing: 0) {
                     ForEach(loose) { item in
-                        ListItemRow(item: item, onCheck: { store.setItemDone(item.id, true) }, onOpen: { opened = ListItemRouteID(id: item.id) })
+                        ListItemRow(item: item, onCheck: { store.setItemDone(item.id, !item.isDone) }, onOpen: { opened = ListItemRouteID(id: item.id) })
                             .swipeToDelete { store.deleteItem(item.id) }
                         Divider().padding(.leading, 52)
                     }
@@ -247,30 +309,6 @@ struct ListPage: View {
                 }
                 .buttonStyle(.plain).foregroundStyle(Palette.accent)
                 .accessibilityIdentifier("addListHeading")
-                if !done.isEmpty {
-                    Button { withAnimation(.snappy) { showDone.toggle() } } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "chevron.down").rotationEffect(.degrees(showDone ? 180 : 0))
-                            Text("済み").font(.subheadline.weight(.bold))
-                            Text("\(done.count)件").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
-                            Spacer()
-                        }
-                        .foregroundStyle(.primary).padding(.horizontal, 4).frame(minHeight: 44).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityValue(showDone ? "展開中" : "折りたたみ")
-                    if showDone {
-                        VStack(spacing: 0) {
-                            ForEach(done) { item in
-                                DoneItemRow(item: item, onRestore: { store.setItemDone(item.id, false) },
-                                            onOpen: { opened = ListItemRouteID(id: item.id) })
-                                    .swipeToDelete { store.deleteItem(item.id) }
-                                Divider().padding(.leading, 16)
-                            }
-                        }
-                        .background(RaisedCardBackground(cornerRadius: 16))
-                    }
-                }
             }
             .padding(16).frame(maxWidth: 820).frame(maxWidth: .infinity)
         }
@@ -331,7 +369,7 @@ struct ListPage: View {
                     Image(systemName: "chevron.down").font(.caption.weight(.bold)).foregroundStyle(.secondary)
                         .rotationEffect(.degrees(folded ? -90 : 0))
                     Text(heading).font(.subheadline.weight(.heavy)).foregroundStyle(.primary).lineLimit(1)
-                    Text("\(items.count)件").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                    Text("\(items.filter { !$0.isDone }.count)件").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 14).frame(minHeight: 44)
@@ -346,7 +384,7 @@ struct ListPage: View {
             if !folded {
                 ForEach(items) { item in
                     Divider().padding(.leading, 52)
-                    ListItemRow(item: item, onCheck: { store.setItemDone(item.id, true) }, onOpen: { opened = ListItemRouteID(id: item.id) })
+                    ListItemRow(item: item, onCheck: { store.setItemDone(item.id, !item.isDone) }, onOpen: { opened = ListItemRouteID(id: item.id) })
                         .swipeToDelete { store.deleteItem(item.id) }
                 }
                 Divider().padding(.leading, 52)
@@ -409,28 +447,59 @@ private struct TripRow: View {
     }
 }
 
+/// A thing on a list. The circle checks it off (it stays here, struck through; a second tap puts it back). A tap
+/// on its name writes over the name right there; the pencil at the end of the name opens everything about it.
+@MainActor
 private struct ListItemRow: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.rowSwiping) private var swiping
     let item: ListItem
     let onCheck: () -> Void
     let onOpen: () -> Void
+    @State private var editing = false
+    @State private var draft = ""
+    @FocusState private var focused: Bool
 
     var body: some View {
         let plan = store.notebook.plan(for: item.id)
+        let done = item.isDone
         HStack(spacing: 12) {
             Button { if !swiping { onCheck() } } label: {
-                Image(systemName: "circle").font(.title3).foregroundStyle(Palette.accent)
+                Image(systemName: done ? "checkmark.circle.fill" : "circle").font(.title3)
+                    .foregroundStyle(done ? Palette.accent.opacity(0.6) : Palette.accent)
                     .frame(width: 28, height: 44).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(item.title)を済みにする")
-            Button { if !swiping { onOpen() } } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(item.title).font(.body).foregroundStyle(.primary)
-                        .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
-                    let marks = details
-                    if plan != nil || !marks.isEmpty {
+            .accessibilityLabel(done ? "\(item.title)を未完了に戻す" : "\(item.title)を済みにする")
+            VStack(alignment: .leading, spacing: 3) {
+                if editing {
+                    TextField("名前", text: $draft)
+                        .font(.body).focused($focused).submitLabel(.done)
+                        .onSubmit(finish)
+                        .task { focused = true }
+                        .accessibilityIdentifier("listItemTitleField")
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(item.title).font(.body)
+                            .strikethrough(done).foregroundStyle(done ? Color.secondary : Color.primary)
+                            .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                            .contentShape(Rectangle())
+                            .onTapGesture { if !swiping { draft = item.title; editing = true } }
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityHint("名前を書き直します")
+                        Button { if !swiping { onOpen() } } label: {
+                            Image(systemName: "square.and.pencil").font(.subheadline).foregroundStyle(Palette.accent.opacity(0.8))
+                                .frame(minWidth: 30, minHeight: 30).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("「\(item.title)」の詳細を開く")
+                        .accessibilityIdentifier("openListItem")
+                        Spacer(minLength: 0)
+                    }
+                }
+                let marks = details
+                if plan != nil || !marks.isEmpty {
+                    Button { if !swiping { onOpen() } } label: {
                         HStack(spacing: 8) {
                             if let plan {
                                 Text("予定 \(plan.plannedAt.map { $0.shortDay } ?? "いつでも")")
@@ -448,20 +517,30 @@ private struct ListItemRow: View {
                             if !item.place.isEmpty {
                                 Text(item.place).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                             }
+                            Spacer(minLength: 0)
                         }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 10)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 10)
             if let latitude = item.latitude, let longitude = item.longitude {
                 Button(action: onOpen) { MapThumbnail(latitude: latitude, longitude: longitude, width: 56, height: 56) }
                     .buttonStyle(.plain)
                     .accessibilityHidden(true)
+                    .opacity(done ? 0.5 : 1)
             }
         }
         .padding(.horizontal, 12)
+        // Leaving the field (tapping elsewhere, scrolling the keyboard away) keeps what was written.
+        .onChange(of: focused) { was, now in if was && !now { finish() } }
+    }
+
+    private func finish() {
+        guard editing else { return }
+        editing = false
+        store.renameItem(item.id, to: draft)
     }
 
     private struct Mark: Identifiable {
@@ -477,37 +556,6 @@ private struct ListItemRow: View {
         if !item.links.isEmpty { marks.append(Mark(symbol: "link", count: item.links.count)) }
         if !item.place.isEmpty { marks.append(Mark(symbol: "mappin", count: 1)) }
         return marks
-    }
-}
-
-/// A thing done: tap it to read its notes or add how it went; 戻す puts it back on the list.
-private struct DoneItemRow: View {
-    @Environment(\.rowSwiping) private var swiping
-    let item: ListItem
-    let onRestore: () -> Void
-    let onOpen: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Button { if !swiping { onOpen() } } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.title).strikethrough().foregroundStyle(.secondary)
-                    HStack(spacing: 8) {
-                        if let done = item.doneAt {
-                            Text(done.shortDay).monospacedDigit()
-                        }
-                        if !item.notes.isEmpty {
-                            Label("\(item.notes.count)", systemImage: "note.text").labelStyle(.titleAndIcon)
-                        }
-                    }
-                    .font(.caption).foregroundStyle(.tertiary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            Button("戻す", action: onRestore).font(.subheadline.weight(.semibold)).buttonStyle(.borderless)
-        }
-        .padding(.horizontal, 16).frame(minHeight: 50)
     }
 }
 
@@ -712,47 +760,6 @@ enum ListLinks {
         var components = URLComponents(string: "https://maps.apple.com/")
         components?.queryItems = items
         return components?.url
-    }
-}
-
-/// Picking a thing from a list to plan, in the add sheet.
-@MainActor
-struct ListItemPicker: View {
-    @EnvironmentObject private var store: TaskStore
-    @Environment(\.dismiss) private var dismiss
-    let onPick: (ListItem) -> Void
-
-    var body: some View {
-        let book = store.notebook
-        let lists = book.lists.filter { !book.openItems(in: $0.id).isEmpty }
-        NavigationStack {
-            List {
-                if lists.isEmpty {
-                    Text("リストに項目がありません。ストックの「リスト」から足せます。").foregroundStyle(.secondary)
-                }
-                ForEach(lists) { list in
-                    Section(list.name) {
-                        ForEach(book.openItems(in: list.id)) { item in
-                            Button {
-                                onPick(item)
-                                dismiss()
-                            } label: {
-                                HStack {
-                                    Text(item.title).foregroundStyle(.primary)
-                                    Spacer()
-                                    if let plan = book.plan(for: item.id) {
-                                        Text("予定 \(plan.plannedAt.map { $0.shortDay } ?? "いつでも")")
-                                            .font(.caption).foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("リストから").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } } }
-        }
     }
 }
 

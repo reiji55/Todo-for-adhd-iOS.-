@@ -10,9 +10,12 @@ public struct StockList: Codable, Identifiable, Equatable {
     /// When the list itself last changed (renamed, or a thing on it removed). What its things say about
     /// themselves is read from them: see `Notebook.lastChange(of:)`.
     public var updatedAt: Date?
+    /// Its place among the lists once they are put in order by hand, lower first. A list without one sits by
+    /// when it was made, the newest first; a new list goes above every other.
+    public var rank: Int?
 
-    public init(id: UUID = UUID(), name: String, createdAt: Date = Date(), updatedAt: Date? = nil) {
-        self.id = id; self.name = name; self.createdAt = createdAt; self.updatedAt = updatedAt
+    public init(id: UUID = UUID(), name: String, createdAt: Date = Date(), updatedAt: Date? = nil, rank: Int? = nil) {
+        self.id = id; self.name = name; self.createdAt = createdAt; self.updatedAt = updatedAt; self.rank = rank
     }
 }
 
@@ -152,6 +155,27 @@ public struct ListItem: Codable, Identifiable, Equatable {
 public extension Notebook {
     func list(_ id: UUID) -> StockList? { lists.first { $0.id == id } }
 
+    /// The lists in their order: as put by hand, and otherwise the newest first.
+    var orderedLists: [StockList] {
+        lists.sorted { a, b in
+            let left = a.rank ?? 0, right = b.rank ?? 0
+            if left != right { return left < right }
+            if a.createdAt != b.createdAt { return a.createdAt > b.createdAt }
+            return a.id.uuidString < b.id.uuidString
+        }
+    }
+
+    /// The rank that puts a new list above every other.
+    var topListRank: Int { (lists.compactMap(\.rank) + [0]).min()! - 1 }
+
+    /// The lists put in this order by hand. Lists not named keep their places after them.
+    mutating func reorderLists(_ ids: [UUID]) {
+        let rest = orderedLists.map(\.id).filter { !ids.contains($0) }
+        for (rank, id) in (ids + rest).enumerated() {
+            if let i = lists.firstIndex(where: { $0.id == id }), lists[i].rank != rank { lists[i].rank = rank }
+        }
+    }
+
     func listItem(_ id: UUID) -> ListItem? { listItems.first { $0.id == id } }
 
     /// The last day anything on a list changed: a thing added, written to, checked off or removed.
@@ -167,12 +191,18 @@ public extension Notebook {
             .sorted { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
     }
 
+    /// Everything on the list, done or not, in the order it was added: a thing checked off stays where it is.
+    func items(in listID: UUID) -> [ListItem] {
+        listItems.filter { $0.listID == listID }
+            .sorted { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
+    }
+
     /// What is still on the list under its headings: those without one first, then each heading in the order
-    /// its first open item was added.
-    func openGroups(in listID: UUID) -> [(heading: String, items: [ListItem])] {
+    /// its first open item was added. With `includingDone`, things checked off stay in their places.
+    func openGroups(in listID: UUID, includingDone: Bool = false) -> [(heading: String, items: [ListItem])] {
         var order: [String] = []
         var byHeading: [String: [ListItem]] = [:]
-        for item in openItems(in: listID) {
+        for item in includingDone ? items(in: listID) : openItems(in: listID) {
             let heading = item.group.trimmingCharacters(in: .whitespacesAndNewlines)
             if byHeading[heading] == nil { order.append(heading) }
             byHeading[heading, default: []].append(item)
@@ -259,7 +289,7 @@ public extension Notebook {
     @discardableResult
     mutating func duplicateList(_ id: UUID, name: String, at now: Date = Date()) -> UUID? {
         guard list(id) != nil else { return nil }
-        let copy = StockList(name: name, createdAt: now)
+        let copy = StockList(name: name, createdAt: now, rank: topListRank)
         lists.append(copy)
         for (index, item) in openItems(in: id).enumerated() {
             listItems.append(ListItem(listID: copy.id, title: item.title, place: item.place, group: item.group,

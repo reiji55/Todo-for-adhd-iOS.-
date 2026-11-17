@@ -840,6 +840,24 @@
 			<key>fileRef</key>
 			<string>331A526B6EAC0FD25AABB8B3</string>
 		</dict>
+		<key>8767AA9B6892932BF09D6041</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>IdeaBundles.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>A191115FE98AB828A7208D5E</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>8767AA9B6892932BF09D6041</string>
+		</dict>
 		<key>88E88117CAE8BA35E4FC5BD8</key>
 		<dict>
 			<key>isa</key>
@@ -1159,6 +1177,7 @@
 				<string>B3F2B32DDE59E07996E44A83</string>
 				<string>06E5C485C75BD79894A65C78</string>
 				<string>331A526B6EAC0FD25AABB8B3</string>
+				<string>8767AA9B6892932BF09D6041</string>
 				<string>88E88117CAE8BA35E4FC5BD8</string>
 				<string>9D140088A5D620126AA963AB</string>
 				<string>B9068717B4F16362ED563C6E</string>
@@ -1684,6 +1703,7 @@
 				<string>DA9DFC85A15CD38B5DC4AD96</string>
 				<string>D26489C4D2D059BAFD56DED5</string>
 				<string>8904DFBD8A141836A94EBE87</string>
+				<string>A191115FE98AB828A7208D5E</string>
 				<string>EAB2F93EED2A36C3AB68DCC2</string>
 				<string>22DBE6FC95760A976F67DE4C</string>
 				<string>56A4C7509848820EFA563687</string>

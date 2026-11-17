@@ -445,3 +445,21 @@ test("期間タスク: made with period_from and deadline, listed on the days of
   const record = store.records.find((r) => r.id === `task_${id}`)!;
   assert.equal(decodeValue(record.fields.periodStart.value), null);
 });
+
+test("a new list goes on top; ideas are bundled under a label and taken out again", async () => {
+  const store = memoryStore();
+  const now = new Date("2026-11-18T01:00:00Z");
+  await call(store, "add_list_items", { new_list: "行きたいところ", items: [{ title: "上野" }] }, now);
+  await call(store, "add_list_items", { new_list: "読みたい本", items: [{ title: "百年の孤独" }] }, new Date("2026-11-18T02:00:00Z"));
+  assert.deepEqual(payload(await call(store, "get_lists", {}, now)).lists.map((l: any) => l.name), ["読みたい本", "行きたいところ"]);
+
+  const a = payload(await call(store, "add_idea", { text: "机を窓際に" }, now)).added;
+  const b = payload(await call(store, "add_idea", { text: "照明を替える" }, now)).added;
+  await call(store, "bundle_ideas", { ids: [a, b], label: " 部屋 " }, now);
+  const c = payload(await call(store, "add_idea", { text: "観葉植物", bundle: "部屋" }, now)).added;
+  let ideas = payload(await call(store, "get_ideas", {}, now)).ideas;
+  assert.deepEqual(ideas.filter((i: any) => i.bundle === "部屋").map((i: any) => i.id).sort(), [a, b, c].sort());
+  await call(store, "bundle_ideas", { ids: [b], label: "" }, now);
+  ideas = payload(await call(store, "get_ideas", {}, now)).ideas;
+  assert.equal(ideas.find((i: any) => i.id === b).bundle, undefined, "taken out of the bundle");
+});

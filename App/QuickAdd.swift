@@ -48,7 +48,7 @@ struct QuickAddSheet: View {
     @State private var source: ListItem?
     /// The whole list this plans (a shopping trip): the task shows the list to check off.
     @State private var wholeList: StockList?
-    @State private var picking = false
+    @State private var project = ""
     @FocusState private var focused: Bool
 
     init(day: Date? = nil, isEvent: Bool = false, item: ListItem? = nil, list: StockList? = nil) {
@@ -79,6 +79,10 @@ struct QuickAddSheet: View {
                 }
                 listSection
                 Section {
+                    ProjectPicker(project: $project)
+                        .accessibilityIdentifier("quickAddProject")
+                }
+                Section {
                     Button("くわしく書く", systemImage: "square.and.pencil") { details = makeTask() }
                         .font(.subheadline)
                 }
@@ -100,12 +104,6 @@ struct QuickAddSheet: View {
             }
             .onChange(of: day) { _, day in if day == nil { slot = nil } }
             .onAppear { focused = source == nil && wholeList == nil }
-            .sheet(isPresented: $picking) {
-                ListItemPicker { item in
-                    source = item
-                    title = item.title
-                }
-            }
             // Saved from the full editor: that was the adding, so this sheet closes too.
             .sheet(item: $details, onDismiss: {
                 if let id = pendingID, store.task(id) != nil { dismiss() }
@@ -118,7 +116,7 @@ struct QuickAddSheet: View {
         .storeErrorAlert()
     }
 
-    /// Where this comes from, when it is planned from a list; otherwise a way to pick a thing from one.
+    /// Where this comes from, when it is planned from a list.
     @ViewBuilder private var listSection: some View {
         if let wholeList {
             Section {
@@ -135,17 +133,12 @@ struct QuickAddSheet: View {
                         .buttonStyle(.borderless).accessibilityLabel("リストとのつながりを外す")
                 }
             }
-        } else if store.notebook.listItems.contains(where: { !$0.isDone }) {
-            Section {
-                Button("リストから選ぶ", systemImage: "list.bullet") { picking = true }
-                    .font(.subheadline)
-                    .accessibilityIdentifier("pickFromList")
-            }
         }
     }
 
     private func makeTask() -> TaskItem {
-        var task = TaskItem(title: trimmed, plannedAt: day, isEvent: isEvent)
+        var task = TaskItem(title: trimmed, plannedAt: day, project: project.trimmingCharacters(in: .whitespacesAndNewlines),
+                            isEvent: isEvent)
         if day != nil { task.slot = slot }
         // The thing's notes and links show in the task from the list itself; copying them would leave a second,
         // stale set in the memo.

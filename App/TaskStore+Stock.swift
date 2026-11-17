@@ -67,6 +67,26 @@ extension TaskStore {
         }
     }
 
+    // MARK: Bundles of ideas
+
+    /// Puts the notes in the bundle with this label (made when there is none); an empty label takes them out.
+    func bundleIdeas(_ ids: [UUID], label: String) {
+        let name = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ids.contains(where: { id in idea(id).map { $0.bundle != name } ?? false }) else { return }
+        if commit({ $0.bundleIdeas(ids, label: name) }) {
+            offerUndo(name.isEmpty ? "束から外しました" : "「\(name)」に束ねました")
+        }
+    }
+
+    /// A new label for a bundle; an empty one unties it.
+    func renameBundle(_ label: String, to newLabel: String) {
+        let name = newLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard name != label else { return }
+        if commit({ $0.renameBundle(label, to: name) }) {
+            offerUndo(name.isEmpty ? "「\(label)」の束をほどきました" : "束の名前を「\(name)」にしました")
+        }
+    }
+
     // MARK: Lists
 
     func list(_ id: UUID) -> StockList? { notebook.list(id) }
@@ -77,8 +97,26 @@ extension TaskStore {
     func addList(_ name: String) -> UUID? {
         let text = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
-        let list = StockList(name: text)
+        // A new list goes above the others.
+        let list = StockList(name: text, rank: notebook.topListRank)
         return commit({ $0.lists.append(list) }) ? list.id : nil
+    }
+
+    /// The lists put in this order by hand.
+    func reorderLists(_ ids: [UUID]) {
+        commit { $0.reorderLists(ids) }
+    }
+
+    /// The name of a thing on a list, written right on its row. An empty name leaves it as it was.
+    @discardableResult
+    func renameItem(_ id: UUID, to title: String) -> Bool {
+        let text = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, let item = listItem(id), item.title != text else { return false }
+        return commit { book in
+            guard let i = book.listItems.firstIndex(where: { $0.id == id }) else { return }
+            book.listItems[i].title = text
+            book.listItems[i].updatedAt = Date()
+        }
     }
 
     func renameList(_ id: UUID, to name: String) {
@@ -172,7 +210,7 @@ extension TaskStore {
                     if let existing = book.lists.first(where: { $0.name == name }) {
                         listID = existing.id
                     } else {
-                        let list = StockList(name: name, createdAt: entry.createdAt)
+                        let list = StockList(name: name, createdAt: entry.createdAt, rank: book.topListRank)
                         book.lists.append(list)
                         listID = list.id
                     }
@@ -189,7 +227,7 @@ extension TaskStore {
 
     /// Lets the share sheet offer the lists there are.
     func publishListNames() {
-        ListInbox.publish(realNotebook.lists.map { ListInbox.ListName(id: $0.id, name: $0.name) })
+        ListInbox.publish(realNotebook.orderedLists.map { ListInbox.ListName(id: $0.id, name: $0.name) })
     }
 
     func moveIdea(_ ideaID: UUID, toList listID: UUID) -> Bool {
