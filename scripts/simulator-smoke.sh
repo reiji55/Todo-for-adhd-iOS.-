@@ -48,7 +48,8 @@ launch() {
 shot() {
   local file="$RESULT_DIR/$1.png" attempt
   for attempt in 1 2 3 4 5; do
-    xcrun simctl io "$SIMULATOR_ID" screenshot "$file"
+    perl -e 'alarm shift; exec @ARGV' 60 xcrun simctl io "$SIMULATOR_ID" screenshot "$file" \
+      || { echo "::warning::$1 could not be captured within a minute" >&2; return 0; }
     python3 -I scripts/screen_is_blank.py "$file" || return 0
     echo "::warning::$1 was captured before the app drew (attempt $attempt)" >&2
     sleep 3
@@ -326,11 +327,18 @@ crash_reports() { ls -1t "$HOME"/Library/Logs/DiagnosticReports/ThreeDays*.ips 2
 before=$(crash_reports | head -1)
 for tab in "2" "2 -uiTimetable" "1" "0" "3" "4"; do
   # shellcheck disable=SC2086
-  launch -uiTab $tab -uiDemo >/dev/null
+  if ! launch -uiTab $tab -uiDemo >/dev/null; then
+    echo "::warning::The $DEVICE_FAMILY simulator stopped launching apps; the rest of the leave-and-return checks are skipped" >&2
+    break
+  fi
   sleep 3
-  # Bounded like every launch: on a busy iPad simulator this once never returned and used up the step.
+  # Bounded like every launch. When Settings itself does not open, the simulator has stopped answering (seen on
+  # busy iPad runners, with Horme idle): what follows would only time out, so the rest is skipped.
   if ! perl -e 'alarm shift; exec @ARGV' 60 xcrun simctl launch "$SIMULATOR_ID" com.apple.Preferences >/dev/null 2>&1; then
-    echo "::warning::Settings did not open within a minute (tab $tab, $DEVICE_FAMILY)" >&2
+    echo "::warning::Settings did not open within a minute (tab $tab, $DEVICE_FAMILY): the simulator stopped answering; the rest of the leave-and-return checks are skipped" >&2
+    pid=$(pgrep -f 'ThreeDays.app/ThreeDays' | head -1 || true)
+    if [ -n "$pid" ]; then ps -o pid,%cpu,stat,etime -p "$pid" >&2 || true; fi
+    break
   fi
   sleep 4
   if ! pgrep -f 'ThreeDays.app/ThreeDays' >/dev/null; then echo "::warning::Horme was not running after leaving demo mode on tab $tab"; fi
