@@ -312,7 +312,13 @@ struct ListPage: View {
             }
             .padding(16).frame(maxWidth: 820).frame(maxWidth: .infinity)
         }
-        .scrollDismissesKeyboard(.interactively)
+        // A tap anywhere off the cards puts the keyboard away: what was being typed is left as it is, not added.
+        .background {
+            Color.clear.contentShape(Rectangle())
+                .onTapGesture { dismissKeyboard() }
+                .accessibilityHidden(true)
+        }
+        .keyboardDismissable()
         .navigationTitle(list.name)
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -473,9 +479,13 @@ private struct ListItemRow: View {
             .accessibilityLabel(done ? "\(item.title)を未完了に戻す" : "\(item.title)を済みにする")
             VStack(alignment: .leading, spacing: 3) {
                 if editing {
-                    TextField("名前", text: $draft)
-                        .font(.body).focused($focused).submitLabel(.done)
-                        .onSubmit(finish)
+                    // Wrapped over lines as it was shown, so writing starts where the eye already is.
+                    TextField("名前", text: $draft, axis: .vertical)
+                        .font(.body).lineLimit(1...8).focused($focused).submitLabel(.done)
+                        .onChange(of: draft) { _, text in
+                            // Return ends the editing instead of starting a new line.
+                            if text.contains("\n") { draft = text.replacingOccurrences(of: "\n", with: ""); focused = false }
+                        }
                         .task { focused = true }
                         .accessibilityIdentifier("listItemTitleField")
                 } else {

@@ -14,43 +14,30 @@ enum UndatedTasks {
     }
 }
 
-/// At the foot of today's timetable: how many tasks have no day yet. A tap lists them by project, each with
-/// 今日へ: the same tasks as in すべて, here to pick what to bring into today.
+/// At the foot of today's timetable: how many tasks have no day yet. A tap opens them (the sheet hangs on the
+/// timetable itself), each with 今日へ: the same tasks as in すべて, here to pick what to bring into today.
 @MainActor
 struct UndatedTasksLink: View {
     @EnvironmentObject private var store: TaskStore
-    let onOpen: (AgendaItem) -> Void
-    @State private var open = false
+    let onTap: () -> Void
 
     var body: some View {
         let count = UndatedTasks.list(store.notebook).count
-        // The sheet hangs on a container that stays, so it is not torn down when the last task leaves the list.
-        VStack(spacing: 0) {
-            if count > 0 { link(count) }
-        }
-        .sheet(isPresented: $open) {
-            UndatedTasksSheet { item in
-                // The editor opens from the root once this sheet is down.
-                open = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { onOpen(item) }
+        if count > 0 {
+            Button(action: onTap) {
+                HStack(spacing: 4) {
+                    Text("日付未確定のタスク")
+                    Text("\(count)件").fontWeight(.bold).foregroundStyle(Palette.accent).monospacedDigit()
+                    Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(Palette.accent)
+                }
+                .font(.footnote).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity).padding(.vertical, 8)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("日付未確定のタスク \(count)件")
+            .accessibilityIdentifier("undatedTasks")
         }
-    }
-
-    private func link(_ count: Int) -> some View {
-        Button { open = true } label: {
-            HStack(spacing: 4) {
-                Text("日付未確定のタスク")
-                Text("\(count)件").fontWeight(.bold).foregroundStyle(Palette.accent).monospacedDigit()
-                Image(systemName: "chevron.right").font(.caption2.weight(.bold)).foregroundStyle(Palette.accent)
-            }
-            .font(.footnote).foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity).padding(.vertical, 8)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("日付未確定のタスク \(count)件")
-        .accessibilityIdentifier("undatedTasks")
     }
 }
 

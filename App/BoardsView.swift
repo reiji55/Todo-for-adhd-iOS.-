@@ -137,15 +137,11 @@ struct AllTasksView: View {
         let dated = open.filter { $0.deadline != nil }
         let musts = open.filter { $0.isMust && $0.deadline == nil }
             .sorted { (listedDay($0) ?? .distantFuture, $0.createdAt) < (listedDay($1) ?? .distantFuture, $1.createdAt) }
-        // A project's deadline counts once for its open tasks that have none of their own.
-        let projects: [(project: Project, tasks: [TaskItem])] = book.projects.compactMap { project in
-            guard project.deadline != nil else { return nil }
-            let tasks = open.filter { !$0.isComplete && $0.deadline == nil && ProjectBook.key($0.project) == ProjectBook.key(project.name) }
-                .sorted(by: TaskBoard().scheduledOrder)
-            return tasks.isEmpty ? nil : (project, tasks)
+        // A project's deadline is on its own fold below, so the project is not shown twice.
+        let rows = dated.map { DeadlineEntry.task($0) }.sorted { ($0.due, $0.id) < ($1.due, $1.id) }
+        let projectDue: (String) -> Date = { name in
+            name.isEmpty ? .distantPast : ProjectBook.project(named: name, in: book)?.deadline ?? .distantFuture
         }
-        let rows = (dated.map { DeadlineEntry.task($0) } + projects.map { DeadlineEntry.project($0.project, tasks: $0.tasks) })
-            .sorted { ($0.due, $0.id) < ($1.due, $1.id) }
         let top = Set(dated.map(\.id) + musts.map(\.id))
         let rest = open.filter { !top.contains($0.id) }
             .sorted { (listedDay($0) ?? .distantFuture, $0.createdAt) < (listedDay($1) ?? .distantFuture, $1.createdAt) }
@@ -161,7 +157,10 @@ struct AllTasksView: View {
             }
             ForEach(musts) { task in row(task, showsDay: true) }
         }
-        ForEach(Self.folds(rest), id: \.name) { fold in
+        // Without a project first, then projects with a deadline, nearest first, then the rest as they come.
+        let folds = Self.folds(rest).enumerated()
+            .sorted { (projectDue($0.element.name), $0.offset) < (projectDue($1.element.name), $1.offset) }.map(\.element)
+        ForEach(folds, id: \.name) { fold in
             let unfolded = !search.isEmpty || isOpen(fold.name)
             foldHeader(fold.name, tasks: fold.tasks, open: unfolded)
             if unfolded {
@@ -273,32 +272,63 @@ struct AllTasksView: View {
     }
 
     /// A project's fold: its name and count, and while folded, the next of its tasks.
+    /// A project's fold: its name and count, its deadline when it has one (with the flag that goes to it on the
+    /// board), and while folded, the next of its tasks.
     private func foldHeader(_ name: String, tasks: [TaskItem], open: Bool) -> some View {
         let color = name.isEmpty ? nil : ProjectColor.color(for: store.colorName(forProject: name))
-        return Button { withAnimation(.snappy) { toggle(name) } } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    Circle().fill(color ?? Color.secondary.opacity(0.5)).frame(width: 9, height: 9)
-                    Text(name.isEmpty ? "プロジェクトなし" : name).font(.subheadline.weight(.bold)).lineLimit(1)
-                    Text("\(tasks.count)件").font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                    Spacer(minLength: 0)
-                    Image(systemName: open ? "chevron.up" : "chevron.down").font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+        let project = name.isEmpty ? nil : ProjectBook.project(named: name, in: store.notebook)
+        return HStack(spacing: 6) {
+            Button { withAnimation(.snappy) { toggle(name) } } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    if let due = project?.deadline {
+                        Text("期限 \(due.shortDay)・\(Self.left(due))").font(.caption2.weight(.semibold))
+                            .foregroundStyle(Palette.must).padding(.leading, 17)
+                    }
+                    HStack(spacing: 8) {
+                        Circle().fill(color ?? Color.secondary.opacity(0.5)).frame(width: 9, height: 9)
+                        Text(name.isEmpty ? "プロジェクトなし" : name).font(.subheadline.weight(.bold)).lineLimit(1)
+                        Text("\(tasks.count)件").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                        Spacer(minLength: 0)
+                        Image(systemName: open ? "chevron.up" : "chevron.down").font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    if !open, let next = tasks.first {
+                        Text("次：\(next.title)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            .padding(.leading, 17)
+                    }
                 }
-                if !open, let next = tasks.first {
-                    Text("次：\(next.title)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        .padding(.leading, 17)
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 12).padding(.vertical, 11)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 14).fill(Color(uiColor: .secondarySystemGroupedBackground)))
-            .contentShape(RoundedRectangle(cornerRadius: 14))
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(name.isEmpty ? "プロジェクトなし" : name)、\(tasks.count)件" + (project?.deadline.map { "、期限 \($0.shortDay)" } ?? ""))
+            .accessibilityValue(open ? "展開中" : "折りたたみ")
+            .accessibilityIdentifier("projectFold-\(name.isEmpty ? "none" : name)")
+            if project?.deadline != nil, let color {
+                // The flag goes to the project on the board.
+                Button { store.projectToOpen = ProjectBook.key(name) } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "flag.fill").foregroundStyle(color)
+                        Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 10).padding(.vertical, 7)
+                    .background(Capsule().fill(color.opacity(0.14)))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("ボードでプロジェクト「\(name)」を開く")
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(name.isEmpty ? "プロジェクトなし" : name)、\(tasks.count)件")
-        .accessibilityValue(open ? "展開中" : "折りたたみ")
-        .accessibilityIdentifier("projectFold-\(name.isEmpty ? "none" : name)")
+        .padding(.horizontal, 12).padding(.vertical, 11)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color(uiColor: .secondarySystemGroupedBackground)))
+    }
+
+    /// "あと3日", "今日まで", "過ぎています".
+    static func left(_ due: Date, now: Date = Date()) -> String {
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: due)).day ?? 0
+        return days < 0 ? "過ぎています" : days == 0 ? "今日まで" : "あと\(days)日"
     }
 
     private func matchesSearch(_ task: TaskItem) -> Bool {

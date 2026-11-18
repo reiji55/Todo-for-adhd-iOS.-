@@ -5,6 +5,8 @@ struct TodayView: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.refreshClock) private var refreshClock
     @State private var rolloverOpen = false
+    /// The tasks without a day, opened from the foot of the timetable.
+    @State private var undatedOpen = false
     /// A fixed five-day window centered on today. Other days are for a look; reopening returns to today.
     @State private var dayOffset = 0
     let onOpen: (AgendaItem) -> Void
@@ -25,6 +27,15 @@ struct TodayView: View {
             }
         }
         .sheet(isPresented: $rolloverOpen) { RolloverSheet() }
+        // On the screen itself, not inside the lazily built list, where a sheet may never come up.
+        .sheet(isPresented: $undatedOpen) {
+            UndatedTasksSheet { item in
+                // The editor opens from the root once this sheet is down.
+                undatedOpen = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { onOpen(item) }
+            }
+            .keepsStore()
+        }
         .onAppear { dayOffset = 0 }
         .onDisappear { dayOffset = 0 }
     }
@@ -183,7 +194,7 @@ struct TodayView: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("periodSection")
             }
-            UndatedTasksLink(onOpen: onOpen)
+            UndatedTasksLink { undatedOpen = true }
                 .padding(.top, 12)
         }
         .frame(maxWidth: 760).frame(maxWidth: .infinity)
