@@ -230,3 +230,53 @@ enum ScatteredNames {
         return (try? JSONDecoder().decode([Entry].self, from: data)) ?? []
     }
 }
+
+/// The store's actions on パッケージ and an event's 関連タスク.
+extension TaskStore {
+    /// Saves how a task is split as a パッケージ (one of the same name is written over).
+    func savePackage(fromPiecesOf taskID: UUID, name: String) {
+        let title = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        var saved: UUID?
+        if commit({ saved = $0.savePackage(fromPiecesOf: taskID, name: title) }), saved != nil {
+            offerUndo("パッケージ「\(title)」を保存しました")
+        }
+    }
+
+    /// Puts a パッケージ into a saved task as its pieces, or into an event as its 関連タスク.
+    func applyPackage(_ id: UUID, to targetID: UUID) {
+        guard let package = notebook.packages.first(where: { $0.id == id }) else { return }
+        var added = 0
+        if commit({ added = $0.applyPackage(id, to: targetID) }), added > 0 {
+            offerUndo("「\(package.name)」の\(added)件を足しました")
+        }
+    }
+
+    /// A 関連タスク for an event, due on its day.
+    @discardableResult
+    func addRelated(_ title: String, to eventID: UUID) -> Bool {
+        let text = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return false }
+        guard task(eventID) != nil else { error = "このイベントは別の端末で削除されました。"; return false }
+        return commit { $0.addRelated(TaskItem(title: text), to: eventID) }
+    }
+
+    /// A パッケージ as edited in settings; one left with no name or nothing in it is kept as it was.
+    func updatePackage(_ package: TaskPackage) {
+        let name = package.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let items = package.cleanItems
+        guard !name.isEmpty, !items.isEmpty,
+              let current = notebook.packages.first(where: { $0.id == package.id }),
+              current.name != name || current.items != items else { return }
+        commit { book in
+            guard let i = book.packages.firstIndex(where: { $0.id == package.id }) else { return }
+            book.packages[i].name = name
+            book.packages[i].items = items
+        }
+    }
+
+    func deletePackage(_ id: UUID) {
+        guard let package = notebook.packages.first(where: { $0.id == id }) else { return }
+        if commit({ $0.packages.removeAll { $0.id == id } }) { offerUndo("パッケージ「\(package.name)」を削除しました") }
+    }
+}

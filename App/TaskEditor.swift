@@ -22,6 +22,9 @@ struct TaskEditor: View {
     @State private var openedProject: ProjectRoute?
     /// A task opened from that project page, edited over this one.
     @State private var otherTask: TaskItem?
+    /// Naming a パッケージ saved from how this task is split.
+    @State private var savingPackage = false
+    @State private var packageName = ""
     /// What the form showed when it opened, to tell whether anything was typed.
     private let initial: TaskItem
     private let initialPieces: [TaskItem]
@@ -160,6 +163,10 @@ struct TaskEditor: View {
                     })
                 }
                 if !task.isEvent && !isPiece && task.listID == nil { piecesSection }
+                // An event's 関連タスク: saved as they are added, so the event must be saved first.
+                if task.isEvent && store.task(task.id) != nil {
+                    RelatedTasksSection(eventID: task.id) { otherTask = $0 }
+                }
                 if (!isWhole && task.plannedAt != nil && task.slot != nil) || (!task.isEvent && task.deadline != nil) {
                     Section {
                         Toggle("通知", isOn: $task.notify)
@@ -329,6 +336,27 @@ struct TaskEditor: View {
                     Button("足す", action: addPiece).buttonStyle(.borderless).fontWeight(.semibold)
                 }
             }
+            if !store.notebook.packages.isEmpty {
+                PackageMenu { addPieces($0.cleanItems) }
+            }
+            // パッケージに保存: offered once what is shown is saved, so it is the split as it stands.
+            if isWhole, !changed, store.hasChildren(task.id) {
+                Button {
+                    packageName = ""
+                    savingPackage = true
+                } label: {
+                    Label("この分け方をパッケージに保存", systemImage: "shippingbox").font(.subheadline)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("savePackage")
+                .alert("パッケージに保存", isPresented: $savingPackage) {
+                    TextField("名前（例：旅行の準備）", text: $packageName)
+                    Button("保存") { store.savePackage(fromPiecesOf: task.id, name: packageName) }
+                    Button("キャンセル", role: .cancel) {}
+                } message: {
+                    Text("子タスクの並びだけを保存します。日付や締切は入りません。")
+                }
+            }
         } header: {
             HStack {
                 Text(isWhole ? "子タスク \(pieces.filter(\.isComplete).count)/\(pieces.count)" : "子タスク")
@@ -345,6 +373,18 @@ struct TaskEditor: View {
     private var changed: Bool {
         task != initial || pieces != initialPieces || !removedPieces.isEmpty
             || !newPiece.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Pieces from a パッケージ, after any there are; the first takes over the task's day and time, as one typed does.
+    private func addPieces(_ titles: [String]) {
+        for title in titles {
+            var piece = TaskItem(title: title, project: task.project, parentID: task.id, rank: pieces.count)
+            if pieces.isEmpty, let day = task.plannedAt {
+                piece.plannedAt = day
+                piece.scheduledTime = task.scheduledTime
+            }
+            withAnimation(.snappy) { pieces.append(piece) }
+        }
     }
 
     private func addPiece() {

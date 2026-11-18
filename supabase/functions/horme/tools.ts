@@ -2,7 +2,7 @@
 // and lets the database merge them, so the app's own edits made at the same time survive.
 
 import { addDays, agenda, dayKey, dayToISO, isAlive, itemLinks, itemNotes, lastChange, listProgress, materialize, newID, noteAndLinkFields, nowISO, piecesOf, taskItem, todayKey, Writer } from "./records.ts";
-import type { Book, ItemLink, ItemNote, ListItem, Milestone, Project, StockList, SyncRecord, Task } from "./records.ts";
+import type { Book, ItemLink, ItemNote, ListItem, Milestone, Project, StockList, SyncRecord, Task, TaskPackage } from "./records.ts";
 
 export interface RecordStore {
   load(): Promise<SyncRecord[]>;
@@ -285,7 +285,8 @@ export const tools: Tool[] = [
       "kind=\"event\" はその日にある予定（買い物、人に会う）で、必須や締切はなく、やり残しにもならない。くり返すものは add_routine でルーティンにする。" +
       "parent にタスクの id を渡すと、そのタスクの子タスクとして足す（子タスクの date を省くと日付なし。ただし最初の子タスクは親の日付と時間を引き継ぎ、親は締切と必須だけを持つ形になる）。" +
       "after にタスクの id を渡すと、そのタスクの次（つながり）として足す。前のタスクが済むまで候補に出ない。before で、そのタスクの前に足す（それより先に必要なこと）。date を省くと日付なし。" +
-      "「12月中に」のように期間のあるものは期間タスクにする：period_from に始まりの日、deadline に終わりの日（その日が締切）。期間が始まるまでは候補に出ない。日付（date）は決めなければ省く。",
+      "「12月中に」のように期間のあるものは期間タスクにする：period_from に始まりの日、deadline に終わりの日（その日が締切）。期間が始まるまでは候補に出ない。日付（date）は決めなければ省く。" +
+      "event にイベントの id を渡すと、そのイベントの関連タスク（旅行の準備など）として足す。締切は省くとイベントの日、date を省くと日付なし。",
     inputSchema: {
       type: "object",
       properties: {
@@ -299,6 +300,7 @@ export const tools: Tool[] = [
               must: { type: "boolean", description: "本人が必須と決めたものだけ true（タスクのみ）" },
               deadline: { type: "string", description: "締切 YYYY-MM-DD（期間タスクなら期間の終わりの日）" },
               period_from: { type: "string", description: "期間タスクの始まりの日 YYYY-MM-DD。deadline と合わせて使う" },
+              event: { type: "string", description: "関連タスクにするときのイベントの id" },
               memo: { type: "string", description: "本人用のメモ" },
               handoff: { type: "string", description: "Claude への引き継ぎ" },
               parent: { type: "string", description: "子タスクにするときの親タスクの id" },
@@ -323,6 +325,10 @@ export const tools: Tool[] = [
         const parent = input.parent ? find(book, input.parent) : undefined;
         const isEvent = input.kind === "event";
         const anchor = input.after ? find(book, input.after) : input.before ? find(book, input.before) : undefined;
+        const forEvent = input.event ? find(book, input.event) : undefined;
+        if (forEvent && (!forEvent.isEvent || isEvent || parent)) {
+          throw new Error("関連タスクは、イベントの id を event に渡して、子タスクでもイベントでもないタスクとして足します。");
+        }
         if (anchor && (parent || isEvent || anchor.parentID || anchor.isEvent)) {
           throw new Error("つながり（after / before）は、子タスクでもイベントでもないタスクどうしで作れます。");
         }
@@ -334,7 +340,7 @@ export const tools: Tool[] = [
         const count = parent ? (newPieces.get(parent.id) ?? 0) : 0;
         const first = !!parent && earlier.length === 0 && count === 0;
         // A piece without a date has none, except the first, which takes over its parent's day and time.
-        let date = input.date ?? (parent ? (first && parent.plannedAt ? dayKey(parent.plannedAt) : "anytime") : anchor ? "anytime" : todayKey(now));
+        let date = input.date ?? (parent ? (first && parent.plannedAt ? dayKey(parent.plannedAt) : "anytime") : anchor || forEvent ? "anytime" : todayKey(now));
         let time = input.time ?? (first && parent && input.date === undefined ? parent.scheduledTime ?? "" : "");
         validDate(date); validTime(time);
         if (isEvent && date === "anytime") throw new Error("イベントには日付が必要です。");
@@ -353,7 +359,7 @@ export const tools: Tool[] = [
         const values: Args = {
           alive: true, id, title, scheduledTime: date === "anytime" ? "" : String(time).trim(),
           isMust: isEvent || parent ? false : !!input.must, isEvent, effort: "medium",
-          project: parent ? parent.project ?? "" : input.project ?? anchor?.project ?? "", memo: input.memo ?? "",
+          project: parent ? parent.project ?? "" : input.project ?? anchor?.project ?? forEvent?.project ?? "", memo: input.memo ?? "",
           handoff: input.handoff ?? "", resumeNote: "", createdAt: nowISO(now), notify: true,
         };
         if (date !== "anytime") values.plannedAt = dayToISO(date);
@@ -369,6 +375,10 @@ export const tools: Tool[] = [
         if (list) values.listID = list.id;
         if (!isEvent && !parent && input.deadline && input.deadline !== "anytime") values.deadline = dayToISO(input.deadline);
         if (input.period_from) values.periodStart = dayToISO(input.period_from);
+        if (forEvent) {
+          values.eventID = forEvent.id;
+          if (!values.deadline && forEvent.plannedAt) values.deadline = forEvent.plannedAt;
+        }
         if (parent) {
           values.parentID = parent.id;
           values.rank = Math.max(-1, ...earlier.map((p) => p.rank ?? 0)) + 1 + count;
@@ -513,6 +523,8 @@ export const tools: Tool[] = [
         const task = find(book, id);
         // What came after it now follows what came before it, so the つながり stays whole.
         for (const t of book.tasks) if (sameID(t.follows, task.id)) writer.set(`task_${t.id}`, { follows: task.follows ?? null });
+        // An event's 関連タスク stay, on their own.
+        for (const t of book.tasks) if (sameID(t.eventID, task.id)) writer.set(`task_${t.id}`, { eventID: null });
         for (const t of [task, ...piecesOf(book, task.id)]) { writer.set(`task_${t.id}`, { alive: false }); removed.add(t.id.toUpperCase()); }
         if (task.parentID) parents.add(task.parentID);
       }
@@ -582,6 +594,79 @@ export const tools: Tool[] = [
       const writer = new Writer(records, "claude", now.getTime());
       writer.set(`routine_${routine.id}`, values);
       return { result: { changed: true, id: routine.id }, changes: writer.changes };
+    },
+  },
+  {
+    name: "get_packages",
+    title: "パッケージを読む",
+    description: "パッケージ（旅行の準備など、決まった子タスクのセット）の一覧。items は子タスクの名前を順に。",
+    inputSchema: { type: "object", properties: {} },
+    run: (_, { book }) => ({ result: book.packages.map((p) => ({ id: p.id, name: p.name, items: p.items })) }),
+  },
+  {
+    name: "save_package",
+    title: "パッケージを作る・直す",
+    description: "パッケージを作る。同じ名前のものがあれば中身を置き換える。日付や締切は持たない。本人に頼まれたときに行う。",
+    inputSchema: {
+      type: "object",
+      properties: { name: { type: "string" }, items: { type: "array", items: { type: "string" }, minItems: 1 } },
+      required: ["name", "items"],
+    },
+    run: ({ name, items }, { records, book, now }) => {
+      const title = String(name ?? "").trim();
+      const names = (items as unknown[]).map((i) => String(i ?? "").trim()).filter(Boolean);
+      if (!title || !names.length) throw new Error("name と items（1つ以上）を渡してください。");
+      const writer = new Writer(records, "claude", now.getTime());
+      const existing = book.packages.find((p) => p.name === title);
+      const id = existing?.id ?? newID();
+      writer.set(`package_${id}`, existing ? { items: names } : { alive: true, id, name: title, items: names, createdAt: nowISO(now) });
+      return { result: existing ? { changed: true, id } : { added: id }, changes: writer.changes };
+    },
+  },
+  {
+    name: "apply_package",
+    title: "パッケージを当てはめる",
+    description:
+      "パッケージの中身を、タスクには子タスクとして、イベントには関連タスク（締切はイベントの日）としてまとめて足す。" +
+      "package は id か名前、to はタスクかイベントの id。",
+    inputSchema: {
+      type: "object",
+      properties: { package: { type: "string" }, to: { type: "string" } },
+      required: ["package", "to"],
+    },
+    run: (args, { records, book, now }) => {
+      const pkg = book.packages.find((p) => sameID(p.id, String(args.package)) || p.name === String(args.package).trim());
+      if (!pkg) throw new Error(`パッケージが見つかりません: ${args.package}。get_packages で確かめてください。`);
+      const target = find(book, args.to);
+      if (target.parentID) throw new Error("子タスクには当てはめられません。親のタスクかイベントの id を渡してください。");
+      const writer = new Writer(records, "claude", now.getTime());
+      const earlier = piecesOf(book, target.id);
+      const added: string[] = [];
+      pkg.items.map((i) => i.trim()).filter(Boolean).forEach((title, index) => {
+        const id = newID();
+        const createdAt = nowISO(new Date(now.getTime() + index * 1000));
+        const values: Args = {
+          alive: true, id, title, scheduledTime: "", isMust: false, isEvent: false, effort: "medium",
+          project: target.project ?? "", memo: "", handoff: "", resumeNote: "", createdAt, notify: true,
+        };
+        if (target.isEvent) {
+          values.eventID = target.id;
+          if (target.plannedAt) values.deadline = target.plannedAt;
+        } else {
+          values.parentID = target.id;
+          values.rank = Math.max(-1, ...earlier.map((p) => p.rank ?? 0)) + 1 + index;
+          // The first piece takes over the task's day and time, as in the app.
+          if (!earlier.length && index === 0 && target.plannedAt) {
+            values.plannedAt = target.plannedAt;
+            values.scheduledTime = target.scheduledTime ?? "";
+          }
+        }
+        writer.set(`task_${id}`, values);
+        added.push(id);
+      });
+      if (!target.isEvent && !earlier.length && target.plannedAt) writer.set(`task_${target.id}`, { plannedAt: null, scheduledTime: "" });
+      if (!target.isEvent && target.completedAt) writer.set(`task_${target.id}`, { completedAt: null });
+      return { result: { added, as: target.isEvent ? "関連タスク" : "子タスク" }, changes: writer.changes };
     },
   },
   {
@@ -1026,6 +1111,7 @@ export const instructions =
   "大きなタスクは子タスクに分かれていることがある（pieces / parent）。日付と時間は子タスクが持ち、親タスクは締切と必須だけを持つ。子タスクがすべて済むと親も完了になる。" +
   "タスクどうしは「つながり」で前後に結べる（after / next）。次のタスクは前が済むまで候補に出ない。あとから次にやることを足すときは add_tasks の after を使う。" +
   "「○日から○日までの間にやる」ものは期間タスク（period：from〜to、to が締切）。期間が始まるまでは候補に出ず、期間中は毎日その日の画面に出る。" +
+  "イベントには関連タスク（forEvent / related）を付けられる。締切はイベントの日。決まった子タスクのセットはパッケージ（get_packages / apply_package）。" +
   "日付は日本時間。書き換える前に get_today / get_days で id と現状を確かめる。" +
   "handoff は本人が「Claude にやってほしい」と残した依頼で、対応したら memo に結果を書いて handoff を空にする。" +
   "変更はアプリと iCloud に数十秒以内に反映される。タスク・イベント・ルーティン・プロジェクト・リストの追加や変更は本人に頼まれたときに行う。頼まれていないのに必須にしたり消したりはしない。";

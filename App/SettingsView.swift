@@ -37,6 +37,11 @@ struct SettingsView: View {
                         LabeledContent("ルーティン", value: "\(store.notebook.routines.filter { !$0.isPaused }.count)件")
                     }
                 } footer: { Text("くり返しの予定。「すべて」の画面からも開けます。") }
+                Section {
+                    NavigationLink { PackagesView() } label: {
+                        LabeledContent("パッケージ", value: "\(store.notebook.packages.count)件")
+                    }
+                } footer: { Text("決まった子タスクのセット。子タスクに分けたタスクから保存し、ほかのタスクやイベントにまとめて足せます。") }
                 Section("優先づけのルール") {
                     Label("今日が締切・締切を過ぎたものは上段に常時表示", systemImage: "pin")
                     Text("★必須は「落とせないもの」の印です。それだけでは今日の上段に出ず、「すべて」の上の「締切・★」に締切のあるものと並びます。")

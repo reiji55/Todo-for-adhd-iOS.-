@@ -26,7 +26,11 @@ export type Task = {
   follows?: string | null;
   /** 期間タスク: the first day of the stretch it is done in; the stretch ends on its deadline. */
   periodStart?: string | null;
+  /** 関連タスク: the event this task is for. */
+  eventID?: string | null;
 };
+/** パッケージ: a named set of pieces, put into a task as its pieces or into an event as its 関連タスク. */
+export type TaskPackage = { id: string; name: string; items: string[]; createdAt: string };
 /** A list of concrete things kept for later (places, books, groceries). Not a plan. `updatedAt`: when the
  *  list itself last changed (renamed, or a thing removed). */
 export type StockList = { id: string; name: string; createdAt: string; updatedAt?: string | null; rank?: number | null };
@@ -64,6 +68,7 @@ export type Project = {
 };
 export type Book = {
   tasks: Task[]; ideas: Idea[]; cards: Card[]; routines: Routine[]; projects: Project[]; lists: StockList[]; items: ListItem[];
+  packages: TaskPackage[];
 };
 
 const encoder = new TextEncoder();
@@ -86,7 +91,7 @@ export function decodeValue(value: string | undefined): unknown {
 export const isAlive = (r: SyncRecord) => decodeValue(r.fields.alive?.value) === true;
 
 export function materialize(records: SyncRecord[]): Book {
-  const book: Book = { tasks: [], ideas: [], cards: [], routines: [], projects: [], lists: [], items: [] };
+  const book: Book = { tasks: [], ideas: [], cards: [], routines: [], projects: [], lists: [], items: [], packages: [] };
   for (const record of records) {
     if (!isAlive(record)) continue;
     const plain: Record<string, unknown> = {};
@@ -110,6 +115,8 @@ export function materialize(records: SyncRecord[]): Book {
       book.lists.push(plain as StockList);
     } else if (record.id.startsWith("item_")) {
       book.items.push({ memo: "", link: "", place: "", group: "", ...(plain as ListItem) });
+    } else if (record.id.startsWith("package_")) {
+      book.packages.push({ items: [], ...(plain as TaskPackage) });
     } else if (record.id.startsWith("card_")) {
       book.cards.push({ purpose: "", goal: "", detail: "", rank: 0, ...(plain as Card) });
     } else if (record.id.startsWith("project_")) {
@@ -140,6 +147,7 @@ export function materialize(records: SyncRecord[]): Book {
   // As the app shows them: put in order by hand (rank), and otherwise the newest first.
   book.lists.sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0) || b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
   book.items.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  book.packages.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   return book;
 }
 
@@ -230,6 +238,9 @@ export type AgendaItem = {
   next?: { id: string; title: string };
   /** 期間タスク: the stretch it is to be done in (YYYY-MM-DD, both days included). */
   period?: { from: string; to: string };
+  /** 関連タスク: for a task, the event it is for; for an event, how many of its tasks are done. */
+  forEvent?: { id: string; title: string; date?: string };
+  related?: { done: number; total: number };
   /** For a task or event made from one thing on a list: that thing. */
   fromItem?: {
     id: string; title: string; list: string;
@@ -325,6 +336,14 @@ export function taskItem(t: Task, book?: Book): AgendaItem {
       return next ? { id: next.id, title: next.title } : undefined;
     })() : undefined,
     period: t.periodStart && t.deadline ? { from: dayKey(t.periodStart), to: dayKey(t.deadline) } : undefined,
+    forEvent: book && t.eventID ? (() => {
+      const event = book.tasks.find((e) => same(e.id, t.eventID!) && e.isEvent);
+      return event ? { id: event.id, title: event.title, date: event.plannedAt ? dayKey(event.plannedAt) : undefined } : undefined;
+    })() : undefined,
+    related: book && t.isEvent ? (() => {
+      const mine = book.tasks.filter((r) => same(r.eventID, t.id));
+      return mine.length ? { done: mine.filter((r) => r.completedAt).length, total: mine.length } : undefined;
+    })() : undefined,
     pieces: pieces.length ? pieces.map((p) => ({
       id: p.id, title: p.title, done: !!p.completedAt, date: p.plannedAt ? dayKey(p.plannedAt) : "anytime",
       time: p.scheduledTime || undefined,

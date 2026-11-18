@@ -192,11 +192,26 @@ struct AgendaRow: View {
                             Text("締切 \(deadline.shortDay)").font(.caption2.weight(.semibold)).foregroundStyle(Palette.must)
                         }
                         if !item.project.isEmpty { ProjectTag(name: item.project) }
+                        // An event with 関連タスク: how many are done.
+                        if item.isEvent, let task {
+                            let related = store.notebook.relatedTasks(of: task.id)
+                            if !related.isEmpty {
+                                Text("関連タスク \(related.filter(\.isComplete).count)/\(related.count)")
+                                    .font(.caption2.weight(.bold)).foregroundStyle(Palette.accent).monospacedDigit()
+                                    .padding(.horizontal, 6).padding(.vertical, 1)
+                                    .background(Capsule().fill(Palette.accent.opacity(0.12)))
+                            }
+                        }
                         if let task, let progress = store.notebook.listProgress(of: task) {
                             Label("\(progress.done)/\(progress.total)", systemImage: "checklist")
                                 .font(.caption2.weight(.semibold)).monospacedDigit().foregroundStyle(Palette.accent)
                                 .accessibilityLabel("リスト \(progress.done)/\(progress.total)")
                         }
+                    }
+                    // A task for an event says which: "京都旅行のタスク".
+                    if let task, let event = store.notebook.event(of: task) {
+                        Label("\(event.title)のタスク", systemImage: "calendar")
+                            .font(.caption2.weight(.semibold)).foregroundStyle(Palette.accent).lineLimit(1)
                     }
                     // A piece of a bigger task says which, and how far that task has come.
                     if let parent = task?.parentID.flatMap({ store.task($0) }) {

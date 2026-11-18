@@ -463,3 +463,24 @@ test("a new list goes on top; ideas are bundled under a label and taken out agai
   ideas = payload(await call(store, "get_ideas", {}, now)).ideas;
   assert.equal(ideas.find((i: any) => i.id === b).bundle, undefined, "taken out of the bundle");
 });
+
+test("パッケージ: saved, put into a task as pieces and into an event as 関連タスク due on its day", async () => {
+  const store = memoryStore();
+  const now = new Date("2026-11-18T01:00:00Z");
+  await call(store, "save_package", { name: "旅行の準備", items: ["荷造り", " ", "レンタカーを手配"] }, now);
+  assert.deepEqual(payload(await call(store, "get_packages", {}, now)).map((p: any) => p.items), [["荷造り", "レンタカーを手配"]]);
+  const trip = payload(await call(store, "add_tasks", { tasks: [{ title: "京都旅行", kind: "event", date: "2026-11-30" }] }, now)).added[0];
+  await call(store, "apply_package", { package: "旅行の準備", to: trip }, now);
+  const own = payload(await call(store, "add_tasks", { tasks: [{ title: "宿の確認メール", event: trip }] }, now)).added[0];
+  const task = payload(await call(store, "get_task", { id: own }, now));
+  assert.deepEqual([task.forEvent.title, task.deadline], ["京都旅行", "2026-11-30"]);
+  assert.deepEqual(payload(await call(store, "get_task", { id: trip }, now)).related, { done: 0, total: 3 });
+
+  const parent = payload(await call(store, "add_tasks", { tasks: [{ title: "旅行の準備（札幌）", date: "2026-12-10" }] }, now)).added[0];
+  await call(store, "apply_package", { package: "旅行の準備", to: parent }, now);
+  const pieces = payload(await call(store, "get_task", { id: parent }, now)).pieces;
+  assert.deepEqual(pieces.map((p: any) => [p.title, p.date]), [["荷造り", "2026-12-10"], ["レンタカーを手配", "anytime"]]);
+
+  await call(store, "remove_tasks", { ids: [trip] }, now);
+  assert.equal(payload(await call(store, "get_task", { id: own }, now)).forEvent, undefined, "the task stays, on its own");
+});
