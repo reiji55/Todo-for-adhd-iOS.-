@@ -82,6 +82,8 @@ public struct TaskItem: Codable, Identifiable, Equatable {
     /// 期間タスク: the first day of the stretch it is to be done in; the stretch ends on its deadline. Before
     /// that day it is not suggested. Top-level tasks only, like a deadline.
     public var periodStart: Date?
+    /// The event this task is for (関連タスク): done on its own, like any task. Top-level tasks only.
+    public var eventID: UUID?
 
     public init(id: UUID = UUID(), title: String, plannedAt: Date? = nil,
                 scheduledTime: String = "", deadline: Date? = nil, isMust: Bool = false,
@@ -90,7 +92,8 @@ public struct TaskItem: Codable, Identifiable, Equatable {
                 createdAt: Date = Date(), lastStartedAt: Date? = nil, completedAt: Date? = nil,
                 suggestionDeferredUntil: Date? = nil, notify: Bool = true, isEvent: Bool = false, milestoneID: UUID? = nil,
                 parentID: UUID? = nil, rank: Int = 0, continuationNote: String = "",
-                listID: UUID? = nil, listItemID: UUID? = nil, follows: UUID? = nil, periodStart: Date? = nil) {
+                listID: UUID? = nil, listItemID: UUID? = nil, follows: UUID? = nil, periodStart: Date? = nil,
+                eventID: UUID? = nil) {
         self.id = id; self.title = title; self.plannedAt = plannedAt
         self.scheduledTime = scheduledTime; self.deadline = deadline; self.isMust = isMust
         self.effort = effort; self.project = project; self.memo = memo; self.handoff = handoff
@@ -100,7 +103,7 @@ public struct TaskItem: Codable, Identifiable, Equatable {
         self.milestoneID = milestoneID; self.parentID = parentID; self.rank = rank
         self.continuationNote = continuationNote
         self.listID = listID; self.listItemID = listItemID; self.follows = follows
-        self.periodStart = periodStart
+        self.periodStart = periodStart; self.eventID = eventID
     }
     public var isComplete: Bool { completedAt != nil }
     public var nextStep: Step? { steps.first { !$0.isDone } }
@@ -221,15 +224,18 @@ public struct Notebook: Codable, Equatable {
     public var projects: [Project]
     public var lists: [StockList]
     public var listItems: [ListItem]
+    /// パッケージ: named sets of pieces, put into a task (or as an event's 関連タスク) with one tap.
+    public var packages: [TaskPackage]
     public init(tasks: [TaskItem] = [], ideas: [Idea] = [], boardCards: [BoardCard] = [], routines: [Routine] = [],
-                activeSession: Session? = nil, projects: [Project] = [], lists: [StockList] = [], listItems: [ListItem] = []) {
+                activeSession: Session? = nil, projects: [Project] = [], lists: [StockList] = [], listItems: [ListItem] = [],
+                packages: [TaskPackage] = []) {
         self.tasks = tasks; self.ideas = ideas; self.boardCards = boardCards; self.routines = routines
         self.activeSession = activeSession; self.projects = projects
-        self.lists = lists; self.listItems = listItems
+        self.lists = lists; self.listItems = listItems; self.packages = packages
     }
     public var isEmpty: Bool {
         tasks.isEmpty && ideas.isEmpty && boardCards.isEmpty && routines.isEmpty && projects.isEmpty
-            && lists.isEmpty && listItems.isEmpty
+            && lists.isEmpty && listItems.isEmpty && packages.isEmpty
     }
 }
 
@@ -247,7 +253,7 @@ extension TaskItem {
     enum CodingKeys: String, CodingKey {
         case id, title, plannedAt, scheduledTime, deadline, isMust, effort, project, memo, handoff
         case resumeNote, steps, createdAt, lastStartedAt, completedAt, suggestionDeferredUntil, notify, isEvent, milestoneID
-        case parentID, rank, continuationNote, listID, listItemID, follows, periodStart
+        case parentID, rank, continuationNote, listID, listItemID, follows, periodStart, eventID
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -274,7 +280,8 @@ extension TaskItem {
                   listID: try c.decodeIfPresent(UUID.self, forKey: .listID),
                   listItemID: try c.decodeIfPresent(UUID.self, forKey: .listItemID),
                   follows: try c.decodeIfPresent(UUID.self, forKey: .follows),
-                  periodStart: try c.decodeIfPresent(Date.self, forKey: .periodStart))
+                  periodStart: try c.decodeIfPresent(Date.self, forKey: .periodStart),
+                  eventID: try c.decodeIfPresent(UUID.self, forKey: .eventID))
     }
 }
 
@@ -290,7 +297,7 @@ extension BoardCard {
 }
 
 extension Notebook {
-    enum CodingKeys: String, CodingKey { case version, tasks, ideas, boardCards, routines, activeSession, projects, lists, listItems }
+    enum CodingKeys: String, CodingKey { case version, tasks, ideas, boardCards, routines, activeSession, projects, lists, listItems, packages }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(tasks: try c.decodeIfPresent([TaskItem].self, forKey: .tasks) ?? [],
@@ -300,7 +307,8 @@ extension Notebook {
                   activeSession: try c.decodeIfPresent(Session.self, forKey: .activeSession),
                   projects: try c.decodeIfPresent([Project].self, forKey: .projects) ?? [],
                   lists: try c.decodeIfPresent([StockList].self, forKey: .lists) ?? [],
-                  listItems: try c.decodeIfPresent([ListItem].self, forKey: .listItems) ?? [])
+                  listItems: try c.decodeIfPresent([ListItem].self, forKey: .listItems) ?? [],
+                  packages: try c.decodeIfPresent([TaskPackage].self, forKey: .packages) ?? [])
         version = try c.decode(Int.self, forKey: .version)
     }
 }
@@ -348,7 +356,8 @@ public enum NotebookCodec {
               Set(notebook.lists.map(\.id)).count == notebook.lists.count,
               notebook.lists.allSatisfy({ !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
               Set(notebook.listItems.map(\.id)).count == notebook.listItems.count,
-              notebook.listItems.allSatisfy({ !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+              notebook.listItems.allSatisfy({ !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+              Set(notebook.packages.map(\.id)).count == notebook.packages.count
         else { throw NotebookError.invalidData }
         if let session = notebook.activeSession {
             guard notebook.tasks.contains(where: { $0.id == session.taskID && !$0.isComplete }) else {

@@ -97,6 +97,8 @@ public extension Notebook {
         // What came after it now follows what came before it, so the つながり stays whole.
         let before = tasks.first { $0.id == id }?.follows
         for i in tasks.indices where tasks[i].follows == id { tasks[i].follows = before }
+        // An event's 関連タスク stay, on their own.
+        for i in tasks.indices where tasks[i].eventID == id { tasks[i].eventID = nil }
         tasks.removeAll { $0.id == id || $0.parentID == id }
         if let active = activeSession, !tasks.contains(where: { $0.id == active.taskID }) { activeSession = nil }
         if let parent { settleParent(parent, at: now) }

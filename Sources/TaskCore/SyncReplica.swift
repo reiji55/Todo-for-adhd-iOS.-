@@ -102,7 +102,7 @@ public struct SyncReplica: Codable, Equatable {
     /// What one record holds, read back as the thing it is.
     private enum Thing {
         case task(TaskItem), idea(Idea), card(rank: Int, BoardCard), routine(Routine), project(Project)
-        case list(StockList), item(ListItem), session(Session?)
+        case list(StockList), item(ListItem), package(TaskPackage), session(Session?)
     }
 
     /// Reads one record back; nil for a thing that is gone.
@@ -180,6 +180,10 @@ public struct SyncReplica: Codable, Equatable {
             let item: ListItem = try Self.decodeObject(object)
             guard record.id == "item_\(item.id.uuidString)" else { throw NotebookError.invalidData }
             return .item(item)
+        } else if record.id.hasPrefix("package_") {
+            let package: TaskPackage = try Self.decodeObject(object)
+            guard record.id == "package_\(package.id.uuidString)" else { throw NotebookError.invalidData }
+            return .package(package)
         } else if record.id == "session" {
             // A session is one field to keep its task/step/time together.
             return .session(try record.fields["value"].map { try decoder.decode(Session.self, from: $0.value) })
@@ -201,6 +205,7 @@ public struct SyncReplica: Codable, Equatable {
             case .project(let project)?: book.projects.append(project)
             case .list(let list)?: book.lists.append(list)
             case .item(let item)?: book.listItems.append(item)
+            case .package(let package)?: book.packages.append(package)
             case .session?, nil: continue
             }
         }
@@ -230,6 +235,7 @@ public struct SyncReplica: Codable, Equatable {
         var projects: [Project] = []
         var lists: [StockList] = []
         var items: [ListItem] = []
+        var packages: [TaskPackage] = []
         var session: Session?
         for record in records.values {
             switch try Self.thing(record) {
@@ -240,6 +246,7 @@ public struct SyncReplica: Codable, Equatable {
             case .project(let project)?: projects.append(project)
             case .list(let list)?: lists.append(list)
             case .item(let item)?: items.append(item)
+            case .package(let package)?: packages.append(package)
             case .session(let value)?: if let value { session = value }
             case nil: continue
             }
@@ -253,8 +260,9 @@ public struct SyncReplica: Codable, Equatable {
         projects.sort { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
         lists.sort { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
         items.sort { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
+        packages.sort { $0.createdAt == $1.createdAt ? $0.id.uuidString < $1.id.uuidString : $0.createdAt < $1.createdAt }
         let book = Notebook(tasks: tasks, ideas: ideas, boardCards: cards.map(\.card), routines: routines, activeSession: session,
-                            projects: projects, lists: lists, listItems: items)
+                            projects: projects, lists: lists, listItems: items, packages: packages)
         // Validate remote data before replacing a user's local view.
         _ = try NotebookCodec.decode(NotebookCodec.encode(book))
         return book
@@ -307,6 +315,7 @@ public struct SyncReplica: Codable, Equatable {
         // Each thing on a list is its own record, so two people checking off a shopping list both count.
         try compare(before.lists, after.lists, id: { "list_\($0.id.uuidString)" }, fields: { try Self.fieldsFor($0) })
         try compare(before.listItems, after.listItems, id: { "item_\($0.id.uuidString)" }, fields: { try Self.fieldsFor($0) })
+        try compare(before.packages, after.packages, id: { "package_\($0.id.uuidString)" }, fields: { try Self.fieldsFor($0) })
         if before.activeSession != after.activeSession {
             if let session = before.activeSession { old["session"] = ["value": try encoder.encode(session)] }
             if let session = after.activeSession { new["session"] = ["value": try encoder.encode(session)] }
@@ -455,6 +464,10 @@ public struct ShareMergePreview {
                 item.id = UUID()
             }
             combined.listItems.append(item)
+        }
+        // パッケージ: one of each name is enough when two books are joined.
+        for package in local.packages where !combined.packages.contains(where: { $0.id == package.id || $0.name == package.name }) {
+            combined.packages.append(package)
         }
         if combined.activeSession == nil, var active = local.activeSession {
             active.taskID = remappedTasks[active.taskID] ?? active.taskID
