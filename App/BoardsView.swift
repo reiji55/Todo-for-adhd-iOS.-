@@ -7,10 +7,13 @@ struct AllTasksView: View {
     @State private var mode: Mode = .tasks
     @State private var search = ""
     @State private var showDone = false
+    @State private var confirmClearDone = false
     /// The projects opened, kept between visits (names joined by a separator).
     @AppStorage("allOpenProjects") private var openProjects = ""
     /// How the tasks are laid out: by project under the deadlines, or all by nearest deadline.
     @AppStorage("allTasksOrder") private var order = Order.project.rawValue
+    /// A project opened from its flag: its page comes straight up here, not by way of the board.
+    @State private var openedProject: ProjectRoute?
     enum Order: String, CaseIterable { case project = "プロジェクト別", deadline = "締切が近い順" }
     let onOpen: (AgendaItem) -> Void
     let onEditRoutine: (Routine) -> Void
@@ -31,6 +34,9 @@ struct AllTasksView: View {
         }
         .background(Palette.paper)
         .searchable(text: $search, prompt: mode == .routines ? "ルーティンを検索" : mode == .events ? "イベントを検索" : "タスク・メモ・プロジェクトを検索")
+        .navigationDestination(item: $openedProject) { route in
+            ProjectPage(key: route.key, onEdit: { onOpen(AgendaItem(task: $0)) }).keepsStore()
+        }
     }
 
     private var todayRoutineIDs: Set<UUID> {
@@ -125,6 +131,20 @@ struct AllTasksView: View {
                     AgendaRow(item: AgendaItem(task: task), onOpen: onOpen)
                 }
             }
+            // Small and quiet at the very end: clearing away what is finished, after a question.
+            if !done.isEmpty {
+                Button { confirmClearDone = true } label: {
+                    Label("完了したタスクをすべて削除", systemImage: "trash")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 36)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
+                .accessibilityIdentifier("clearDoneTasks")
+                .confirmationDialog("完了したタスク\(done.count)件を削除しますか？", isPresented: $confirmClearDone, titleVisibility: .visible) {
+                    Button("\(done.count)件を削除", role: .destructive) { store.deleteCompleted(done.map(\.id)) }
+                } message: { Text(search.isEmpty ? "子タスクも一緒に消えます。すぐなら「取り消す」で戻せます。" : "いま検索で表示されている分だけ消えます。") }
+            }
         }
     }
 
@@ -152,7 +172,8 @@ struct AllTasksView: View {
                 case .task(let task):
                     row(task, reason: dueReason(task, now: now), raised: listedDay(task).map(calendar.isDateInToday) == true, showsDay: true)
                 case .project(let project, let tasks):
-                    ProjectDeadlineCard(project: project, tasks: tasks, now: now, onOpen: onOpen)
+                    ProjectDeadlineCard(project: project, tasks: tasks, now: now, onOpen: onOpen,
+                                        onOpenProject: { openedProject = ProjectRoute(key: ProjectBook.key($0)) })
                 }
             }
             ForEach(musts) { task in row(task, showsDay: true) }
@@ -305,8 +326,8 @@ struct AllTasksView: View {
             .accessibilityValue(open ? "展開中" : "折りたたみ")
             .accessibilityIdentifier("projectFold-\(name.isEmpty ? "none" : name)")
             if project?.deadline != nil, let color {
-                // The flag goes to the project on the board.
-                Button { store.projectToOpen = ProjectBook.key(name) } label: {
+                // The flag opens the project's page.
+                Button { openedProject = ProjectRoute(key: ProjectBook.key(name)) } label: {
                     HStack(spacing: 3) {
                         Image(systemName: "flag.fill").foregroundStyle(color)
                         Image(systemName: "chevron.right").foregroundStyle(.secondary)
@@ -317,7 +338,7 @@ struct AllTasksView: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("ボードでプロジェクト「\(name)」を開く")
+                .accessibilityLabel("プロジェクト「\(name)」を開く")
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 11)
@@ -540,6 +561,7 @@ struct ProjectDeadlineCard: View {
     let tasks: [TaskItem]
     let now: Date
     let onOpen: (AgendaItem) -> Void
+    let onOpenProject: (String) -> Void
     @State private var open = false
 
     var body: some View {
@@ -567,8 +589,8 @@ struct ProjectDeadlineCard: View {
                 .accessibilityLabel("プロジェクト「\(project.name)」の期限 \(project.deadline?.shortDay ?? "")、締切のないタスク\(tasks.count)件")
                 .accessibilityValue(open ? "展開中" : "折りたたみ")
                 .accessibilityIdentifier("deadlineProject-\(project.name)")
-                // The flag says this goes to the project on the board.
-                Button { store.projectToOpen = ProjectBook.key(project.name) } label: {
+                // The flag opens the project's page.
+                Button { onOpenProject(project.name) } label: {
                     HStack(spacing: 3) {
                         Image(systemName: "flag.fill").foregroundStyle(color)
                         Image(systemName: "chevron.right").foregroundStyle(.secondary)
@@ -579,7 +601,7 @@ struct ProjectDeadlineCard: View {
                     .frame(minHeight: 40).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("ボードでプロジェクト「\(project.name)」を開く")
+                .accessibilityLabel("プロジェクト「\(project.name)」を開く")
                 .accessibilityIdentifier("deadlineProjectBoard-\(project.name)")
             }
             .padding(.vertical, 9).padding(.horizontal, 12)

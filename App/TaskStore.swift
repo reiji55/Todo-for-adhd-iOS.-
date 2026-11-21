@@ -596,6 +596,15 @@ final class TaskStore: ObservableObject {
         }
     }
 
+    /// Clears away finished tasks (with their pieces) in one go; 取り消す brings them all back.
+    func deleteCompleted(_ ids: [UUID]) {
+        let gone = ids.filter { task($0)?.isComplete == true }
+        guard !gone.isEmpty else { return }
+        if commit({ book in for id in gone { book.removeTask(id) } }) {
+            offerUndo("完了したタスク\(gone.count)件を削除しました")
+        }
+    }
+
     /// Once per device: cards that tasks reached by name join that project (see ProjectBook.moveCardsIntoProjects).
     private func moveCardsIntoProjectsOnce() {
         let key = "horme.projectsMigrated"

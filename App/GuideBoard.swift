@@ -214,6 +214,7 @@ struct GuideBoardView: View {
                           routines: store.linkedRoutines(for: card).filter { !$0.isPaused }.count, stacked: stacked)
         }
         .buttonStyle(.plain)
+        .swipeToDelete { store.deleteCard(card.id) }
         .contextMenu {
             if search.isEmpty, let index = store.notebook.boardCards.firstIndex(where: { $0.id == card.id }) {
                 Button("いちばん上へ", systemImage: "arrow.up.to.line") { store.moveCards(from: IndexSet([index]), to: 0) }

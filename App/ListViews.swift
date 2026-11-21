@@ -192,14 +192,17 @@ private struct ListCard: View {
         let planned = open.filter { store.notebook.plan(for: $0.id) != nil }.count
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Text(list.name).font(.headline).foregroundStyle(.primary).lineLimit(1)
-                if let changed = store.notebook.lastChange(of: list.id) {
-                    Text(ListUpdated.text(changed)).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
-                        .fixedSize()
-                }
-                Spacer()
-                Text("\(open.count)件").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                // The whole name, over lines when it is long, a little smaller when it is very long.
+                Text(list.name).font(list.name.count > 24 ? .subheadline.weight(.semibold) : .headline)
+                    .foregroundStyle(.primary).multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Text("\(open.count)件").font(.subheadline).foregroundStyle(.secondary).monospacedDigit().fixedSize()
                 Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+            }
+            if let changed = store.notebook.lastChange(of: list.id) {
+                Text(ListUpdated.text(changed)).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                    .padding(.top, -4)
             }
             if !open.isEmpty {
                 Text(open.prefix(3).map(\.title).joined(separator: "・"))
@@ -241,6 +244,17 @@ struct ListPage: View {
 
     struct ListItemRouteID: Identifiable { let id: UUID }
 
+    init(listID: UUID) {
+        self.listID = listID
+        _draft = State(initialValue: Drafts.text(Self.draftKey(listID)))
+    }
+
+    /// More than fits in the large title.
+    static func longName(_ name: String) -> Bool { name.count > 11 }
+
+    /// What was typed in the add line stays when the page goes away, until it is added.
+    static func draftKey(_ id: UUID) -> String { "listItem.\(id.uuidString)" }
+
     var body: some View {
         Group {
             if let list = store.list(listID) { content(list) }
@@ -263,9 +277,15 @@ struct ListPage: View {
         let trip = book.tasks.filter { $0.listID == list.id && !$0.isComplete }.min { $0.createdAt < $1.createdAt }
         return ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                if Self.longName(list.name) {
+                    // A long name would be cut short in the title bar: here it is whole, over lines.
+                    Text(list.name).font(.title3.weight(.heavy)).fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 4)
+                        .accessibilityAddTraits(.isHeader)
+                }
                 if let changed = book.lastChange(of: list.id) {
                     Text(ListUpdated.text(changed)).font(.caption).foregroundStyle(.tertiary)
-                        .padding(.horizontal, 4).padding(.top, -8)
+                        .padding(.horizontal, 4).padding(.top, Self.longName(list.name) ? -10 : -8)
                         .accessibilityIdentifier("listUpdated")
                 }
                 if let trip {
@@ -287,10 +307,21 @@ struct ListPage: View {
                     HStack(spacing: 12) {
                         Image(systemName: "plus").font(.body.weight(.semibold)).foregroundStyle(Palette.accent)
                             .frame(width: 28)
-                        TextField("追加", text: $draft)
+                        // Wrapped over lines as it is typed; Return adds it and starts the next one.
+                        TextField("追加", text: $draft, axis: .vertical)
+                            .lineLimit(1...6)
                             .focused($adding)
                             .submitLabel(.next)
-                            .onSubmit(add)
+                            .onChange(of: draft) { _, text in
+                                if text.contains("\n") {
+                                    draft = text.replacingOccurrences(of: "\n", with: "")
+                                    add()
+                                } else {
+                                    Drafts.save(Self.draftKey(listID), text)
+                                }
+                            }
+                            // Leaving the line (a tap elsewhere, the keyboard put away) adds what was written.
+                            .onChange(of: adding) { was, now in if was && !now { add(keepGoing: false) } }
                             .accessibilityIdentifier("addListItem")
                     }
                     .padding(.horizontal, 12).frame(minHeight: 50)
@@ -312,15 +343,16 @@ struct ListPage: View {
             }
             .padding(16).frame(maxWidth: 820).frame(maxWidth: .infinity)
         }
-        // A tap anywhere off the cards puts the keyboard away: what was being typed is left as it is, not added.
+        // A tap anywhere off the cards puts the keyboard away; what was being typed in an add line is added.
         .background {
             Color.clear.contentShape(Rectangle())
                 .onTapGesture { dismissKeyboard() }
                 .accessibilityHidden(true)
         }
-        .keyboardDismissable()
-        .navigationTitle(list.name)
-        .navigationBarTitleDisplayMode(.large)
+        // No 完了 bar over the keyboard: Return adds the next thing, and a tap elsewhere ends.
+        .scrollDismissesKeyboard(.interactively)
+        .navigationTitle(Self.longName(list.name) ? "" : list.name)
+        .navigationBarTitleDisplayMode(Self.longName(list.name) ? .inline : .large)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
@@ -357,9 +389,23 @@ struct ListPage: View {
         } message: { Text("リストの項目もすべて消えます。作った予定は残ります。") }
     }
 
-    private func add() {
-        if store.addItem(draft, to: listID) { draft = "" }
-        adding = true
+    /// Adds what is typed; with `keepGoing` the line stays open for the next thing.
+    private func add(keepGoing: Bool = true) {
+        if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            draft = ""
+        } else if store.addItem(draft, to: listID) {
+            draft = ""
+            Drafts.clear(Self.draftKey(listID))
+        }
+        if keepGoing { adding = true }
+    }
+
+    private func addUnderHeading(_ heading: String, keepGoing: Bool = true) {
+        if !headingDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           store.addItem(headingDraft, to: listID, under: heading) {
+            headingDraft = ""
+        }
+        if keepGoing { headingFocused = true }
     }
 
     /// One heading: tap it to fold; its things; a line to add under it.
@@ -397,13 +443,17 @@ struct ListPage: View {
                 if addingTo == heading {
                     HStack(spacing: 12) {
                         Image(systemName: "plus").font(.body.weight(.semibold)).foregroundStyle(Palette.accent).frame(width: 28)
-                        TextField("\(heading)に追加", text: $headingDraft)
+                        TextField("\(heading)に追加", text: $headingDraft, axis: .vertical)
+                            .lineLimit(1...6)
                             .focused($headingFocused)
                             .submitLabel(.next)
-                            .onSubmit {
-                                if store.addItem(headingDraft, to: listID, under: heading) { headingDraft = "" }
-                                headingFocused = true
+                            .onChange(of: headingDraft) { _, text in
+                                if text.contains("\n") {
+                                    headingDraft = text.replacingOccurrences(of: "\n", with: "")
+                                    addUnderHeading(heading)
+                                }
                             }
+                            .onChange(of: headingFocused) { was, now in if was && !now { addUnderHeading(heading, keepGoing: false) } }
                     }
                     .padding(.horizontal, 12).frame(minHeight: 50)
                 } else {

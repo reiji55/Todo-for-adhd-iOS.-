@@ -110,7 +110,7 @@ struct NowView: View {
                     .font(.subheadline).foregroundStyle(.red)
             }
             if closed {
-                DayClosedView(now: now) { timetableOpen = true }
+                DayClosedView(now: now, onOpen: onOpen)
                     .transition(.opacity)
             } else {
                 let book = store.notebook
@@ -996,7 +996,7 @@ private struct NextDayLine: View {
 private struct DayClosedView: View {
     @EnvironmentObject private var store: TaskStore
     let now: Date
-    let onTimetable: () -> Void
+    let onOpen: (AgendaItem) -> Void
 
     private struct Done: Identifiable {
         let id: String
@@ -1007,7 +1007,7 @@ private struct DayClosedView: View {
     var body: some View {
         let today = Agenda.items(on: now, tasks: store.notebook.tasks, routines: store.notebook.routines)
             .filter { !$0.isBlock && !$0.isEvent }
-        let left = today.filter { !$0.isDone }.count
+        let left = today.filter { !$0.isDone }
         let done = doneToday(today)
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 12) {
@@ -1040,19 +1040,37 @@ private struct DayClosedView: View {
                 }
                 .background(RaisedCardBackground(cornerRadius: 16))
             }
-            if left > 0 {
-                Button(action: onTimetable) {
-                    HStack(spacing: 4) {
-                        Text("残ったもの \(left)件")
-                        Image(systemName: "chevron.right").font(.caption.weight(.bold))
+            // What was left, listed here like what was done (a tap opens one), so the day stays closed.
+            if !left.isEmpty {
+                Text("残ったもの \(left.count)件").font(.footnote.weight(.bold)).foregroundStyle(.secondary).padding(.leading, 4)
+                VStack(spacing: 0) {
+                    ForEach(Array(left.enumerated()), id: \.element.id) { index, item in
+                        if index > 0 { Divider().padding(.leading, 46) }
+                        Button { onOpen(item) } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "circle").font(.title3).foregroundStyle(.secondary)
+                                Text(item.title).font(.subheadline).foregroundStyle(.primary).lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                                Spacer(minLength: 8)
+                                Text(leftNote(item)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            .padding(.horizontal, 14).frame(minHeight: 46).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("開いて日付を変えられます")
                     }
-                    .font(.footnote.weight(.semibold))
-                    .frame(minHeight: 36)
                 }
-                .foregroundStyle(.primary)
-                .padding(.leading, 4)
+                .background(RaisedCardBackground(cornerRadius: 16))
+                .accessibilityIdentifier("dayClosedLeft")
             }
         }
+    }
+
+    /// Its time, else its project, else what it is.
+    private func leftNote(_ item: AgendaItem) -> String {
+        if let slot = item.slot { return slot.startLabel }
+        if !item.project.isEmpty { return item.project }
+        return item.isRoutine ? "ルーティン" : ""
     }
 
     /// Tasks checked off today (a task in pieces counts by its pieces) and today's routines, in order.

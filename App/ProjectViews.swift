@@ -270,6 +270,8 @@ struct ProjectFolderList: View {
 
     private func folder(_ entry: ProjectBook.Entry) -> some View {
         ProjectFolder(entry: entry, onOpenCard: onOpenCard)
+            // Sideways, as on the other lists: the delete button behind it. 取り消す brings it back.
+            .swipeToDelete { store.deleteProject(entry.key) }
             .contextMenu {
                 Button("プロジェクトを外す", systemImage: "folder.badge.minus", role: .destructive) { store.deleteProject(entry.key) }
             }

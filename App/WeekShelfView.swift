@@ -47,6 +47,7 @@ struct WeekShelfView: View {
     @State private var focus: SheetFocus?
     @State private var carry: Carry?
     @State private var rowFrames: [Date: CGRect] = [:]
+    @Environment(\.selectedTab) private var selectedTab
     let onOpen: (AgendaItem) -> Void
     let onAdd: (Date) -> Void
     /// The ⊕ menu; with the sheet up, what is added goes on the chosen day.
@@ -68,6 +69,10 @@ struct WeekShelfView: View {
         .background(Palette.paper)
         // All the way up, the sheet takes the title bar's place too.
         .toolbar(detent == .full ? .hidden : .visible, for: .navigationBar)
+        // Coming back from another tab, the week opens with the sheet down.
+        .onChange(of: selectedTab) { _, tab in
+            if tab != RootView.Tab.week.rawValue { detent = .peek; sheetDrag = 0; focus = nil }
+        }
         .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-uiWeekSheetOpen") { detent = .half }
@@ -356,7 +361,19 @@ struct WeekShelfView: View {
             .accessibilityAction(named: "前の日") { withAnimation(.snappy) { step(-1) } }
             .accessibilityAction(named: "大きく広げる") { withAnimation(.snappy) { detent = .full } }
             SheetDays(days: [selectedDay, second], now: now, gutter: gutter, focus: focus, onOpen: onOpen,
-                      onMove: { item, day, slot in store.move(item, to: day, slot: slot) })
+                      onMove: { item, day, slot in store.move(item, to: day, slot: slot) },
+                      // Sideways over the hours turns the days too, as on the dates above.
+                      onDayDrag: { width in
+                          var quiet = Transaction()
+                          quiet.disablesAnimations = true
+                          withTransaction(quiet) { dayDrag = width }
+                      },
+                      onDaySwipe: { days in
+                          withAnimation(.snappy(duration: 0.28)) {
+                              if days != 0 { step(days) }
+                              dayDrag = 0
+                          }
+                      })
                 .opacity(detent != .peek || sheetDrag < -10 ? 1 : 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -737,7 +754,13 @@ private struct SheetDays: View {
     let focus: WeekShelfView.SheetFocus?
     let onOpen: (AgendaItem) -> Void
     let onMove: (AgendaItem, Date, TimeSlot) -> Void
+    let onDayDrag: (CGFloat) -> Void
+    /// +1 for the next day, -1 for the one before, 0 when the swipe was let go short.
+    let onDaySwipe: (Int) -> Void
     @State private var moving: String?
+    /// A sideways swipe that began while a block was held moves the block, not the days.
+    @State private var swipeHeld = false
+    @State private var swiping = false
     @State private var moveOffset: CGSize = .zero
     /// The block just pointed at from the shelves, outlined for a moment.
     @State private var flash: String?
@@ -817,6 +840,28 @@ private struct SheetDays: View {
                 }
             }
         }
+        .simultaneousGesture(daySwipe)
+    }
+
+    /// Sideways across the hours: the days move with the finger and turn when let go far enough. Up and down
+    /// stays the scroll's, and a held block keeps its own drag.
+    private var daySwipe: some Gesture {
+        DragGesture(minimumDistance: 20)
+            .onChanged { value in
+                if moving != nil { swipeHeld = true }
+                guard !swipeHeld else { if swiping { swiping = false; onDayDrag(0) }; return }
+                if !swiping {
+                    guard abs(value.translation.width) > abs(value.translation.height) * 1.5 else { return }
+                    swiping = true
+                }
+                onDayDrag(value.translation.width)
+            }
+            .onEnded { value in
+                defer { swipeHeld = false; swiping = false }
+                guard swiping, !swipeHeld, moving == nil else { onDaySwipe(0); return }
+                let thrown = value.predictedEndTranslation.width
+                onDaySwipe(thrown < -60 ? 1 : thrown > 60 ? -1 : 0)
+            }
     }
 
     /// The hour the thing pointed at sits under; else, today just before now and other days at seven.

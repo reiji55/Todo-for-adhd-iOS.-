@@ -57,8 +57,12 @@ struct QuickAddSheet: View {
         _day = State(initialValue: day.map { Calendar.current.startOfDay(for: $0) } ?? (isEvent ? Calendar.current.startOfDay(for: Date()) : nil))
         _source = State(initialValue: item)
         _wholeList = State(initialValue: list)
-        _title = State(initialValue: item?.title ?? list?.name ?? "")
+        _title = State(initialValue: item?.title ?? list?.name ?? Drafts.text(Self.draftKey))
     }
+
+    /// What was typed and not added yet comes back the next time (not for a plan from a list, which starts from its name).
+    static let draftKey = "quickAdd"
+    private var keepsDraft: Bool { source == nil && wholeList == nil }
 
     private var trimmed: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -103,10 +107,14 @@ struct QuickAddSheet: View {
                 if event && day == nil { day = Calendar.current.startOfDay(for: Date()) }
             }
             .onChange(of: day) { _, day in if day == nil { slot = nil } }
+            .onChange(of: title) { _, text in if keepsDraft { Drafts.save(Self.draftKey, text) } }
             .onAppear { focused = source == nil && wholeList == nil }
             // Saved from the full editor: that was the adding, so this sheet closes too.
             .sheet(item: $details, onDismiss: {
-                if let id = pendingID, store.task(id) != nil { dismiss() }
+                if let id = pendingID, store.task(id) != nil {
+                    if keepsDraft { Drafts.clear(Self.draftKey) }
+                    dismiss()
+                }
                 pendingID = nil
             }) { task in
                 TaskEditor(task: task, original: nil).onAppear { pendingID = task.id }
@@ -151,6 +159,7 @@ struct QuickAddSheet: View {
         guard !trimmed.isEmpty else { return }
         let added = trimmed
         if store.upsert(makeTask()) {
+            if keepsDraft { Drafts.clear(Self.draftKey) }
             store.offerUndo("「\(added)」を追加しました")
             dismiss()
         }
@@ -162,9 +171,10 @@ struct QuickAddSheet: View {
 struct IdeaQuickSheet: View {
     @EnvironmentObject private var store: TaskStore
     @Environment(\.dismiss) private var dismiss
-    @State private var text = ""
+    @State private var text = Drafts.text("quickIdea")
     @FocusState private var focused: Bool
     private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+    static let draftKey = "quickIdea"
 
     var body: some View {
         NavigationStack {
@@ -178,11 +188,15 @@ struct IdeaQuickSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("閉じる") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("追加") {
-                        if store.commit({ $0.ideas.insert(Idea(text: trimmed), at: 0) }) { dismiss() }
+                        if store.commit({ $0.ideas.insert(Idea(text: trimmed), at: 0) }) {
+                            Drafts.clear(Self.draftKey)
+                            dismiss()
+                        }
                     }.disabled(trimmed.isEmpty)
                 }
             }
             .onAppear { focused = true }
+            .onChange(of: text) { _, text in Drafts.save(Self.draftKey, text) }
         }
         .presentationDetents([.medium])
         .storeErrorAlert()
