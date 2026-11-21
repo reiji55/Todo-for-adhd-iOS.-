@@ -52,6 +52,8 @@ struct ParentTaskCard: View {
     var reason: String? = nil
     var startsOpen = false
     var raised = false
+    /// The piece a project page is pointing at as its 次の一手: marked inside the card.
+    var markedPiece: UUID? = nil
     let onOpen: (TaskItem) -> Void
     @State private var open: Bool?
     @State private var adding = ""
@@ -112,7 +114,7 @@ struct ParentTaskCard: View {
             }
             if isOpen {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(pieces) { piece in PieceRow(piece: piece, onOpen: onOpen) }
+                    ForEach(pieces) { piece in PieceRow(piece: piece, marked: piece.id == markedPiece, onOpen: onOpen) }
                     HStack(spacing: 8) {
                         Image(systemName: "plus").font(.subheadline.weight(.semibold)).frame(width: 30)
                         TextField("子タスクを足す", text: $adding).submitLabel(.done).onSubmit(add)
@@ -155,6 +157,7 @@ struct ParentTaskCard: View {
 private struct PieceRow: View {
     @EnvironmentObject private var store: TaskStore
     let piece: TaskItem
+    var marked = false
     let onOpen: (TaskItem) -> Void
 
     var body: some View {
@@ -172,10 +175,20 @@ private struct PieceRow: View {
                         .strikethrough(done).foregroundStyle(done ? .secondary : .primary)
                         .multilineTextAlignment(.leading).frame(maxWidth: .infinity, alignment: .leading)
                     if !done { PieceDateChip(task: piece) }
+                    if marked && !done {
+                        Text("次の一手").font(.caption2.weight(.bold)).foregroundStyle(.white)
+                            .padding(.horizontal, 7).padding(.vertical, 3)
+                            .background(Palette.accent, in: Capsule())
+                            .fixedSize()
+                    }
                 }
+                .padding(.trailing, marked ? 6 : 0)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+        }
+        .background {
+            if marked && !done { RoundedRectangle(cornerRadius: 10).fill(Palette.accent.opacity(0.12)) }
         }
         .opacity(done ? 0.55 : 1)
         .animation(.easeOut(duration: 0.2), value: done)

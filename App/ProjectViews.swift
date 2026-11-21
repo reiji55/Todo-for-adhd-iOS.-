@@ -660,6 +660,22 @@ struct ProjectPage: View {
             if let task = next ?? scheduled {
                 Button { onEdit(task) } label: {
                     VStack(alignment: .leading, spacing: 5) {
+                        // A piece says which task it is a piece of, so it is clear where it came from.
+                        if let parentID = task.parentID, let parent = store.task(parentID) {
+                            let pieces = store.children(of: parentID)
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.turn.down.right").font(.caption2)
+                                Text(parent.title + (parent.isMust ? " ★" : "")).font(.caption.weight(.bold))
+                                    .foregroundStyle(.primary).lineLimit(1)
+                                Text("の子タスク").font(.caption)
+                                Spacer(minLength: 6)
+                                Text("\(pieces.filter(\.isComplete).count)/\(pieces.count)").font(.caption.weight(.semibold))
+                                    .monospacedDigit()
+                            }
+                            .foregroundStyle(.secondary)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("projectNextParent")
+                        }
                         Text(task.title).font(.headline).foregroundStyle(.primary)
                             .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                         if !task.continuationNote.isEmpty {
@@ -822,6 +838,9 @@ struct ProjectPage: View {
         let open = ProjectBook.tasks(entry.key, in: store.notebook)
             .filter { !$0.isComplete || store.recentlyDone.contains(AgendaItem(task: $0).id) }
             .sorted { ($0.plannedAt ?? .distantFuture, $0.createdAt) < ($1.plannedAt ?? .distantFuture, $1.createdAt) }
+        // The 次の一手 shown above, marked where it is in this list (inside its task, opened, when it is a piece).
+        let nextID = ProjectBook.nextTask(entry.key, in: store.notebook, now: Date())?.id
+        let nextParent = nextID.flatMap { store.task($0)?.parentID }
         return VStack(alignment: .leading, spacing: 10) {
             sectionTitle("近いうちにやること", add: "タスク") { addingStep = true }
             if open.isEmpty {
@@ -830,10 +849,19 @@ struct ProjectPage: View {
             ForEach(open.prefix(6)) { task in
                 if store.hasChildren(task.id) {
                     // A task in pieces counts once for its checkpoint, when all its pieces are done.
-                    ParentTaskCard(parent: task, raised: true, onOpen: onEdit)
+                    ParentTaskCard(parent: task, startsOpen: task.id == nextParent, raised: true,
+                                   markedPiece: task.id == nextParent ? nextID : nil, onOpen: onEdit)
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(GuideSummary.place(task)).font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(.leading, 6)
+                        HStack(spacing: 6) {
+                            Text(GuideSummary.place(task)).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                            if task.id == nextID {
+                                Text("次の一手").font(.caption2.weight(.bold)).foregroundStyle(.white)
+                                    .padding(.horizontal, 7).padding(.vertical, 2)
+                                    .background(Palette.accent, in: Capsule())
+                            }
+                        }
+                        .padding(.leading, 6)
                         AgendaRow(item: AgendaItem(task: task), style: .raised, onOpen: { _ in onEdit(task) })
                     }
                 }

@@ -148,8 +148,9 @@ struct AllTasksView: View {
         }
     }
 
-    /// 締切・★ on top: what has a deadline of its own and projects with one (nearest first), then ★ without one.
-    /// Below, everything else by project, those without one first.
+    /// 締切・★ on top, in its own box: what has a deadline of its own (nearest first), then ★ without one, gathered
+    /// from the projects. Below a dividing line, every task by project, those without one first; the ones also in
+    /// the box carry its mark, so it is clear they were picked out from here.
     @ViewBuilder private func byProject(_ open: [TaskItem]) -> some View {
         let book = store.notebook
         let now = Date()
@@ -163,20 +164,43 @@ struct AllTasksView: View {
             name.isEmpty ? .distantPast : ProjectBook.project(named: name, in: book)?.deadline ?? .distantFuture
         }
         let top = Set(dated.map(\.id) + musts.map(\.id))
-        let rest = open.filter { !top.contains($0.id) }
+        let rest = open
             .sorted { (listedDay($0) ?? .distantFuture, $0.createdAt) < (listedDay($1) ?? .distantFuture, $1.createdAt) }
         if !rows.isEmpty || !musts.isEmpty {
-            SectionHeading(title: "締切・★ \(dated.count + musts.count)件", subtitle: "締切が近い順", color: Palette.must)
-            ForEach(rows) { entry in
-                switch entry {
-                case .task(let task):
-                    row(task, reason: dueReason(task, now: now), raised: listedDay(task).map(calendar.isDateInToday) == true, showsDay: true)
-                case .project(let project, let tasks):
-                    ProjectDeadlineCard(project: project, tasks: tasks, now: now, onOpen: onOpen,
-                                        onOpenProject: { openedProject = ProjectRoute(key: ProjectBook.key($0)) })
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("締切・★ \(dated.count + musts.count)件").font(.headline).foregroundStyle(Palette.must)
+                        Text("締切が近い順").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text("各プロジェクトから集めています").font(.caption2).foregroundStyle(Palette.must.opacity(0.8))
                 }
+                .padding(.horizontal, 4)
+                ForEach(rows) { entry in
+                    switch entry {
+                    case .task(let task):
+                        row(task, reason: dueReason(task, now: now), raised: listedDay(task).map(calendar.isDateInToday) == true, showsDay: true)
+                    case .project(let project, let tasks):
+                        ProjectDeadlineCard(project: project, tasks: tasks, now: now, onOpen: onOpen,
+                                            onOpenProject: { openedProject = ProjectRoute(key: ProjectBook.key($0)) })
+                    }
+                }
+                ForEach(musts) { task in row(task, showsDay: true) }
             }
-            ForEach(musts) { task in row(task, showsDay: true) }
+            .padding(10)
+            .background(Palette.must.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Palette.must.opacity(0.3), lineWidth: 1.5))
+            .padding(.top, 6)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("deadlineBox")
+            HStack(spacing: 10) {
+                Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 1.5)
+                Text("プロジェクト別").font(.caption.weight(.bold)).foregroundStyle(.secondary).fixedSize()
+                Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 1.5)
+            }
+            .padding(.vertical, 8)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
         }
         // Without a project first, then projects with a deadline, nearest first, then the rest as they come.
         let folds = Self.folds(rest).enumerated()
@@ -186,7 +210,19 @@ struct AllTasksView: View {
             foldHeader(fold.name, tasks: fold.tasks, open: unfolded)
             if unfolded {
                 ForEach(fold.tasks) { task in
-                    row(task, raised: listedDay(task).map(calendar.isDateInToday) == true, showsDay: true).padding(.leading, 14)
+                    row(task, raised: listedDay(task).map(calendar.isDateInToday) == true, showsDay: true)
+                        .overlay(alignment: .topTrailing) {
+                            if top.contains(task.id) {
+                                Text("締切・★").font(.caption2.weight(.bold)).foregroundStyle(Palette.must)
+                                    .padding(.horizontal, 7).padding(.vertical, 2)
+                                    .background(Capsule().fill(Color(uiColor: .systemBackground)))
+                                    .overlay(Capsule().strokeBorder(Palette.must.opacity(0.4), lineWidth: 1))
+                                    .offset(x: -12, y: -8)
+                                    .allowsHitTesting(false)
+                                    .accessibilityLabel("締切・★にも表示")
+                            }
+                        }
+                        .padding(.leading, 14)
                 }
             }
         }
