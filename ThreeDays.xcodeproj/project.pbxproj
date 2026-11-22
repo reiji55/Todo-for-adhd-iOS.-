@@ -226,6 +226,24 @@
 			<key>fileRef</key>
 			<string>E3AD600F7D1B9F11A0C0B313</string>
 		</dict>
+		<key>458BF3B26DBF796C63A4D34B</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>FeedbackView.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>B749070FBF060B6C70CB4AF1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>458BF3B26DBF796C63A4D34B</string>
+		</dict>
 		<key>36B0BA04D51CBF0868C9C026</key>
 		<dict>
 			<key>isa</key>
@@ -297,6 +315,24 @@
 			<string>PBXBuildFile</string>
 			<key>fileRef</key>
 			<string>1288E72059FE02F0526ECA4E</string>
+		</dict>
+		<key>F8A73D4AFC5D78D4B359D314</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>KeyboardDismissal.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>16B9676067FC8525A81C131A</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>F8A73D4AFC5D78D4B359D314</string>
 		</dict>
 		<key>C371F96DEAA3AC2F3E48AEEB</key>
 		<dict>
@@ -824,10 +860,12 @@
 				<string>C3D396F8F3D97AEB04AF9581</string>
 				<string>73EE46BD52D8271532F707F5</string>
 				<string>E3AD600F7D1B9F11A0C0B313</string>
+				<string>458BF3B26DBF796C63A4D34B</string>
 				<string>36B0BA04D51CBF0868C9C026</string>
 				<string>2B7E09D2153F55F53B7D3DBD</string>
 				<string>495C0F2F9D005AE00F553158</string>
 				<string>1288E72059FE02F0526ECA4E</string>
+				<string>F8A73D4AFC5D78D4B359D314</string>
 				<string>C371F96DEAA3AC2F3E48AEEB</string>
 				<string>9D43848887684AD4C8ADB13B</string>
 				<string>DB8C95ABD8FEB51FE5411A88</string>
@@ -1748,10 +1786,12 @@
 				<string>8FD6DCEEE49318B6ADAE488E</string>
 				<string>5535758BD294FAA45791E820</string>
 				<string>EA22057316C7D3C3F0856025</string>
+				<string>B749070FBF060B6C70CB4AF1</string>
 				<string>28A1F2A4CEC5603A945B9561</string>
 				<string>5CC8A29F56EA2A002E6517C4</string>
 				<string>C930A07953BF519925FD9BA2</string>
 				<string>34503E8E568A810507DE9EF4</string>
+				<string>16B9676067FC8525A81C131A</string>
 				<string>52F709755577AFF8922CBBC6</string>
 				<string>D8B6559C59E259F4BF516366</string>
 				<string>568044F21F3B8BC359AC61D6</string>

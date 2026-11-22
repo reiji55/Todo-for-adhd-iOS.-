@@ -82,7 +82,9 @@ struct GuideBoardView: View {
                 }
                 .pickerStyle(.segmented)
                 if mode == 0 {
-                    ProjectFolderList(entries: shownEntries, searching: !search.isEmpty) { openedProjectCard = ProjectCardRoute(id: $0.id) }
+                    ProjectFolderList(entries: shownEntries, searching: !search.isEmpty,
+                                      onOpenCard: { openedProjectCard = ProjectCardRoute(id: $0.id) },
+                                      onOpenProject: { openedProject = $0 })
                 } else {
                     cardList(cards: cards, shown: shown)
                 }
@@ -209,11 +211,11 @@ struct GuideBoardView: View {
     }
 
     private func face(_ card: BoardCard, stacked: Bool, ids: [UUID]) -> some View {
-        NavigationLink(value: GuideRoute(id: card.id)) {
+        // A button, not a link: a swipe across the card (to delete it) must not open it.
+        SwipeAwareButton { opened = GuideRoute(id: card.id) } label: {
             GuideCardFace(card: card, tasks: store.linkedTasks(for: card),
                           routines: store.linkedRoutines(for: card).filter { !$0.isPaused }.count, stacked: stacked)
         }
-        .buttonStyle(.plain)
         .swipeToDelete { store.deleteCard(card.id) }
         .contextMenu {
             if search.isEmpty, let index = store.notebook.boardCards.firstIndex(where: { $0.id == card.id }) {

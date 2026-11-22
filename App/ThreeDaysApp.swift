@@ -136,6 +136,7 @@ struct RootView: View {
             // The first time, with nothing in Horme yet: the guided tour, in demo mode. Or the rest of it, when
             // Horme was closed half way.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { tutorial.startIfNeeded(store: store) }
+            KeyboardDismissal.shared.install()
         }
         .onChange(of: store.notebook) { _, book in tutorial.notebookChanged(book) }
         .onChange(of: store.isDemo) { _, demo in if !demo { tutorial.demoEnded() } }

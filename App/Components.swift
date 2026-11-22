@@ -469,6 +469,8 @@ private struct SwipeToDelete: ViewModifier {
 
     private func slidable(_ content: Content) -> some View {
         content
+            // The whole row answers a swipe, its empty stretches included, not only its text and buttons.
+            .contentShape(Rectangle())
             .environment(\.rowSwiping, swiping || settled < 0)
             .overlay {
                 if settled < 0 {
@@ -491,9 +493,9 @@ private struct SwipeToDelete: ViewModifier {
             }
             // Alongside the scroll view's own drag, and only for sideways movement.
             .simultaneousGesture(
-                DragGesture(minimumDistance: 18)
+                DragGesture(minimumDistance: 12)
                     .onChanged { value in
-                        guard abs(value.translation.width) > abs(value.translation.height) * 1.2 else { return }
+                        guard swiping || abs(value.translation.width) > abs(value.translation.height) * 1.1 else { return }
                         swiping = true
                         offset = min(0, max(-reveal * 1.5, settled + value.translation.width))
                     }
@@ -511,6 +513,18 @@ private struct SwipeToDelete: ViewModifier {
     private func close() {
         withAnimation(.snappy(duration: 0.25)) { offset = 0 }
         settled = 0
+    }
+}
+
+/// A button inside a row that slides to delete: a swipe across it does not count as a tap.
+struct SwipeAwareButton<Label: View>: View {
+    @Environment(\.rowSwiping) private var swiping
+    let action: () -> Void
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        Button { if !swiping { action() } } label: { label() }
+            .buttonStyle(.plain)
     }
 }
 

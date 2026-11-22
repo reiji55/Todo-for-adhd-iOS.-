@@ -8,6 +8,8 @@ struct AllTasksView: View {
     @State private var search = ""
     @State private var showDone = false
     @State private var confirmClearDone = false
+    /// How many days ahead a deadline is gathered into 締切・★ (0: all of them).
+    @AppStorage("deadlineWindowDays") private var deadlineWindow = 7
     /// The projects opened, kept between visits (names joined by a separator).
     @AppStorage("allOpenProjects") private var openProjects = ""
     /// How the tasks are laid out: by project under the deadlines, or all by nearest deadline.
@@ -155,7 +157,16 @@ struct AllTasksView: View {
         let book = store.notebook
         let now = Date()
         let calendar = Calendar.current
-        let dated = open.filter { $0.deadline != nil }
+        let withDeadline = open.filter { $0.deadline != nil }
+        // Only deadlines within the chosen number of days (and those already past) are gathered on top, so the
+        // box does not bury everything else; the rest stay in their projects.
+        let today = calendar.startOfDay(for: now)
+        let dated = withDeadline.filter { task in
+            guard deadlineWindow > 0, let deadline = task.deadline else { return true }
+            let days = calendar.dateComponents([.day], from: today, to: calendar.startOfDay(for: deadline)).day ?? 0
+            return days <= deadlineWindow
+        }
+        let later = withDeadline.count - dated.count
         let musts = open.filter { $0.isMust && $0.deadline == nil }
             .sorted { (listedDay($0) ?? .distantFuture, $0.createdAt) < (listedDay($1) ?? .distantFuture, $1.createdAt) }
         // A project's deadline is on its own fold below, so the project is not shown twice.
@@ -166,12 +177,30 @@ struct AllTasksView: View {
         let top = Set(dated.map(\.id) + musts.map(\.id))
         let rest = open
             .sorted { (listedDay($0) ?? .distantFuture, $0.createdAt) < (listedDay($1) ?? .distantFuture, $1.createdAt) }
-        if !rows.isEmpty || !musts.isEmpty {
+        if !withDeadline.isEmpty || !musts.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text("締切・★ \(dated.count + musts.count)件").font(.headline).foregroundStyle(Palette.must)
                         Text("締切が近い順").font(.caption).foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                        Menu {
+                            Picker("表示する締切", selection: $deadlineWindow) {
+                                ForEach([3, 7, 14, 30, 0], id: \.self) { days in
+                                    Text(days == 0 ? "すべて" : "\(days)日以内").tag(days)
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(deadlineWindow == 0 ? "すべて" : "\(deadlineWindow)日以内")
+                                Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .bold))
+                            }
+                            .font(.caption.weight(.bold)).foregroundStyle(Palette.must)
+                            .padding(.horizontal, 9).padding(.vertical, 4)
+                            .background(Capsule().fill(Palette.must.opacity(0.12)))
+                        }
+                        .accessibilityLabel("表示する締切：\(deadlineWindow == 0 ? "すべて" : "\(deadlineWindow)日以内")")
+                        .accessibilityIdentifier("deadlineWindow")
                     }
                     Text("各プロジェクトから集めています").font(.caption2).foregroundStyle(Palette.must.opacity(0.8))
                 }
@@ -186,6 +215,10 @@ struct AllTasksView: View {
                     }
                 }
                 ForEach(musts) { task in row(task, showsDay: true) }
+                if later > 0 {
+                    Text("締切がもっと先の\(later)件は、下のプロジェクトの中にあります")
+                        .font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 4)
+                }
             }
             .padding(10)
             .background(Palette.must.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))

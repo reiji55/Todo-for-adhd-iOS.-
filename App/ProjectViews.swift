@@ -106,6 +106,8 @@ struct ProjectFolder: View {
     let entry: ProjectBook.Entry
     /// Set on the board, where a card peeking out of the folder opens that card.
     var onOpenCard: ((BoardCard) -> Void)? = nil
+    /// Opens the project's page.
+    var onOpen: (ProjectRoute) -> Void = { _ in }
 
     var body: some View {
         let cards = store.projectCards(entry.key)
@@ -115,14 +117,13 @@ struct ProjectFolder: View {
             ZStack(alignment: .bottomLeading) {
                 HStack(spacing: -22) {
                     ForEach(Array(cards.prefix(3).enumerated()), id: \.element.id) { index, card in
-                        Button { onOpenCard?(card) } label: {
+                        SwipeAwareButton { onOpenCard?(card) } label: {
                             Text(card.title).font(.system(size: 11, weight: .bold)).lineLimit(2).multilineTextAlignment(.leading)
                                 .padding(.horizontal, 8).padding(.top, 6)
                                 .frame(width: 96, height: 52, alignment: .topLeading)
                                 .background(ProjectColor.tint(for: entry.name, amount: 0.62), in: RoundedRectangle(cornerRadius: 8))
                                 .contentShape(RoundedRectangle(cornerRadius: 8))
                         }
-                        .buttonStyle(.plain)
                         .disabled(onOpenCard == nil)
                         .rotationEffect(.degrees([-3.0, 2.0, -1.0][index]))
                         .accessibilityLabel("カード「\(card.title)」を開く")
@@ -130,25 +131,24 @@ struct ProjectFolder: View {
                 }
                 .padding(.leading, 136)
                 .offset(y: 16)
-                NavigationLink(value: route) {
+                // Buttons, not links: a swipe across the folder (to delete it) must not open it.
+                SwipeAwareButton { onOpen(route) } label: {
                     Text(entry.name.count > 12 ? String(entry.name.prefix(11)) + "…" : entry.name)
                         .font(.system(size: 15, weight: .heavy)).lineLimit(1).fixedSize()
                         .padding(.horizontal, 14).frame(height: 32)
                         .frame(minWidth: 120, alignment: .leading)
                         .background(face, in: UnevenRoundedRectangle(topLeadingRadius: 12, topTrailingRadius: 12))
                 }
-                .buttonStyle(.plain)
                 .accessibilityIdentifier("openProjectTab-\(entry.key)")
             }
             .frame(height: cards.isEmpty ? 32 : 48, alignment: .bottomLeading)
             .zIndex(0)
-            NavigationLink(value: route) {
+            SwipeAwareButton { onOpen(route) } label: {
                 front
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(face, in: UnevenRoundedRectangle(bottomLeadingRadius: 18, bottomTrailingRadius: 18, topTrailingRadius: 18))
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
             .accessibilityIdentifier("openProject-\(entry.key)")
             .shadow(color: .black.opacity(0.18), radius: 6, y: -2)
             .zIndex(1)
@@ -250,6 +250,7 @@ struct ProjectFolderList: View {
     let entries: [ProjectBook.Entry]
     let searching: Bool
     let onOpenCard: (BoardCard) -> Void
+    var onOpenProject: (ProjectRoute) -> Void = { _ in }
 
     var body: some View {
         if entries.isEmpty {
@@ -269,7 +270,7 @@ struct ProjectFolderList: View {
     }
 
     private func folder(_ entry: ProjectBook.Entry) -> some View {
-        ProjectFolder(entry: entry, onOpenCard: onOpenCard)
+        ProjectFolder(entry: entry, onOpenCard: onOpenCard, onOpen: onOpenProject)
             // Sideways, as on the other lists: the delete button behind it. 取り消す brings it back.
             .swipeToDelete { store.deleteProject(entry.key) }
             .contextMenu {

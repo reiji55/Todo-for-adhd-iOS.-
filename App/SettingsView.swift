@@ -86,6 +86,12 @@ struct SettingsView: View {
                 footer: {
                     Text("サンプルのデータで、案内に沿って操作を試せます。本物のデータには触れず、同期と通知も止まります。終えるか、アプリを閉じると元に戻ります。")
                 }
+                Section {
+                    NavigationLink { FeedbackView() } label: {
+                        Label("ご意見・不具合の報告", systemImage: "envelope")
+                    }
+                    .accessibilityIdentifier("openFeedback")
+                } footer: { Text("困ったことや、あったらいいなと思うことを、開発者に直接送れます。") }
                 Section("この版について") {
                     Text("Horme · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
                     Text(Edition.full ? "フル機能版（Claude連携・バックアップつき）" : "タスク・アイデア・リスト・プロジェクトを、思いつきから完了までひとつの場所で。")
