@@ -91,6 +91,8 @@ struct SettingsView: View {
                         Label("ご意見・不具合の報告", systemImage: "envelope")
                     }
                     .accessibilityIdentifier("openFeedback")
+                    Link(destination: SupportSite.home) { Label("サポートページ", systemImage: "safari") }
+                    Link(destination: SupportSite.privacy) { Label("プライバシーポリシー", systemImage: "hand.raised") }
                 } footer: { Text("困ったことや、あったらいいなと思うことを、開発者に直接送れます。") }
                 Section("この版について") {
                     Text("Horme · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")

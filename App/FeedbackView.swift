@@ -133,3 +133,9 @@ struct FeedbackView: View {
         return id
     }
 }
+
+/// Horme's support page and privacy policy on the web.
+enum SupportSite {
+    static let home = URL(string: "https://horme-indol.vercel.app")!
+    static let privacy = URL(string: "https://horme-indol.vercel.app/privacy.html")!
+}
