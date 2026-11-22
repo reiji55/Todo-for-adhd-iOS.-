@@ -13,7 +13,7 @@ import urllib.request
 
 import jwt
 
-BUNDLE_ID = "io.github.reiji55.threedays"
+BUNDLE_ID = os.environ.get("HORME_ID_BASE", "io.github.reiji55.threedays")
 API = "https://api.appstoreconnect.apple.com"
 
 

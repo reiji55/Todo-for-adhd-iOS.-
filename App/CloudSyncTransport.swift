@@ -28,7 +28,7 @@ struct CloudSnapshot {
 /// queries records (no query indexes are required) or deletes server records.
 @MainActor
 final class CloudSyncTransport {
-    static let containerID = "iCloud.io.github.reiji55.threedays"
+    static let containerID = "iCloud." + HormeID.base
     static let zoneName = "HormeData"
     static let recordType = "HormeItem"
     lazy var container = CKContainer(identifier: Self.containerID)

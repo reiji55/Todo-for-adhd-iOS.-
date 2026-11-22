@@ -11,7 +11,9 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 
-ALLOWED_BUNDLE_IDS = ("io.github.reiji55.threedays", "io.github.reiji55.threedays.widgets", "io.github.reiji55.threedays.share")
+# The edition being sent: the full edition's app ID unless HORME_ID_BASE names the App Store edition's.
+ID_BASE = os.environ.get("HORME_ID_BASE", "io.github.reiji55.threedays")
+ALLOWED_BUNDLE_IDS = (ID_BASE, ID_BASE + ".widgets", ID_BASE + ".share")
 
 REQUIRED_SECRETS = (
     "APP_STORE_CONNECT_ISSUER_ID",

@@ -5,7 +5,9 @@ umask 077
 # No shell tracing: signing keys are supplied only through GitHub Secrets.
 cd "$(dirname "$0")/.."
 RELEASE_VERSION=$(python3 scripts/release_config.py)
-BUNDLE_ID=io.github.reiji55.threedays
+# Which edition: the full one (TestFlight, for the developer) unless HORME_ID_BASE names the App Store one.
+BUNDLE_ID=${HORME_ID_BASE:-io.github.reiji55.threedays}
+export HORME_ID_BASE=$BUNDLE_ID
 WIDGET_BUNDLE_ID=$BUNDLE_ID.widgets
 SHARE_BUNDLE_ID=$BUNDLE_ID.share
 RELEASE_DIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/threedays-release.XXXXXX")
@@ -37,7 +39,7 @@ python3 - "$RELEASE_DIR/apps.json" <<'PY'
 import json, sys
 apps = json.load(open(sys.argv[1]))
 if not isinstance(apps, list) or len(apps) != 1:
-    raise SystemExit('::error::App Store Connectでio.github.reiji55.threedaysのアプリを先に作成してください。docs/TESTFLIGHT.mdを参照。')
+    raise SystemExit('::error::App Store Connectで' + __import__('os').environ['HORME_ID_BASE'] + 'のアプリを先に作成してください。docs/TESTFLIGHT.mdを参照。')
 PY
 
 # The same RSA key is reused, so uploads do not create a new certificate each time.
@@ -54,7 +56,7 @@ app-store-connect fetch-signing-files "$WIDGET_BUNDLE_ID" \
   --profiles-dir "$RELEASE_DIR/widget-profiles"
 WIDGET_PROFILES=("$RELEASE_DIR"/widget-profiles/*.mobileprovision)
 if [[ ! -f "${WIDGET_PROFILES[0]}" ]]; then
-  echo '::error::ウィジェット（io.github.reiji55.threedays.widgets）の配布プロファイルを取得できませんでした。'
+  echo "::error::ウィジェット（$WIDGET_BUNDLE_ID）の配布プロファイルを取得できませんでした。"
   exit 1
 fi
 mv "${WIDGET_PROFILES[@]}" "$RELEASE_DIR/profiles/"
@@ -66,7 +68,7 @@ app-store-connect fetch-signing-files "$SHARE_BUNDLE_ID" \
   --profiles-dir "$RELEASE_DIR/share-profiles"
 SHARE_PROFILES=("$RELEASE_DIR"/share-profiles/*.mobileprovision)
 if [[ ! -f "${SHARE_PROFILES[0]}" ]]; then
-  echo '::error::共有の拡張（io.github.reiji55.threedays.share）の配布プロファイルを取得できませんでした。'
+  echo "::error::共有の拡張（$SHARE_BUNDLE_ID）の配布プロファイルを取得できませんでした。"
   exit 1
 fi
 mv "${SHARE_PROFILES[@]}" "$RELEASE_DIR/profiles/"
@@ -100,8 +102,8 @@ import pathlib, plistlib, sys
 path = pathlib.Path(sys.argv[1])
 options = plistlib.loads(path.read_bytes())
 profiles = options.get('provisioningProfiles', {})
-if not options.get('teamID') or not {'io.github.reiji55.threedays', 'io.github.reiji55.threedays.widgets',
-                                     'io.github.reiji55.threedays.share'} <= set(profiles):
+base = __import__('os').environ['HORME_ID_BASE']
+if not options.get('teamID') or not {base, base + '.widgets', base + '.share'} <= set(profiles):
     raise SystemExit('::error::アプリ・ウィジェット・共有の拡張に対応する署名設定を生成できませんでした。')
 options.update(method='app-store-connect', destination='export')
 path.write_bytes(plistlib.dumps(options))

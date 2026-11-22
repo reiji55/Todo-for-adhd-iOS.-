@@ -2,6 +2,12 @@ name: iPhoneに送る（TestFlight）
 
 on:
   workflow_dispatch:
+    inputs:
+      edition:
+        description: 'full = 自分用のフル機能版（いつものTestFlight）／store = App Store版（新しいID com.hormeapp.ios）'
+        type: choice
+        options: [full, store]
+        default: full
 
 permissions:
   contents: read
@@ -26,6 +32,11 @@ jobs:
         run: |
           python -m pip install -r scripts/release-requirements.txt
           ruby -e 'require "xcodeproj"'
+      - name: Set up the App Store edition
+        if: inputs.edition == 'store'
+        run: |
+          HORME_EDITION=store python3 scripts/generate-project.py
+          echo "HORME_ID_BASE=com.hormeapp.ios" >> "$GITHUB_ENV"
       - name: Test task logic
         run: swift test
       - name: Test signing validation

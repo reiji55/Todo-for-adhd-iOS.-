@@ -3,6 +3,6 @@
 <plist version="1.0">
 <dict>
     <key>keychain-access-groups</key>
-    <array><string>$(AppIdentifierPrefix)io.github.reiji55.threedays.inbox</string></array>
+    <array><string>$(AppIdentifierPrefix)$(HORME_ID_BASE).inbox</string></array>
 </dict>
 </plist>

@@ -1318,6 +1318,31 @@
 			<key>fileRef</key>
 			<string>9D140088A5D620126AA963AB</string>
 		</dict>
+		<key>DAA5FE2F596CD9D0A80A8790</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>HormeID.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>9728FBA6C6AC4C291DBBA8EA</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>DAA5FE2F596CD9D0A80A8790</string>
+		</dict>
+		<key>5FAD61E19ADA86ECA6B0B927</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>DAA5FE2F596CD9D0A80A8790</string>
+		</dict>
 		<key>B39DAB2E7FEA26B3BFA63B08</key>
 		<dict>
 			<key>isa</key>
@@ -1403,6 +1428,7 @@
 			<string>&lt;group&gt;</string>
 			<key>children</key>
 			<array>
+				<string>DAA5FE2F596CD9D0A80A8790</string>
 				<string>B39DAB2E7FEA26B3BFA63B08</string>
 				<string>5E784A81C777DCD3D41C806E</string>
 				<string>96D769BC4B168CF43694BFD2</string>
@@ -1841,6 +1867,7 @@
 				<string>892BD8710E65355EE123A39D</string>
 				<string>5AFFFE3B9A275ED4EBEF78E9</string>
 				<string>CFAAA6B7DBD279A8F1DF1067</string>
+				<string>9728FBA6C6AC4C291DBBA8EA</string>
 				<string>C6EA1E545D18FEA2E749E962</string>
 				<string>FDA9C176884170C492B3E888</string>
 				<string>8D73982543C6D7DCCDABA973</string>
@@ -1921,6 +1948,7 @@
 			<string>2147483647</string>
 			<key>files</key>
 			<array>
+				<string>5FAD61E19ADA86ECA6B0B927</string>
 				<string>9466E48F14B5828456932A9E</string>
 				<string>BCC71E80FAC7C5C1403F191E</string>
 				<string>552E7E7925205BC6862A41FF</string>
@@ -2031,6 +2059,8 @@
 				<string>0.3.0</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>io.github.reiji55.threedays</string>
+				<key>HORME_ID_BASE</key>
+				<string>io.github.reiji55.threedays</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
 				<key>SUPPORTED_PLATFORMS</key>
@@ -2081,6 +2111,8 @@
 				<string>0.3.0</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>io.github.reiji55.threedays.widgets</string>
+				<key>HORME_ID_BASE</key>
+				<string>io.github.reiji55.threedays</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
 				<key>SKIP_INSTALL</key>
@@ -2125,6 +2157,8 @@
 				<string>0.3.0</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>io.github.reiji55.threedays.share</string>
+				<key>HORME_ID_BASE</key>
+				<string>io.github.reiji55.threedays</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
 				<key>SKIP_INSTALL</key>
@@ -2214,6 +2248,8 @@
 				<string>0.3.0</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>io.github.reiji55.threedays</string>
+				<key>HORME_ID_BASE</key>
+				<string>io.github.reiji55.threedays</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
 				<key>SUPPORTED_PLATFORMS</key>
@@ -2264,6 +2300,8 @@
 				<string>0.3.0</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>io.github.reiji55.threedays.widgets</string>
+				<key>HORME_ID_BASE</key>
+				<string>io.github.reiji55.threedays</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
 				<key>SKIP_INSTALL</key>
@@ -2308,6 +2346,8 @@
 				<string>0.3.0</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>io.github.reiji55.threedays.share</string>
+				<key>HORME_ID_BASE</key>
+				<string>io.github.reiji55.threedays</string>
 				<key>PRODUCT_NAME</key>
 				<string>$(TARGET_NAME)</string>
 				<key>SKIP_INSTALL</key>

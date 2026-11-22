@@ -31,7 +31,14 @@ enum ListInbox {
         var entries: [Entry] = []
     }
 
-    private static let service = "io.github.reiji55.threedays.inbox"
+    /// Named under this edition's ID (HormeIDBase in Info.plist), so the App Store edition keeps its own inbox.
+    private static let service: String = ((Bundle.main.object(forInfoDictionaryKey: "HormeIDBase") as? String)
+        .flatMap { $0.isEmpty || $0.contains("$(") ? nil : $0 } ?? defaultBase) + ".inbox"
+    #if HORME_STORE
+    private static let defaultBase = "com.hormeapp.ios"
+    #else
+    private static let defaultBase = "io.github.reiji55.threedays"
+    #endif
     private static let account = "inbox"
 
     /// The shared keychain group, as written into Info.plist at build time (team prefix included).

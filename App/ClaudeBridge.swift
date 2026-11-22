@@ -6,7 +6,7 @@ import UIKit
 /// The link to the Claude bridge (`https://<project>.supabase.co/functions/v1/horme/<key>`), kept in the Keychain
 /// because the key in it grants access to the data.
 enum BridgeLink {
-    private static let service = "io.github.reiji55.threedays.bridge"
+    private static let service = HormeID.base + ".bridge"
 
     static func load() -> String? {
         var item: CFTypeRef?

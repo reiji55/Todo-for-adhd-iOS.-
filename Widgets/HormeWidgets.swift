@@ -42,7 +42,7 @@ private let quickFamilies: [WidgetFamily] = [.systemSmall, .accessoryCircular, .
 
 struct TaskQuickAddWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "io.github.reiji55.threedays.quickadd.task", provider: StaticProvider()) { _ in
+        StaticConfiguration(kind: HormeID.base + ".quickadd.task", provider: StaticProvider()) { _ in
             QuickAddWidgetView(link: .task)
         }
         .configurationDisplayName("タスクを書く")
@@ -53,7 +53,7 @@ struct TaskQuickAddWidget: Widget {
 
 struct IdeaQuickAddWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "io.github.reiji55.threedays.quickadd.idea", provider: StaticProvider()) { _ in
+        StaticConfiguration(kind: HormeID.base + ".quickadd.idea", provider: StaticProvider()) { _ in
             QuickAddWidgetView(link: .idea)
         }
         .configurationDisplayName("アイデアを書く")
@@ -64,7 +64,7 @@ struct IdeaQuickAddWidget: Widget {
 
 struct QuickAddPairWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "io.github.reiji55.threedays.quickadd.pair", provider: StaticProvider()) { _ in
+        StaticConfiguration(kind: HormeID.base + ".quickadd.pair", provider: StaticProvider()) { _ in
             QuickAddPairView()
         }
         .configurationDisplayName("タスクとアイデア")
@@ -152,7 +152,7 @@ struct QuickAddPairView: View {
 @available(iOSApplicationExtension 18.0, *)
 struct TaskQuickAddControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "io.github.reiji55.threedays.control.task") {
+        StaticControlConfiguration(kind: HormeID.base + ".control.task") {
             ControlWidgetButton(action: OpenTaskQuickAddIntent()) {
                 Label("タスクを書く", systemImage: QuickAddLink.task.symbol)
             }
@@ -165,7 +165,7 @@ struct TaskQuickAddControl: ControlWidget {
 @available(iOSApplicationExtension 18.0, *)
 struct IdeaQuickAddControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "io.github.reiji55.threedays.control.idea") {
+        StaticControlConfiguration(kind: HormeID.base + ".control.idea") {
             ControlWidgetButton(action: OpenIdeaQuickAddIntent()) {
                 Label("アイデアを書く", systemImage: QuickAddLink.idea.symbol)
             }

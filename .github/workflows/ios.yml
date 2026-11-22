@@ -58,6 +58,12 @@ jobs:
           -derivedDataPath DerivedData-device
           CODE_SIGNING_ALLOWED=NO
           build
+      - name: Build the App Store edition (its own app ID, no Claude連携 or file backups)
+        run: |
+          HORME_EDITION=store python3 scripts/generate-project.py
+          xcodebuild -project ThreeDays.xcodeproj -scheme ThreeDays -configuration Release \
+            -destination 'generic/platform=iOS' -derivedDataPath DerivedData-store CODE_SIGNING_ALLOWED=NO build
+          git checkout -- ThreeDays.xcodeproj
       - name: Launch on the oldest iOS the runner has
         timeout-minutes: 25
         run: bash scripts/oldest-ios-launch.sh

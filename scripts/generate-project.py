@@ -1,6 +1,10 @@
 """Regenerate the checked-in Xcode project after adding Swift files."""
 from pathlib import Path
-import hashlib, plistlib, json
+import hashlib, plistlib, json, os
+# Two editions from one source: "full" (TestFlight, for the developer: Claude連携 and file backups) and "store"
+# (the App Store app, without them). Each has its own app ID, so both can sit on one phone.
+EDITION = os.environ.get('HORME_EDITION', 'full')
+ID_BASE = {'full': 'io.github.reiji55.threedays', 'store': 'com.hormeapp.ios'}[EDITION]
 root = Path(__file__).resolve().parents[1]
 objects = {}
 def uid(key): return hashlib.sha1(key.encode()).hexdigest()[:24].upper()
@@ -54,16 +58,20 @@ for mode in ['Debug', 'Release']:
     common = {'ALWAYS_SEARCH_USER_PATHS':'NO', 'CLANG_ENABLE_MODULES':'YES', 'CLANG_ENABLE_OBJC_ARC':'YES', 'SDKROOT':'iphoneos', 'IPHONEOS_DEPLOYMENT_TARGET':'17.0', 'SWIFT_VERSION':'5.0', 'SWIFT_STRICT_CONCURRENCY':'targeted', 'GCC_C_LANGUAGE_STANDARD':'gnu17', 'DEBUG_INFORMATION_FORMAT':'dwarf' if mode == 'Debug' else 'dwarf-with-dsym', 'SWIFT_OPTIMIZATION_LEVEL':'-Onone' if mode == 'Debug' else '-O'}
     if mode == 'Debug': common.update({'ENABLE_TESTABILITY':'YES', 'SWIFT_ACTIVE_COMPILATION_CONDITIONS':'DEBUG $(inherited)', 'ONLY_ACTIVE_ARCH':'YES'})
     projectConfigs.append(add('project:' + mode, isa='XCBuildConfiguration', name=mode, buildSettings=common))
-    settings = {'ASSETCATALOG_COMPILER_APPICON_NAME':'AppIcon', 'ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME':'AccentColor', 'CODE_SIGN_STYLE':'Automatic', 'CURRENT_PROJECT_VERSION':'1', 'GENERATE_INFOPLIST_FILE':'YES', 'INFOPLIST_KEY_CFBundleDisplayName':'Horme', 'INFOPLIST_KEY_ITSAppUsesNonExemptEncryption':'NO', 'INFOPLIST_KEY_LSApplicationCategoryType':'public.app-category.productivity', 'INFOPLIST_KEY_UIApplicationSceneManifest_Generation':'YES', 'INFOPLIST_KEY_UILaunchScreen_Generation':'NO', 'INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone':'UIInterfaceOrientationPortrait', 'INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad':'UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight', 'INFOPLIST_KEY_UIRequiresFullScreen':'NO', 'LD_RUNPATH_SEARCH_PATHS':['$(inherited)', '@executable_path/Frameworks'], 'MARKETING_VERSION':'0.2.1', 'PRODUCT_BUNDLE_IDENTIFIER':'io.github.reiji55.threedays', 'PRODUCT_NAME':'$(TARGET_NAME)', 'SUPPORTED_PLATFORMS':'iphoneos iphonesimulator', 'SUPPORTS_MACCATALYST':'NO', 'TARGETED_DEVICE_FAMILY':'1,2', 'SWIFT_EMIT_LOC_STRINGS':'YES'}
+    settings = {'ASSETCATALOG_COMPILER_APPICON_NAME':'AppIcon', 'ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME':'AccentColor', 'CODE_SIGN_STYLE':'Automatic', 'CURRENT_PROJECT_VERSION':'1', 'GENERATE_INFOPLIST_FILE':'YES', 'INFOPLIST_KEY_CFBundleDisplayName':'Horme', 'INFOPLIST_KEY_ITSAppUsesNonExemptEncryption':'NO', 'INFOPLIST_KEY_LSApplicationCategoryType':'public.app-category.productivity', 'INFOPLIST_KEY_UIApplicationSceneManifest_Generation':'YES', 'INFOPLIST_KEY_UILaunchScreen_Generation':'NO', 'INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone':'UIInterfaceOrientationPortrait', 'INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad':'UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight', 'INFOPLIST_KEY_UIRequiresFullScreen':'NO', 'LD_RUNPATH_SEARCH_PATHS':['$(inherited)', '@executable_path/Frameworks'], 'MARKETING_VERSION':'0.2.1', 'PRODUCT_BUNDLE_IDENTIFIER':ID_BASE, 'HORME_ID_BASE':ID_BASE, 'PRODUCT_NAME':'$(TARGET_NAME)', 'SUPPORTED_PLATFORMS':'iphoneos iphonesimulator', 'SUPPORTS_MACCATALYST':'NO', 'TARGETED_DEVICE_FAMILY':'1,2', 'SWIFT_EMIT_LOC_STRINGS':'YES'}
     settings.update({'MARKETING_VERSION': VERSION, 'INFOPLIST_FILE': 'App/Info.plist',
                      'CODE_SIGN_ENTITLEMENTS': 'App/Horme.entitlements',
                      'CLOUDKIT_ENVIRONMENT': 'Development' if mode == 'Debug' else 'Production',
                      'APS_ENVIRONMENT': 'development' if mode == 'Debug' else 'production'})
+    if EDITION == 'store':
+        settings['SWIFT_ACTIVE_COMPILATION_CONDITIONS'] = 'HORME_STORE $(inherited)'
     targetConfigs.append(add('target:' + mode, isa='XCBuildConfiguration', name=mode, buildSettings=settings))
-    widgetSettings = {'APPLICATION_EXTENSION_API_ONLY':'YES', 'CODE_SIGN_STYLE':'Automatic', 'CURRENT_PROJECT_VERSION':'1', 'GENERATE_INFOPLIST_FILE':'YES', 'INFOPLIST_FILE':'Widgets/Info.plist', 'INFOPLIST_KEY_CFBundleDisplayName':'Horme', 'LD_RUNPATH_SEARCH_PATHS':['$(inherited)', '@executable_path/Frameworks', '@executable_path/../../Frameworks'], 'MARKETING_VERSION':VERSION, 'PRODUCT_BUNDLE_IDENTIFIER':'io.github.reiji55.threedays.widgets', 'PRODUCT_NAME':'$(TARGET_NAME)', 'SKIP_INSTALL':'YES', 'SUPPORTED_PLATFORMS':'iphoneos iphonesimulator', 'SUPPORTS_MACCATALYST':'NO', 'TARGETED_DEVICE_FAMILY':'1,2', 'SWIFT_EMIT_LOC_STRINGS':'YES'}
+    widgetSettings = {'APPLICATION_EXTENSION_API_ONLY':'YES', 'CODE_SIGN_STYLE':'Automatic', 'CURRENT_PROJECT_VERSION':'1', 'GENERATE_INFOPLIST_FILE':'YES', 'INFOPLIST_FILE':'Widgets/Info.plist', 'INFOPLIST_KEY_CFBundleDisplayName':'Horme', 'LD_RUNPATH_SEARCH_PATHS':['$(inherited)', '@executable_path/Frameworks', '@executable_path/../../Frameworks'], 'MARKETING_VERSION':VERSION, 'PRODUCT_BUNDLE_IDENTIFIER':ID_BASE + '.widgets', 'HORME_ID_BASE':ID_BASE, 'PRODUCT_NAME':'$(TARGET_NAME)', 'SKIP_INSTALL':'YES', 'SUPPORTED_PLATFORMS':'iphoneos iphonesimulator', 'SUPPORTS_MACCATALYST':'NO', 'TARGETED_DEVICE_FAMILY':'1,2', 'SWIFT_EMIT_LOC_STRINGS':'YES'}
+    if EDITION == 'store':
+        widgetSettings['SWIFT_ACTIVE_COMPILATION_CONDITIONS'] = 'HORME_STORE $(inherited)'
     widgetConfigs.append(add('widget:' + mode, isa='XCBuildConfiguration', name=mode, buildSettings=widgetSettings))
     shareSettings = dict(widgetSettings, INFOPLIST_FILE='Share/Info.plist', CODE_SIGN_ENTITLEMENTS='Share/Share.entitlements',
-                         PRODUCT_BUNDLE_IDENTIFIER='io.github.reiji55.threedays.share')
+                         PRODUCT_BUNDLE_IDENTIFIER=ID_BASE + '.share')
     shareConfigs.append(add('share:' + mode, isa='XCBuildConfiguration', name=mode, buildSettings=shareSettings))
 pConfig = add('projectConfig', isa='XCConfigurationList', buildConfigurations=projectConfigs, defaultConfigurationIsVisible='0', defaultConfigurationName='Release')
 tConfig = add('targetConfig', isa='XCConfigurationList', buildConfigurations=targetConfigs, defaultConfigurationIsVisible='0', defaultConfigurationName='Release')

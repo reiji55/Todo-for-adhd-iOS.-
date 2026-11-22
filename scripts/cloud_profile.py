@@ -3,13 +3,14 @@
 This reads downloaded public provisioning metadata, never prints its contents,
 and never revokes existing signing assets on Apple's servers.
 """
+import os
 import pathlib
 import plistlib
 import subprocess
 import sys
 
-CONTAINER = "iCloud.io.github.reiji55.threedays"
-BUNDLE_ID = "io.github.reiji55.threedays"
+BUNDLE_ID = os.environ.get("HORME_ID_BASE", "io.github.reiji55.threedays")
+CONTAINER = "iCloud." + BUNDLE_ID
 
 
 def string_values(value):
@@ -64,7 +65,7 @@ def main(directory):
         raise SystemExit(
             "::error::HormeのiCloud・CloudKit・Push Notificationsに対応した配布プロファイルがありません。"
             "上のProfile行でMISSINGになった項目を確認してください。"
-            "iCloud containerならApp IDにiCloud.io.github.reiji55.threedaysを関連付け、CloudKit serviceならInclude CloudKit supportを有効にしてください。"
+            "iCloud containerならApp IDに" + CONTAINER + "を関連付け、CloudKit serviceならInclude CloudKit supportを有効にしてください。"
             "Push productionならPush Notificationsを有効にして保存してください。"
             "設定済みなら配布プロファイルを再生成してください。手順: docs/ICLOUD-SHARING.md"
         )
