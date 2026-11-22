@@ -70,7 +70,7 @@ if ! boot; then
   xcrun simctl erase "$SIMULATOR_ID" >/dev/null 2>&1 || true
   boot
 fi
-xcrun simctl status_bar "$SIMULATOR_ID" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
+xcrun simctl status_bar "$SIMULATOR_ID" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100 --operatorName ''
 APP_PATH=DerivedData/Build/Products/Debug-iphonesimulator/ThreeDays.app
 python3 - "$APP_PATH/Info.plist" <<'PY'
 import plistlib, sys
