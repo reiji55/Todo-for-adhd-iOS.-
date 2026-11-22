@@ -120,28 +120,28 @@ def task(title, **changes):
 M_COUNT = str(uuid.uuid4()).upper()
 M_TASKS = str(uuid.uuid4()).upper()
 tasks = [
-    task('提出書類を送る', isMust=True, deadline=date(now),
-         steps=[dict(id=str(uuid.uuid4()), title='宛先を確認する', isDone=False)]),
-    task('予約の電話をする', isMust=True, scheduledTime='14:00-14:15'),
+    task('保険の書類を出す', isMust=True, deadline=date(now),
+         steps=[dict(id=str(uuid.uuid4()), title='必要なところを記入する', isDone=False)]),
+    task('美容院の予約をする', isMust=True, scheduledTime='14:00-14:15'),
     task('住民票を取りに行く', isMust=True, plannedAt=None, deadline=date(now + timedelta(days=2)), effort='medium'),
     task('部屋をリセットする', scheduledTime='21:00-21:15', project='部屋'),
-    task('提案の下書きをつくる', deadline=date(now + timedelta(days=1)), effort='heavy'),
+    task('友達の誕生日プレゼントを選ぶ', deadline=date(now + timedelta(days=1)), effort='medium'),
     task('読みかけの本を読む', resumeNote='42ページの途中まで'),
-    task('気になる資料を読む', effort='medium'),
+    task('旅行の行き先を調べる', effort='medium'),
     task('友達とランチ', scheduledTime='12:00-13:30', isEvent=True),
-    task('買い物に行く', plannedAt=date(now + timedelta(days=1)), isEvent=True),
-    task('提案の下書き 見出し3つ', project='仕事', scheduledTime='10:00-11:30', plannedAt=date(now + timedelta(days=1))),
+    task('週末の旅行', plannedAt=date(now + timedelta(days=4)), isEvent=True),
+    task('打ち合わせの資料をまとめる', project='仕事', scheduledTime='10:00-11:30', plannedAt=date(now + timedelta(days=1))),
     task('歯医者の予約', scheduledTime='13:00-13:30', plannedAt=date(now + timedelta(days=2))),
-    task('予想問題 第4回を解く', project='TOEIC', scheduledTime='20:30-21:30', milestoneID=M_COUNT),
-    task('Part7 時間を計って10問', project='TOEIC', completedAt=date(now - timedelta(days=1)), milestoneID=M_TASKS),
-    task('長文を1本解き直す', project='TOEIC', plannedAt=date(now + timedelta(days=1)), milestoneID=M_TASKS),
-    task('公式問題集の音声を落とす', project='TOEIC', plannedAt=None, milestoneID=M_TASKS),
-    task('TOEIC 本番', project='TOEIC', plannedAt=date(now + timedelta(days=41)), isEvent=True),
+    task('過去問 第3回を解く', project='資格の勉強', scheduledTime='20:30-21:30', milestoneID=M_COUNT),
+    task('過去問 第2回を解く', project='資格の勉強', completedAt=date(now - timedelta(days=1)), milestoneID=M_TASKS),
+    task('第3章を解き直す', project='資格の勉強', plannedAt=date(now + timedelta(days=1)), milestoneID=M_TASKS),
+    task('第4章を解き直す', project='資格の勉強', plannedAt=None, milestoneID=M_TASKS),
+    task('試験本番', project='資格の勉強', plannedAt=date(now + timedelta(days=41)), isEvent=True),
 ]
 # A task in pieces: the pieces carry the days, the task its deadline.
 P_PROPOSAL = str(uuid.uuid4()).upper()
 tasks += [
-    task('提案書をつくる', id=P_PROPOSAL, plannedAt=None, project='仕事', deadline=date(now + timedelta(days=2)), effort='heavy'),
+    task('企画書をつくる', id=P_PROPOSAL, plannedAt=None, project='仕事', deadline=date(now + timedelta(days=2)), effort='heavy'),
     task('構成を決める', parentID=P_PROPOSAL, rank=0, project='仕事', plannedAt=date(now - timedelta(days=1)),
          completedAt=date(now - timedelta(days=1))),
     task('見出しを3つ書く', parentID=P_PROPOSAL, rank=1, project='仕事', scheduledTime='15:00-16:00'),
@@ -152,21 +152,22 @@ def milestone(title, kind, **changes):
                 createdAt=date(now - timedelta(days=20)))
     item.update(changes)
     return item
-count_ms = milestone('予想問題を解く', 'count', target=5, current=3, unit='回')
-tasks_ms = milestone('Part7を時間内に解く', 'tasks')
+count_ms = milestone('過去問を5回解く', 'count', target=5, current=3, unit='回')
+tasks_ms = milestone('苦手な章をなくす', 'tasks')
 count_ms['id'] = M_COUNT; tasks_ms['id'] = M_TASKS
-projects = [dict(id=str(uuid.uuid4()), name='TOEIC', goal='本番で500点', deadline=date(now + timedelta(days=41)), origin='',
-                 overview='11月は実測を兼ねた本番。単語は毎日少しずつ、長文は時間を計って解く。',
+projects = [dict(id=str(uuid.uuid4()), name='資格の勉強', goal='試験に合格する', deadline=date(now + timedelta(days=41)), origin='',
+                 overview='来月の資格試験に向けて。テキストは毎日少しずつ、過去問は時間を計って解く。',
                  createdAt=date(now - timedelta(days=20)), milestones=[
-                     milestone('単語帳（金フレ）を1周する', 'check', isDone=True), count_ms,
-                     milestone('模試で450点', 'number', target=450, current=420, unit='点'), tasks_ms])]
+                     milestone('テキストを1周する', 'check', isDone=True), count_ms,
+                     milestone('模試で70点', 'number', target=70, current=62, unit='点'), tasks_ms])]
 cards = [
-    dict(id=str(uuid.uuid4()), title='TOEIC対策', project='TOEIC', createdAt=date(now - timedelta(days=30)),
-         purpose='11月は実測を兼ねた本番。形式と時間配分を体に入れる。',
-         goal='11月の試験で650点。',
-         detail='━━━ 90分の使い方 ━━━\n\n■ 20分 ── 単語（金フレ）\n■ 40分 ── 隔日で交互に\n■ 30分 ── Part7 を時間を計って精読\n\n━━━ 単語のやり方 ━━━\n\n1. 日本語側を赤シートで隠す\n2. 英語を見て2秒で意味を言う\n3. 出なければ即×。粘らない'),
-    dict(id=str(uuid.uuid4()), title='瞑想手法', createdAt=date(now - timedelta(days=20)),
-         purpose='タスク中の思考の散らかりを抑える', goal='', detail='【朝：3分｜呼吸カウント】\n吐くたびに1から10まで数える'),
+    dict(id=str(uuid.uuid4()), title='過去問の解き方', project='資格の勉強', createdAt=date(now - timedelta(days=30)),
+         purpose='本番の時間配分に慣れるため。',
+         goal='時間内に最後まで解ききる。',
+         detail='1. タイマーを本番と同じ時間にする\n2. 分からない問題は印をつけて飛ばす\n3. 終わったら、間違えた問題だけ解き直す'),
+    dict(id=str(uuid.uuid4()), title='部屋のリセット', createdAt=date(now - timedelta(days=20)),
+         purpose='散らかった机が目に入ると、始める前に気力が削られるため。', goal='机の上に、いま使う物しかない状態。',
+         detail='1. タイマーを15分にする\n2. 床の物を1か所に集める\n3. 机の上を「戻す・捨てる・保留」に分ける'),
 ]
 path.parent.mkdir(parents=True, exist_ok=True)
 def routine(title, time, **changes):
@@ -175,7 +176,7 @@ def routine(title, time, **changes):
     item.update(changes)
     return item
 routines = [
-    routine('金フレ 未チェック語を回す', '19:00-20:30', project='TOEIC', weekdays=[2, 3, 4, 5, 6]),
+    routine('テキストを1節進める', '19:00-19:30', project='資格の勉強', weekdays=[2, 3, 4, 5, 6]),
     routine('睡眠', '0:00-7:00', isBlock=True, notify=False),
     routine('仕事（通勤含む）', '8:00-18:00', isBlock=True, notify=False, weekdays=[2, 3, 4, 5]),
 ]
@@ -186,28 +187,28 @@ def idea(text, written, touched=None, notes=()):
         item['touchedAt'] = date(now - timedelta(days=touched))
     return item
 ideas = [
-    idea('散歩中に聞ける勉強メモを作れそう', 2, 0, [('金フレの音声を流用できるか調べる', 1), ('1本5分くらいの長さにする', 0)]),
+    idea('週末に作り置きをまとめてやる', 2, 0, [('3品あれば平日がだいぶ楽', 1), ('日曜の午前にやる', 0)]),
     idea('部屋の配置を変えて、机を窓際に', 1, 1),
-    idea('TOEICの単語、通勤中にアプリで回せないか', 4),
-    idea('誕生日プレゼント、イヤホンケースはどうか', 16),
+    idea('使っていないサブスクを見直す', 4),
+    idea('朝の散歩を習慣にしたい', 16),
 ]
 # Lists: a place to go (already planned), and groceries with a trip made from them.
 L_GO = str(uuid.uuid4()).upper()
 L_SHOP = str(uuid.uuid4()).upper()
-lists = [dict(id=L_GO, name='行きたいところ', createdAt=date(now - timedelta(days=10))),
-         dict(id=L_SHOP, name='スーパー', createdAt=date(now - timedelta(days=9)))]
+lists = [dict(id=L_GO, name='行ってみたいところ', createdAt=date(now - timedelta(days=10))),
+         dict(id=L_SHOP, name='夕ごはんの材料', createdAt=date(now - timedelta(days=9)))]
 def item(list_id, title, ago, **changes):
     value = dict(id=str(uuid.uuid4()).upper(), listID=list_id, title=title, memo='', link='', place='',
                  createdAt=date(now - timedelta(days=ago)))
     value.update(changes)
     return value
-museum = item(L_GO, '国立西洋美術館', 9, place='上野公園', link='https://www.nmwa.go.jp/')
-list_items = [museum, item(L_GO, '海の見えるカフェ', 5, memo='週末の朝が空いている'), item(L_GO, '古書店街', 3),
-              item(L_SHOP, '卵', 1), item(L_SHOP, '牛乳', 1), item(L_SHOP, '食パン', 1),
-              item(L_SHOP, '洗剤', 4, doneAt=date(now - timedelta(days=3)))]
-tasks += [task('国立西洋美術館', plannedAt=date(now + timedelta(days=3)), scheduledTime='10:00-12:00', isEvent=True,
+museum = item(L_GO, '美術館の企画展', 9, place='上野公園')
+list_items = [museum, item(L_GO, '海の見えるカフェ', 5, memo='週末の朝が空いている'), item(L_GO, '駅前のパン屋', 3),
+              item(L_SHOP, '鶏もも肉', 1), item(L_SHOP, '玉ねぎ', 1), item(L_SHOP, '卵', 1),
+              item(L_SHOP, '牛乳', 4, doneAt=date(now - timedelta(days=3)))]
+tasks += [task('美術館の企画展', plannedAt=date(now + timedelta(days=3)), scheduledTime='10:00-12:00', isEvent=True,
                listItemID=museum['id']),
-          task('買い物：スーパー', plannedAt=date(now + timedelta(days=1)), scheduledTime='17:30-18:00', listID=L_SHOP)]
+          task('夕ごはんの材料を買う', plannedAt=date(now + timedelta(days=1)), scheduledTime='17:30-18:00', listID=L_SHOP)]
 path.write_text(json.dumps(dict(version=1, tasks=tasks, ideas=ideas, boardCards=cards, routines=routines, projects=projects,
                                 lists=lists, listItems=list_items), ensure_ascii=False))
 PY
@@ -317,6 +318,10 @@ shot timetable
 launch -uiTab 2 -uiDayClosed >/dev/null
 sleep 4
 shot day-closed
+# The guided first run, in demo mode, on its first step.
+launch -uiTab 2 -uiTutorial >/dev/null
+sleep 5
+shot tutorial
 # Last: starting a task leaves it running in the saved sample data.
 launch -uiTab 2 -uiFocus >/dev/null
 sleep 4

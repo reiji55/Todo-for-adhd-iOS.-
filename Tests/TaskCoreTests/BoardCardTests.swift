@@ -34,35 +34,6 @@ final class BoardCardTests: XCTestCase {
         XCTAssertTrue(BoardLink.tasks(for: b, in: [task], cards: [a, b]).isEmpty)
     }
 
-    func testBoardFileImportKeepsFieldsAndSkipsDuplicates() throws {
-        let json = """
-        {"updated": "2026-09-12T15:34:48+09:00", "cards": [
-          {"id": "toeic", "title": "TOEIC対策", "created": "2026-09-09", "goal": "650点", "purpose": "本番の練習", "detail": "1. 単語\\n2. Part5"},
-          {"id": "x", "title": "  ", "detail": "見出しなし"},
-          {"id": "y", "title": "瞑想手法1"}
-        ]}
-        """
-        let data = Data(json.utf8)
-        XCTAssertTrue(BoardImporter.isBoardFile(data))
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Asia/Tokyo")!
-        let result = try BoardImporter.parse(data, calendar: calendar)
-        XCTAssertEqual(result.cards.count, 2)
-        XCTAssertEqual(result.skipped, 1)
-        XCTAssertEqual(result.cards[0].goal, "650点")
-        XCTAssertEqual(result.cards[0].purpose, "本番の練習")
-        XCTAssertEqual(result.cards[0].detail, "1. 単語\n2. Part5")
-        XCTAssertEqual(calendar.component(.day, from: result.cards[0].createdAt), 9)
-        let merged = BoardImporter.merge(result.cards, into: [BoardCard(title: "toeic 対策")])
-        XCTAssertEqual(merged.map(\.title), ["toeic 対策", "瞑想手法1"])
-    }
-
-    func testBackupIsNeverMistakenForBoardFile() throws {
-        let backup = try NotebookCodec.encode(Notebook(boardCards: [BoardCard(title: "手順")]))
-        XCTAssertFalse(BoardImporter.isBoardFile(backup))
-        XCTAssertFalse(BoardImporter.isBoardFile(Data("not json".utf8)))
-    }
-
     func testCardsSurviveSaveAndOlderSavesStillLoad() throws {
         // Saves keep whole seconds, so use a whole-second date to compare the round trip exactly.
         let card = BoardCard(title: "TOEIC対策", purpose: "なぜ", goal: "どこまで", detail: "手順",

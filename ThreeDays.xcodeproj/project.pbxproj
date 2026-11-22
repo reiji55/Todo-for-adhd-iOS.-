@@ -208,6 +208,24 @@
 			<key>fileRef</key>
 			<string>73EE46BD52D8271532F707F5</string>
 		</dict>
+		<key>E3AD600F7D1B9F11A0C0B313</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>Edition.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>EA22057316C7D3C3F0856025</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>E3AD600F7D1B9F11A0C0B313</string>
+		</dict>
 		<key>36B0BA04D51CBF0868C9C026</key>
 		<dict>
 			<key>isa</key>
@@ -694,6 +712,24 @@
 			<key>fileRef</key>
 			<string>08721AC59F0067064B9FE3D7</string>
 		</dict>
+		<key>0DFF040B78CD4B9C24362B1C</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>Tutorial.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>125C5694481AF5FAB9E5D596</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>fileRef</key>
+			<string>0DFF040B78CD4B9C24362B1C</string>
+		</dict>
 		<key>2563168FCD760B9758FAC01A</key>
 		<dict>
 			<key>isa</key>
@@ -787,6 +823,7 @@
 				<string>C24D9BAE0A221C66F9A6E0B1</string>
 				<string>C3D396F8F3D97AEB04AF9581</string>
 				<string>73EE46BD52D8271532F707F5</string>
+				<string>E3AD600F7D1B9F11A0C0B313</string>
 				<string>36B0BA04D51CBF0868C9C026</string>
 				<string>2B7E09D2153F55F53B7D3DBD</string>
 				<string>495C0F2F9D005AE00F553158</string>
@@ -814,6 +851,7 @@
 				<string>BECE9A032FF7DDFCF09A5D7C</string>
 				<string>1C98320C256985784E553EBF</string>
 				<string>08721AC59F0067064B9FE3D7</string>
+				<string>0DFF040B78CD4B9C24362B1C</string>
 				<string>2563168FCD760B9758FAC01A</string>
 				<string>6F1FA8125A148FE96EC302CC</string>
 				<string>1C0E02FCB1AFE6C9FA9F4AE2</string>
@@ -1184,24 +1222,6 @@
 			<key>fileRef</key>
 			<string>DDE657C60CB0581A9D4D9C89</string>
 		</dict>
-		<key>231DD800721140848975E00B</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXFileReference</string>
-			<key>lastKnownFileType</key>
-			<string>sourcecode.swift</string>
-			<key>path</key>
-			<string>TaskTextImporter.swift</string>
-			<key>sourceTree</key>
-			<string>&lt;group&gt;</string>
-		</dict>
-		<key>85CB91C8571261DE0F3BBD33</key>
-		<dict>
-			<key>isa</key>
-			<string>PBXBuildFile</string>
-			<key>fileRef</key>
-			<string>231DD800721140848975E00B</string>
-		</dict>
 		<key>B3E2B6864E554C16A8175306</key>
 		<dict>
 			<key>isa</key>
@@ -1250,7 +1270,6 @@
 				<string>F6075BD3C7566872227FFA18</string>
 				<string>CAEDD2250D58DB2532BA8CF8</string>
 				<string>DDE657C60CB0581A9D4D9C89</string>
-				<string>231DD800721140848975E00B</string>
 				<string>B3E2B6864E554C16A8175306</string>
 			</array>
 		</dict>
@@ -1728,6 +1747,7 @@
 				<string>6A0A6257989DBAABA6448885</string>
 				<string>8FD6DCEEE49318B6ADAE488E</string>
 				<string>5535758BD294FAA45791E820</string>
+				<string>EA22057316C7D3C3F0856025</string>
 				<string>28A1F2A4CEC5603A945B9561</string>
 				<string>5CC8A29F56EA2A002E6517C4</string>
 				<string>C930A07953BF519925FD9BA2</string>
@@ -1755,6 +1775,7 @@
 				<string>0F12C69EBBC0D0AA799B905A</string>
 				<string>5C130A923180BCEC41941248</string>
 				<string>833801509D03A5421E74453B</string>
+				<string>125C5694481AF5FAB9E5D596</string>
 				<string>060ADAC51FC1EF16E76FD796</string>
 				<string>C877EF5591C8B38B737C0226</string>
 				<string>C18DBB67A01B97ADF7FC78E2</string>
@@ -1779,7 +1800,6 @@
 				<string>2A7C578160C5AD3CF431857E</string>
 				<string>892BD8710E65355EE123A39D</string>
 				<string>5AFFFE3B9A275ED4EBEF78E9</string>
-				<string>85CB91C8571261DE0F3BBD33</string>
 				<string>CFAAA6B7DBD279A8F1DF1067</string>
 				<string>C6EA1E545D18FEA2E749E962</string>
 				<string>FDA9C176884170C492B3E888</string>

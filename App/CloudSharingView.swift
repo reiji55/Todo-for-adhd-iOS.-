@@ -15,12 +15,15 @@ struct PendingCloudJoin: Identifiable {
         func counts(_ book: Notebook) -> String {
             "タスク\(book.tasks.count)件・アイデア\(book.ideas.count)件・ボード\(book.boardCards.count)件・ルーティン\(book.routines.count)件"
         }
-        message = "この端末：\(counts(local))\n共有先：\(counts(remote))\n統合後：\(counts(preview.combined))\n\n"
+        let other = snapshot.connection.isShared ? "共有先" : "iCloud"
+        message = "この端末：\(counts(local))\n\(other)：\(counts(remote))\n統合後：\(counts(preview.combined))\n\n"
         let conflicts = preview.conflictingTasks + preview.conflictingIdeas + preview.conflictingCards + preview.conflictingRoutines
         if conflicts > 0 {
             message += "同じデータで内容が異なる\(conflicts)件は、両方を別の項目として残します。\n\n"
         }
-        message += "上記のデータと、メモ・手順・完了状態を共有します。この端末の内容も共有先へ追加されます。開始前のバックアップを端末に残します。"
+        message += snapshot.connection.isShared
+            ? "上記のデータと、メモ・手順・完了状態を共有します。この端末の内容も共有先へ追加されます。開始前のバックアップを端末に残します。"
+            : "この端末の内容とiCloudの内容を合わせて、同じApple Accountの端末どうしで同期します。開始前のバックアップを端末に残します。"
     }
 }
 
@@ -113,8 +116,8 @@ struct SharingSection: View {
     @State private var confirmDisconnect = false
     var body: some View {
         Section {
-            if store.connection != nil {
-                LabeledContent("接続先", value: store.connection?.isShared == true ? "招待された共有データ" : "自分のiCloud")
+            if let connection = store.connection {
+                LabeledContent("同期先", value: connection.isShared ? "招待された共有データ" : "自分のiCloud")
                 HStack {
                     if store.isSyncing { ProgressView().accessibilityLabel("同期中") }
                     Label(syncStatus, systemImage: store.syncError != nil ? "icloud.slash" : store.hasPendingChanges ? "icloud.and.arrow.up" : "checkmark.icloud")
@@ -124,26 +127,33 @@ struct SharingSection: View {
                 }
                 Button("今すぐ同期", systemImage: "arrow.triangle.2.circlepath") { Task { await store.synchronize() } }
                     .disabled(store.isSyncing || store.loadFailed)
-                Button("招待・共有相手を管理", systemImage: "person.badge.plus") { Task { await store.prepareSharing() } }
-                    .disabled(store.isPreparingShare || store.loadFailed)
+                Button(connection.isShared ? "共有相手を見る" : "ほかの人を招待・管理", systemImage: "person.badge.plus") {
+                    Task { await store.prepareSharing() }
+                }
+                .disabled(store.isPreparingShare || store.loadFailed)
                 Button("この端末の同期を解除", role: .destructive) { confirmDisconnect = true }
                     .disabled(store.isPreparingShare || store.loadFailed)
             } else {
-                Button("データを共有する", systemImage: "person.2.badge.gearshape") { Task { await store.prepareSharing() } }
+                // Off until the person turns it on. On, the data is kept in their own iCloud, and every device
+                // signed in to the same Apple Account that turns it on shows the same data.
+                Button("iCloudで同期する", systemImage: "icloud") { Task { await store.connectOwnCloud() } }
                     .disabled(store.isPreparingShare || store.loadFailed)
-                Text("招待された端末では、届いたiCloud共有リンクを開いて参加してください。")
+                    .accessibilityIdentifier("turnOnICloud")
+                Button("ほかの人と共有する", systemImage: "person.2") { Task { await store.prepareSharing() } }
+                    .disabled(store.isPreparingShare || store.loadFailed)
+                Text("招待された人は、届いたiCloudの共有リンクを開くと参加できます。")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            if store.isPreparingShare { ProgressView("iCloudの共有を確認しています") }
+            if store.isPreparingShare { ProgressView("iCloudを確認しています") }
             if let message = store.shareError {
                 Label(message, systemImage: "exclamationmark.triangle").font(.subheadline).foregroundStyle(Palette.must)
             }
             if let message = store.syncError {
                 Text(message).font(.subheadline).foregroundStyle(.secondary).accessibilityLabel("同期のお知らせ。\(message)")
             }
-        } header: { Text("端末間の共有") }
+        } header: { Text("iCloud同期") }
         footer: {
-            Text("別々のApple Accountでも、招待を承認するとタスク・アイデア・ボード・ルーティンを共有できます。入力は端末へ保存し、通信できるときに同期します。同じ箇所を同時に変更した場合は変更の順序で決まり、同期直前の内容は下のデータ欄から書き出せます。")
+            Text("オフのままでも、データはこの端末に保存されます。オンにすると自分のiCloudにも保存され、同じApple Accountのほかの端末でオンにすると同じデータになります。機種変更のときも引き継げます。")
         }
         .confirmationDialog("この端末の同期を解除しますか？", isPresented: $confirmDisconnect, titleVisibility: .visible) {
             Button("端末のデータを残して解除", role: .destructive) { store.disconnectSync() }

@@ -800,6 +800,20 @@ final class TaskStore: ObservableObject {
         } catch { shareError = Self.describe(error) }
     }
 
+    /// Turns on iCloud for the person's own devices: their own iCloud zone, the same one every device signed in to
+    /// the same Apple Account uses. Asks before combining what is here with what is there; no one is invited.
+    func connectOwnCloud() async {
+        guard !isDemo else { syncError = "デモモード中は同期の設定を変えられません。設定からデモモードを終えてください。"; return }
+        guard !loadFailed, !isPreparingShare, connection == nil else { return }
+        isPreparingShare = true
+        shareError = nil
+        defer { isPreparingShare = false }
+        do {
+            let snapshot = try await cloud.prepareOwnData()
+            pendingJoin = try PendingCloudJoin(snapshot: snapshot, local: notebook, openShareAfterJoin: false)
+        } catch { shareError = Self.describe(error) }
+    }
+
     func acceptInvitation(_ metadata: CKShare.Metadata) async {
         // Opening an invitation is a deliberate step toward the real data.
         endDemo()

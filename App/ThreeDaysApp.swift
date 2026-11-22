@@ -51,6 +51,7 @@ struct RootView: View {
         var icon: String { ["square.3.layers.3d", "calendar", "sun.max", "lightbulb", "rectangle.split.2x2"][rawValue] }
     }
     @EnvironmentObject private var store: TaskStore
+    @ObservedObject private var tutorial = Tutorial.shared
     @Environment(\.scenePhase) private var phase
     @State private var selectedTab = Tab.today.rawValue
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
@@ -132,7 +133,12 @@ struct RootView: View {
 #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-horme-settings-preview") { settingsOpen = true }
 #endif
+            // The first time, with nothing in Horme yet: the guided tour, in demo mode. Or the rest of it, when
+            // Horme was closed half way.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { tutorial.startIfNeeded(store: store) }
         }
+        .onChange(of: store.notebook) { _, book in tutorial.notebookChanged(book) }
+        .onChange(of: store.isDemo) { _, demo in if !demo { tutorial.demoEnded() } }
         .onChange(of: phase) { _, newPhase in
             store.setForeground(newPhase == .active)
             if newPhase == .active {
@@ -311,7 +317,9 @@ struct RootView: View {
 
     /// Always visible in demo mode, so samples are never mistaken for real data.
     @ViewBuilder private var demoBar: some View {
-        if store.isDemo {
+        if let step = tutorial.step {
+            TutorialCard(step: step)
+        } else if store.isDemo {
             HStack(spacing: 8) {
                 Image(systemName: "theatermasks")
                 Text("デモモード中・本物のデータは変わりません").lineLimit(1).minimumScaleFactor(0.8)
@@ -493,6 +501,7 @@ struct HormeTabBar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .tutorialSpot(.tab(tab), cornerRadius: 12, tab: selection)
         .accessibilityLabel(tab.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -523,6 +532,7 @@ struct HormeTabBar: View {
             .frame(height: 48, alignment: .bottom)
         }
         .buttonStyle(.plain)
+        .tutorialSpot(.tab(.today), cornerRadius: 30, tab: selection)
         .accessibilityLabel("今日")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .animation(.snappy(duration: 0.2), value: selected)

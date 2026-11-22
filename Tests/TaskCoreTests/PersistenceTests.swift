@@ -52,40 +52,4 @@ final class PersistenceTests: XCTestCase {
         let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
         XCTAssertTrue(names.contains { $0.contains("unreadable-") })
     }
-
-    func testTaskTextImportKeepsAIHandoffSeparateFromNextActionAndMergesOnce() {
-        let input = """
-        # 2026-10-21
-        - [ ] 10:00-11:00 | 前進 | 転職 | 資料を準備
-          memo: 本人用のメモ
-          next: AIに検索を頼む
-          must: 1
-        # いつでも
-        - [ ] 牛乳を買う
-        - [x] 終日 | - | - | 完了済み
-        """
-        let result = TaskTextImporter.parse(input)
-        XCTAssertTrue(result.warnings.isEmpty)
-        XCTAssertEqual(result.tasks.count, 3)
-        XCTAssertEqual(result.tasks[0].handoff, "AIに検索を頼む")
-        XCTAssertTrue(result.tasks[0].steps.isEmpty)
-        XCTAssertTrue(result.tasks[0].isMust)
-        XCTAssertEqual(result.tasks[0].scheduledTime, "10:00-11:00")
-        XCTAssertEqual(result.tasks[0].slot, TimeSlot(start: 600, duration: 60))
-        XCTAssertNil(result.tasks[1].plannedAt)
-        XCTAssertTrue(result.tasks[2].isComplete)
-        let twice = TaskTextImporter.merge(TaskTextImporter.parse(input).tasks, into: result.tasks)
-        XCTAssertEqual(twice.count, 3)
-    }
-
-    func testInvalidDateDoesNotSilentlyBecomeAnotherDay() {
-        let result = TaskTextImporter.parse("# 2026-02-30\n- [ ] 変換しない")
-        XCTAssertTrue(result.tasks.isEmpty)
-        XCTAssertEqual(result.warnings.count, 2)
-    }
-
-    func testJapaneseHandoffLabelIsPreserved() {
-        let result = TaskTextImporter.parse("# いつでも\n- [ ] 調べ物\n  引き継ぎ: 候補を探す")
-        XCTAssertEqual(result.tasks.first?.handoff, "候補を探す")
-    }
 }

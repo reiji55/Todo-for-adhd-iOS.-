@@ -82,6 +82,7 @@ struct NowView: View {
         }
         // Kept on the device, so coming back after iOS closed the app finds the task still running.
         .onChange(of: work) { _, value in TaskRunMemory.save(value) }
+        .onChange(of: timetableOpen) { _, open in if open { Tutorial.shared.report(.timetableOpened) } }
         .onChange(of: store.notebook) { _, book in
             if let work, book.hasChildren(work.taskID) || !book.tasks.contains(where: {
                 $0.id == work.taskID && !$0.isComplete && !$0.isEvent
@@ -123,6 +124,7 @@ struct NowView: View {
                     .contains { $0.kind == .obligation || $0.kind == .candidate }
                 if let stretch, stretch.key != chosenFor, offers, running == nil, chosen == nil {
                     FreeStretchCard(stretch: stretch, now: now) { setEnergy($0) }
+                        .tutorialSpot(.nowCard, cornerRadius: 24)
                         .transition(.opacity)
                     flow(now: now, excluding: nil)
                 } else {
@@ -156,6 +158,7 @@ struct NowView: View {
                                 onChoose: { chosen = $0 },
                                 onKeep: { chosen = current.id },
                                 onOpen: onOpen)
+                            .tutorialSpot(.nowCard, cornerRadius: 24)
                             .id(current.id)
                             .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
                     } else if offers {
@@ -272,6 +275,7 @@ struct NowView: View {
         DayFlow(now: now, next: Array(laterToday(now, excluding: id).prefix(2)),
                 onOpen: { timetableFocus = nil; timetableOpen = true },
                 onItem: { timetableFocus = $0; timetableOpen = true })
+            .tutorialSpot(.timetableLink, cornerRadius: 20)
     }
 
     private func footer(now: Date) -> some View {

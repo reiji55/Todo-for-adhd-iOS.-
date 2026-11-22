@@ -566,7 +566,10 @@ struct ProjectPage: View {
                 #endif
             }
         }
-        .onAppear(perform: startAnimation)
+        .onAppear {
+            startAnimation()
+            Tutorial.shared.report(.projectOpened)
+        }
     }
 
     /// The way grows once, when the page first opens; then the marker and the share appear.
@@ -1113,7 +1116,7 @@ struct ProjectEditor: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("名前（例：TOEIC）", text: $project.name).font(.headline)
+                    TextField("名前（例：資格の勉強）", text: $project.name).font(.headline)
                 } header: { Text("プロジェクト") } footer: {
                     if collides { Text("同じ名前のプロジェクトがあります。").foregroundStyle(.red) }
                     else if originalKey != nil { Text("名前を変えると、このプロジェクトのタスク・ルーティン・カードもそろって変わります。") }
@@ -1189,7 +1192,7 @@ struct MilestoneEditor: View {
         NavigationStack {
             Form {
                 Section("通過点の名前") {
-                    TextField("例：予想問題を5回解く", text: $milestone.title, axis: .vertical).lineLimit(1...3)
+                    TextField("例：過去問を5回解く", text: $milestone.title, axis: .vertical).lineLimit(1...3)
                 }
                 Section("数え方") {
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {

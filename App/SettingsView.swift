@@ -17,8 +17,6 @@ struct SettingsView: View {
     @State private var importer = false
     @State private var document = BackupDocument()
     @State private var importedBook: Notebook?
-    @State private var importedTasks: TaskImport?
-    @State private var importedCards: [BoardCard]?
     @State private var importSummary = ""
     @State private var confirmImport = false
     @State private var showDemoConfirm = false
@@ -31,7 +29,7 @@ struct SettingsView: View {
                 SharingSection()
                 NotificationSettingsSection()
                 LockScreenSection()
-                ClaudeBridgeSection()
+                if Edition.full { ClaudeBridgeSection() }
                 Section {
                     NavigationLink { RoutineSettingsView() } label: {
                         LabeledContent("ルーティン", value: "\(store.notebook.routines.filter { !$0.isPaused }.count)件")
@@ -42,32 +40,24 @@ struct SettingsView: View {
                         LabeledContent("パッケージ", value: "\(store.notebook.packages.count)件")
                     }
                 } footer: { Text("決まった子タスクのセット。子タスクに分けたタスクから保存し、ほかのタスクやイベントにまとめて足せます。") }
-                Section("優先づけのルール") {
-                    Label("今日が締切・締切を過ぎたものは上段に常時表示", systemImage: "pin")
-                    Text("★必須は「落とせないもの」の印です。それだけでは今日の上段に出ず、「すべて」の上の「締切・★」に締切のあるものと並びます。")
-                    Text("期間タスクは、期間の始まりの日までは候補に出ません。期間に入ると候補になり、週の今日の行と時間割の「期間中」に出ます。期間の終わりの日が締切です。")
-                    Text("今日の画面の「いま」には、時間になった予定 → 今日が締切のもの → 候補の順に1つずつ出ます。時間を決めたタスクは、その時間が来てから出ます。")
-                    Text("空き時間に開くと、まず今の調子を選びます。選んだ調子より重いものは出さず、重いものから順に出ます（指定なしは優先度の順）。「入れ替える」で次へ進み、一周したら最初に戻ります。")
-                    Text("候補の優先度は 明日が締切 → 中断した続き → 今日の予定 → ★必須・期間中 → 途中の続き・つながりの次 → それ以外。子タスクは親の★・締切・期間を引き継ぎます。")
-                    Text("「入れ替える」は「いま」の順番を変えるだけで、データは変わりません。全件一覧や必須タスクは隠しません。未来の予定はその日に候補へ入ります。")
-                    Text("「今日を終える」と、今日このあとのタスクとルーティンの通知が止まります（イベントは鳴ります）。「再開する」で戻り、翌日は元どおりです。")
-                    Text("やる日は予定、締切は期限です。予定日を動かしても締切は動きません。")
-                }.font(.subheadline)
+                // Backups as files are for the full edition; everyone else keeps their data in iCloud. Recovering
+                // from an unreadable save is for everyone.
+                if Edition.full || store.loadBroken {
                 Section {
-                    Button("バックアップを書き出す", systemImage: "square.and.arrow.up") {
-                        do { document = BackupDocument(data: try NotebookCodec.encode(store.realNotebook)); exporter = true }
-                        catch { localError = error.localizedDescription }
-                    }.disabled(store.loadFailed)
-                    Button("ファイルを読み込む", systemImage: "square.and.arrow.down") { importer = true }
-                        .disabled(store.loadFailed || store.isDemo)
-                    if store.hasSharingBackup {
-                        Button("共有開始前のバックアップを書き出す") { exportSafetyBackup(beforeSharing: true) }
+                    if Edition.full {
+                        Button("バックアップを書き出す", systemImage: "square.and.arrow.up") {
+                            do { document = BackupDocument(data: try NotebookCodec.encode(store.realNotebook)); exporter = true }
+                            catch { localError = error.localizedDescription }
+                        }.disabled(store.loadFailed)
+                        Button("バックアップを読み込む", systemImage: "square.and.arrow.down") { importer = true }
+                            .disabled(store.loadFailed || store.isDemo)
+                        if store.hasSharingBackup {
+                            Button("共有開始前のバックアップを書き出す") { exportSafetyBackup(beforeSharing: true) }
+                        }
+                        if store.hasSyncBackup {
+                            Button("同期直前のバックアップを書き出す") { exportSafetyBackup(beforeSharing: false) }
+                        }
                     }
-                    if store.hasSyncBackup {
-                        Button("同期直前のバックアップを書き出す") { exportSafetyBackup(beforeSharing: false) }
-                    }
-                    Text("このアプリのJSONバックアップ、または3日間タスクの tasks.txt・board.json を選べます。tasks.txt と board.json は重複を避けて追加します。")
-                        .font(.caption).foregroundStyle(.secondary)
                     if store.loadBroken {
                         if store.canRecoverPrevious {
                             Button("直前の保存から復旧する") { store.recover() }
@@ -77,21 +67,28 @@ struct SettingsView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 } header: { Text("データ") }
-                footer: { Text("端末に自動保存します。共有を設定すると他の端末と同期します。同期中にバックアップで置き換えると、共有先にも変更が反映されます。アプリを削除する前にはバックアップを書き出してください。") }
+                footer: { Text("端末に自動保存します。同期中にバックアップで置き換えると、同期先にも反映されます。") }
+                }
                 Section {
+                    Button("チュートリアルをはじめる", systemImage: "graduationcap") {
+                        Tutorial.shared.restart(store: store)
+                        dismiss()
+                    }
+                    .disabled(store.loadFailed || Tutorial.shared.isRunning)
+                    .accessibilityIdentifier("startTutorial")
                     if store.isDemo {
                         Button("デモモードを終える", systemImage: "stop.circle") { store.endDemo() }
                     } else {
-                        Button("デモモードを始める", systemImage: "play.circle") { showDemoConfirm = true }
+                        Button("デモモードで自由に触る", systemImage: "play.circle") { showDemoConfirm = true }
                             .disabled(store.loadFailed)
                     }
-                } header: { Text("デモモード") }
+                } header: { Text("使い方") }
                 footer: {
-                    Text("サンプルのタスク・ルーティン・ボードで操作を練習できます。本物のデータには触れず、同期・通知・Claude連携も止まります。ここで終えるか、アプリを終了すると元に戻ります。何度でも始め直せます。")
+                    Text("サンプルのデータで、案内に沿って操作を試せます。本物のデータには触れず、同期と通知も止まります。終えるか、アプリを閉じると元に戻ります。")
                 }
                 Section("この版について") {
                     Text("Horme · \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
-                    Text("タスクとルーティン、週の時間割、通知、やり方を書き溜めるボード、端末間の共有、Claudeとの連携を備えた版です。")
+                    Text(Edition.full ? "フル機能版（Claude連携・バックアップつき）" : "タスク・アイデア・リスト・プロジェクトを、思いつきから完了までひとつの場所で。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -110,52 +107,27 @@ struct SettingsView: View {
             .fileExporter(isPresented: $exporter, document: document, contentType: .json, defaultFilename: "3days-backup") { result in
                 if case .failure(let error) = result { localError = error.localizedDescription }
             }
-            .fileImporter(isPresented: $importer, allowedContentTypes: [.json, .plainText]) { result in
+            .fileImporter(isPresented: $importer, allowedContentTypes: [.json]) { result in
                 do {
                     let url = try result.get()
                     let access = url.startAccessingSecurityScopedResource()
                     defer { if access { url.stopAccessingSecurityScopedResource() } }
                     let data = try Data(contentsOf: url)
-                    importedBook = nil; importedTasks = nil; importedCards = nil
-                    if url.pathExtension.lowercased() == "json", BoardImporter.isBoardFile(data) {
-                        let parsed = try BoardImporter.parse(data)
-                        guard !parsed.cards.isEmpty else { throw NotebookError.invalidData }
-                        importedCards = parsed.cards
-                        let added = BoardImporter.merge(parsed.cards, into: store.notebook.boardCards).count - store.notebook.boardCards.count
-                        importSummary = "ボードにカードを\(added)件追加します。同じ見出しのカードはそのまま残します。"
-                        if parsed.skipped > 0 { importSummary += "\n\n見出しのないカード\(parsed.skipped)件は取り込みません。" }
-                    } else if url.pathExtension.lowercased() == "json" {
-                        let book = try NotebookCodec.decode(data)
-                        importedBook = book
-                        // Everything is replaced, so everything is counted: lists and projects too.
-                        importSummary = "現在の内容を、バックアップのタスク\(book.tasks.count)件・アイデア\(book.ideas.count)件・ボードのカード\(book.boardCards.count)件・ルーティン\(book.routines.count)件・プロジェクト\(book.projects.count)件・リスト\(book.lists.count)件（項目\(book.listItems.count)件）に置き換えます。直前の内容は取り消し操作で戻せます。"
-                        if store.connection != nil { importSummary += "\n\nこの置き換えと削除は、共有している他の端末にも反映されます。" }
-                        if store.bridgeOn { importSummary += "\n\nこの置き換えと削除は、Claudeとの連携先にも反映されます。" }
-                    } else {
-                        guard let text = String(data: data, encoding: .utf8) else { throw NotebookError.invalidData }
-                        let parsed = TaskTextImporter.parse(text)
-                        guard !parsed.tasks.isEmpty else { throw NotebookError.invalidData }
-                        importedTasks = parsed
-                        let merged = TaskTextImporter.merge(parsed.tasks, into: store.notebook.tasks)
-                        importSummary = "新しいタスクを\(merged.count - store.notebook.tasks.count)件追加します。既存のタスクは変更しません。"
-                        if !parsed.warnings.isEmpty {
-                            importSummary += "\n\n読み取れない行：\(parsed.warnings.count)件\n" + parsed.warnings.prefix(5).joined(separator: "\n")
-                        }
-                    }
+                    importedBook = nil
+                    let book = try NotebookCodec.decode(data)
+                    importedBook = book
+                    // Everything is replaced, so everything is counted: lists and projects too.
+                    importSummary = "現在の内容を、バックアップのタスク\(book.tasks.count)件・アイデア\(book.ideas.count)件・ボードのカード\(book.boardCards.count)件・ルーティン\(book.routines.count)件・プロジェクト\(book.projects.count)件・リスト\(book.lists.count)件（項目\(book.listItems.count)件）に置き換えます。直前の内容は取り消し操作で戻せます。"
+                    if store.connection != nil { importSummary += "\n\nこの置き換えと削除は、同期している他の端末にも反映されます。" }
+                    if store.bridgeOn { importSummary += "\n\nこの置き換えと削除は、Claudeとの連携先にも反映されます。" }
                     confirmImport = true
                 } catch { localError = error.localizedDescription }
             }
             .alert("取り込み内容の確認", isPresented: $confirmImport) {
-                Button("キャンセル", role: .cancel) { importedBook = nil; importedTasks = nil; importedCards = nil }
-                Button(importedBook == nil ? "追加する" : "置き換える", role: importedBook == nil ? nil : .destructive) {
+                Button("キャンセル", role: .cancel) { importedBook = nil }
+                Button("置き換える", role: .destructive) {
                     if let book = importedBook, store.commit({ $0 = book }) { store.offerUndo("バックアップの内容に置き換えました") }
-                    else if let cards = importedCards {
-                        store.commit { $0.boardCards = BoardImporter.merge(cards, into: $0.boardCards) }
-                    }
-                    else if let tasks = importedTasks?.tasks {
-                        store.commit { $0.tasks = TaskTextImporter.merge(tasks, into: $0.tasks) }
-                    }
-                    importedBook = nil; importedTasks = nil; importedCards = nil
+                    importedBook = nil
                 }
             } message: { Text(importSummary) }
             .alert("デモモードを始めますか？", isPresented: $showDemoConfirm) {

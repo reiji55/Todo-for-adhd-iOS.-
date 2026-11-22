@@ -509,7 +509,7 @@ struct GuideCardEditor: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("見出し（例：TOEIC対策）", text: $card.title, axis: .vertical).font(.headline).lineLimit(1...4)
+                    TextField("見出し（例：部屋の片付け方）", text: $card.title, axis: .vertical).font(.headline).lineLimit(1...4)
                         .focused($titleFocused)
                 }
                 Section {

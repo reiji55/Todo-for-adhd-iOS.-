@@ -217,7 +217,7 @@ struct RoutineEditor: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("ルーティン名（例：TOEICの単語）", text: $routine.title, axis: .vertical).font(.headline).lineLimit(1...3)
+                    TextField("ルーティン名（例：テキストを1節進める）", text: $routine.title, axis: .vertical).font(.headline).lineLimit(1...3)
                     ProjectPicker(project: $routine.project) { guide = GuideRoute(id: $0.id) }
                     if !routine.isBlock { MilestonePicker(project: routine.project, milestoneID: $routine.milestoneID, kinds: [.count]) }
                 } footer: {
