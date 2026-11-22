@@ -71,6 +71,14 @@ h2{font-weight:900;font-size:clamp(28px,4vw,42px);line-height:1.35;margin:10px 0
 .ai-point{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:22px;padding:24px}
 .ai-point b{display:block;font-size:18px;margin-bottom:6px} .ai-point span{color:rgba(255,255,255,.8);font-size:15px}
 @media (max-width:820px){.ai-points{grid-template-columns:1fr}}
+.extras{padding-top:0}
+.extras .sub{color:var(--sub);max-width:34em;margin:0 auto}
+.extra-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:34px}
+.extra{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:26px 26px 22px}
+.extra-icon{width:52px;height:52px;border-radius:15px;background:var(--green-soft);color:var(--green);display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+.extra b{display:block;font-size:20px;margin-bottom:8px}
+.extra ul{padding-left:1.2em;color:var(--sub);font-size:15px} .extra li{margin:4px 0}
+@media (max-width:820px){.extra-grid{grid-template-columns:1fr}}
 .voice{background:linear-gradient(175deg,var(--green-deep),var(--green));color:#fff;text-align:center}
 .voice h2{color:#fff} .voice p{color:rgba(255,255,255,.86);max-width:36em;margin:0 auto;font-size:17px}
 
@@ -168,6 +176,31 @@ footer .wrap{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
     <div class="text"><span class="eyebrow">毎回考えなくていい</span><h2>段取りごと、<br>覚えておける。</h2>
       <p>手順はボードに書き溜めておけます。次からは思い出さずに、すぐ始められます。</p></div>
     <div class="art tint-sky"><div class="phone"><img src="img/board-card.jpg" alt=""></div></div>
+  </div>
+</div></section>
+
+<section class="extras"><div class="wrap">
+  <div class="center"><span class="eyebrow">アプリを開かなくても</span><h2>思い立ったら、<br class="sp">その場で。</h2>
+    <p class="sub">やる気が冷める前に、すぐ手が届く。実行をあと押しする仕組みが、iPhoneのあちこちに。</p></div>
+  <div class="extra-grid">
+    <div class="extra">
+      <div class="extra-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg></div>
+      <b>ウィジェット</b>
+      <ul>
+        <li>ホーム画面・ロック画面から、タスクやアイデアをワンタップで書ける</li>
+        <li>コントロールセンターにも置ける</li>
+        <li>ロック画面に「いま」のカードが出て、そのまま済みにできる</li>
+      </ul>
+    </div>
+    <div class="extra">
+      <div class="extra-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.9z"/></svg></div>
+      <b>ショートカット・Siri</b>
+      <ul>
+        <li>「Hormeにタスクを追加」と話しかけるだけで書き留められる</li>
+        <li>今日の予定を読み上げてもらう、タスクを完了にする、日時を動かす</li>
+        <li>ショートカットアプリで、毎朝の流れに組み込める</li>
+      </ul>
+    </div>
   </div>
 </div></section>
 
