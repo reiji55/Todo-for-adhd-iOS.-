@@ -117,7 +117,7 @@ struct WeekShelfView: View {
                     .offset(y: full - visible)
             }
             .overlay(alignment: .bottomTrailing) {
-                FloatingAddButton { onPick($0, detent == .peek ? nil : selectedDay) }
+                FloatingAddButton { onPick($0, detent == .peek ? nil : selectedDay) }.tutorialSpot(.addButton, circle: true)
                     .padding(.trailing, 20).padding(.bottom, Self.peekHeight + 10)
             }
             .clipped()

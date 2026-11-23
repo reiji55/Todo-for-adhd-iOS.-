@@ -82,8 +82,13 @@ final class Tutorial: ObservableObject {
     /// What glows on the screen now: the tab to go to, or, on that tab, the place to try.
     func spot(on tab: Int) -> Spot? {
         guard let step, !done, step != .finish else { return nil }
+        // The ⊕ is on すべて, 週 and 今日 alike: whichever of them is in front, it is the ⊕ that glows.
+        if step == .add, [RootView.Tab.all, .week, .today].map(\.rawValue).contains(tab) { return .addButton }
         return tab == step.tab.rawValue ? step.spot : .tab(step.tab)
     }
+
+    /// A tab to bring to the front, asked of the screen when the tutorial starts.
+    @Published var tabRequest: RootView.Tab?
 
     /// The first time Horme opens with nothing in it, or when it was closed half way through.
     func startIfNeeded(store: TaskStore) {
@@ -114,6 +119,7 @@ final class Tutorial: ObservableObject {
         // Empty, not the samples: a sample event or routine at this hour would hold the いま card.
         if store.isDemo { store.endDemo() }
         store.startDemo(samples: false)
+        tabRequest = first.tab
         show(first, book: store.notebook)
     }
 

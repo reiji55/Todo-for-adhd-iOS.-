@@ -140,6 +140,11 @@ struct RootView: View {
         }
         .onChange(of: store.notebook) { _, book in tutorial.notebookChanged(book) }
         .onChange(of: store.isDemo) { _, demo in if !demo { tutorial.demoEnded() } }
+        .onChange(of: tutorial.tabRequest) { _, tab in
+            guard let tab else { return }
+            selectedTab = tab.rawValue
+            tutorial.tabRequest = nil
+        }
         .onChange(of: phase) { _, newPhase in
             store.setForeground(newPhase == .active)
             if newPhase == .active {
@@ -228,7 +233,7 @@ struct RootView: View {
             } else {
                 WeekView(onOpen: open, onAdd: { quickAdd = QuickAddRoute(day: $0) })
                     .overlay(alignment: .bottomTrailing) {
-                        FloatingAddButton { quickAdd = QuickAddRoute(day: nil, kind: $0) }
+                        FloatingAddButton { quickAdd = QuickAddRoute(day: nil, kind: $0) }.tutorialSpot(.addButton, circle: true)
                             .padding(.trailing, 20).padding(.bottom, 10)
                     }
             }

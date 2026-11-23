@@ -19,7 +19,6 @@ struct SettingsView: View {
     @State private var importedBook: Notebook?
     @State private var importSummary = ""
     @State private var confirmImport = false
-    @State private var showDemoConfirm = false
     @State private var showStartOver = false
     @State private var localError: String?
 
@@ -76,15 +75,13 @@ struct SettingsView: View {
                     }
                     .disabled(store.loadFailed || Tutorial.shared.isRunning)
                     .accessibilityIdentifier("startTutorial")
-                    if store.isDemo {
-                        Button("デモモードを終える", systemImage: "stop.circle") { store.endDemo() }
-                    } else {
-                        Button("デモモードで自由に触る", systemImage: "play.circle") { showDemoConfirm = true }
-                            .disabled(store.loadFailed)
+                    if store.isDemo && !Tutorial.shared.isRunning {
+                        // After もう少し触る at the end of the tutorial: the way back to the person's own data.
+                        Button("試すのをやめて元に戻る", systemImage: "stop.circle") { store.endDemo() }
                     }
                 } header: { Text("使い方") }
                 footer: {
-                    Text("サンプルのデータで、案内に沿って操作を試せます。本物のデータには触れず、同期と通知も止まります。終えるか、アプリを閉じると元に戻ります。")
+                    Text("案内に沿って、操作を試せます。試した内容は保存されず、本物のデータにも触れません。")
                 }
                 Section {
                     NavigationLink { FeedbackView() } label: {
@@ -138,10 +135,6 @@ struct SettingsView: View {
                     importedBook = nil
                 }
             } message: { Text(importSummary) }
-            .alert("デモモードを始めますか？", isPresented: $showDemoConfirm) {
-                Button("キャンセル", role: .cancel) {}
-                Button("始める") { store.startDemo(); dismiss() }
-            } message: { Text("サンプルのデータに切り替わります。本物のデータはそのまま残り、デモを終えるかアプリを終了すると戻ります。") }
             .alert("読み込み・書き出しのお知らせ", isPresented: Binding(get: { localError != nil }, set: { if !$0 { localError = nil } })) {
                 Button("閉じる", role: .cancel) { localError = nil }
             } message: { Text(localError ?? "") }

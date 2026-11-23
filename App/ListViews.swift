@@ -8,8 +8,8 @@ struct ListRoute: Identifiable, Hashable { let id: UUID }
 /// plan; each becomes one only when made into a task or an event.
 @MainActor
 struct StockView: View {
-    /// 0: ideas, 1: lists. Remembered, so the tab opens where the person left it.
-    @AppStorage("horme.stockMode") private var mode = 0
+    /// 0: ideas, 1: lists. Each time Horme opens, the tab starts on ideas.
+    @State private var mode = 0
     @State private var openedList: ListRoute?
     let onEditTask: (TaskItem) -> Void
     let onSort: () -> Void
