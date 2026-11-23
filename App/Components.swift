@@ -420,7 +420,7 @@ extension View {
     /// Keeps the add button clear of the last row by reserving its space at the bottom.
     func floatingAdd(_ onPick: @escaping (AddKind) -> Void) -> some View {
         safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
-            FloatingAddButton(onPick: onPick).tutorialSpot(.addButton, cornerRadius: 34)
+            FloatingAddButton(onPick: onPick).tutorialSpot(.addButton, circle: true)
                 .padding(.trailing, 20).padding(.bottom, 10)
         }
     }

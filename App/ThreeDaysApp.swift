@@ -523,6 +523,7 @@ struct HormeTabBar: View {
                         .foregroundStyle(selected ? Color.white : Palette.accent)
                 }
                 .frame(width: 60, height: 60)
+                .tutorialSpot(.tab(.today), circle: true, tab: selection)
                 Text("今日").font(.system(size: 10, weight: .bold)).foregroundStyle(selected ? Palette.accent : Color.secondary)
             }
             .padding(.bottom, 3)
@@ -533,7 +534,6 @@ struct HormeTabBar: View {
             .frame(height: 48, alignment: .bottom)
         }
         .buttonStyle(.plain)
-        .tutorialSpot(.tab(.today), cornerRadius: 30, tab: selection)
         .accessibilityLabel("今日")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .animation(.snappy(duration: 0.2), value: selected)

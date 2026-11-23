@@ -53,9 +53,9 @@ final class Tutorial: ObservableObject {
             case .week: return "下の「週」を開いて、予定を長押しし、別の日や時間帯へ動かしてみましょう。"
             case .pieces: return "「すべて」でタスクを開き、「子タスクに分ける」に書いてみましょう。何から始めるかがはっきりします。"
             case .idea: return "「ストック」のアイデアに、思いついたことを書き留めましょう。やると決めたらタスクにできます。"
-            case .list: return "ストックの「リスト」を開いて、項目を1つ足してみましょう。買う物や行きたい所をためておけます。"
-            case .project: return "「ボード」でプロジェクトを開くと、目標までの道のりが山で見えます。"
-            case .finish: return "「はじめる」でサンプルが消えて、まっさらな状態から始まります。もう少し触りたいときは、デモのまま続けられます。"
+            case .list: return "ストックの「リスト」で右下の ＋ からリストを作り、項目を1つ足してみましょう。買う物や行きたい所をためておけます。"
+            case .project: return "「ボード」の右下の ＋ からプロジェクトを作ってみましょう。目標までの道のりが山で見えます。"
+            case .finish: return "「はじめる」で、ここで試した内容は消えて、まっさらな状態から始まります。もう少し触りたいときは、このまま続けられます。"
             }
         }
     }
@@ -111,7 +111,9 @@ final class Tutorial: ObservableObject {
     }
 
     private func begin(at first: Step, store: TaskStore) {
-        if !store.isDemo { store.startDemo() }
+        // Empty, not the samples: a sample event or routine at this hour would hold the いま card.
+        if store.isDemo { store.endDemo() }
+        store.startDemo(samples: false)
         show(first, book: store.notebook)
     }
 
@@ -161,7 +163,8 @@ final class Tutorial: ObservableObject {
         case .pieces: achieved = now.pieces > baseline.pieces
         case .idea: achieved = now.ideas > baseline.ideas
         case .list: achieved = now.items > baseline.items
-        case .timetable, .project, .finish: achieved = false
+        case .project: achieved = now.projects > baseline.projects
+        case .timetable, .finish: achieved = false
         }
         if achieved { markDone() } else { baseline.keepUp(with: now, during: step) }
     }
@@ -197,7 +200,7 @@ final class Tutorial: ObservableObject {
 
     /// What a step looks for, counted when it begins.
     private struct Counts {
-        var tasks = 0, completed = 0, pieces = 0, ideas = 0, items = 0
+        var tasks = 0, completed = 0, pieces = 0, ideas = 0, items = 0, projects = 0
         /// Each task's day and time, to see one moved.
         var places: [UUID: String] = [:]
 
@@ -208,6 +211,7 @@ final class Tutorial: ObservableObject {
             pieces = book.tasks.filter { $0.parentID != nil }.count
             ideas = book.ideas.count
             items = book.listItems.count
+            projects = book.projects.count
             places = Dictionary(uniqueKeysWithValues: book.tasks.map { ($0.id, Self.place($0)) })
         }
 
@@ -224,7 +228,7 @@ final class Tutorial: ObservableObject {
         /// is waiting to see rise.
         mutating func keepUp(with now: Counts, during step: Step) {
             tasks = min(tasks, now.tasks); completed = min(completed, now.completed); pieces = min(pieces, now.pieces)
-            ideas = min(ideas, now.ideas); items = min(items, now.items)
+            ideas = min(ideas, now.ideas); items = min(items, now.items); projects = min(projects, now.projects)
             if step == .week {
                 // A task added during the step is not a move.
                 for (id, place) in now.places where places[id] == nil { places[id] = place }
@@ -264,6 +268,7 @@ struct TutorialCard: View {
             if !tutorial.done {
                 Text(step.detail).font(.caption).foregroundStyle(.white.opacity(0.92))
                     .fixedSize(horizontal: false, vertical: true)
+                Text("（チュートリアルのデータは保存されません）").font(.caption2).foregroundStyle(.white.opacity(0.7))
                 HStack(spacing: 10) {
                     if step == .finish {
                         Button { tutorial.keepPlaying() } label: {
@@ -313,6 +318,8 @@ private struct TutorialSpotRing: ViewModifier {
     @Environment(\.selectedTab) private var selectedTab
     let spot: Tutorial.Spot
     var cornerRadius: CGFloat = 16
+    /// Round things (the 今日 button, ⊕) get a round ring that follows their outline.
+    var circle = false
     /// The tab in front, for views outside the tabs (the tab bar), where the environment does not say.
     var tab: Int?
     @State private var pulse = false
@@ -321,8 +328,10 @@ private struct TutorialSpotRing: ViewModifier {
         let lit = tutorial.spot(on: tab ?? selectedTab) == spot
         content.overlay {
             if lit {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Palette.accent, lineWidth: 3)
+                Group {
+                    if circle { Circle().strokeBorder(Palette.accent, lineWidth: 3) }
+                    else { RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).strokeBorder(Palette.accent, lineWidth: 3) }
+                }
                     .padding(-5)
                     .scaleEffect(pulse ? 1.04 : 0.98)
                     .opacity(pulse ? 0.45 : 1)
@@ -340,7 +349,7 @@ private struct TutorialSpotRing: ViewModifier {
 }
 
 extension View {
-    func tutorialSpot(_ spot: Tutorial.Spot, cornerRadius: CGFloat = 16, tab: Int? = nil) -> some View {
-        modifier(TutorialSpotRing(spot: spot, cornerRadius: cornerRadius, tab: tab))
+    func tutorialSpot(_ spot: Tutorial.Spot, cornerRadius: CGFloat = 16, circle: Bool = false, tab: Int? = nil) -> some View {
+        modifier(TutorialSpotRing(spot: spot, cornerRadius: cornerRadius, circle: circle, tab: tab))
     }
 }

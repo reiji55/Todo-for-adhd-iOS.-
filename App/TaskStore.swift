@@ -238,12 +238,14 @@ final class TaskStore: ObservableObject {
 
     // MARK: Demo mode
 
-    func startDemo() {
+    /// Demo mode: the real data stays as it is and nothing is saved. With `samples` off (the tutorial) it starts
+    /// empty, so nothing from the samples gets in the way of the steps.
+    func startDemo(samples: Bool = true) {
         guard !isDemo, !loadFailed else { return }
         scheduledSync?.cancel(); scheduledSync = nil
         history = []; recentlyDone = []; undoOffer = nil
         pendingTaskStart = nil; taskStartRequest = nil; presentedTaskStartRequest = nil
-        notebook = .demo(now: Date())
+        notebook = samples ? .demo(now: Date()) : Notebook()
         isDemo = true
         closedDay = nil
     }
