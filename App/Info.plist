@@ -4,6 +4,15 @@
 <dict>
     <key>HormeIDBase</key><string>$(HORME_ID_BASE)</string>
     <key>CKSharingSupported</key><true/>
+    <!-- Siri and VoiceOver say and hear the app as ホルメ, not as the English letters. -->
+    <key>CFBundleSpokenName</key><string>ホルメ</string>
+    <key>INAlternativeAppNames</key>
+    <array>
+        <dict>
+            <key>INAlternativeAppName</key><string>ホルメ</string>
+            <key>INAlternativeAppNamePronunciationHint</key><string>ほるめ</string>
+        </dict>
+    </array>
     <key>NSSupportsLiveActivities</key><true/>
     <key>HormeInboxGroup</key><string>$(AppIdentifierPrefix)$(HORME_ID_BASE).inbox</string>
     <key>UILaunchScreen</key>
