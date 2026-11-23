@@ -24,6 +24,8 @@ struct TaskEditor: View {
     @State private var otherTask: TaskItem?
     /// Naming a パッケージ saved from how this task is split.
     @State private var savingPackage = false
+    @State private var piecesHelp = false
+    @State private var confirmScatter = false
     @State private var packageName = ""
     /// What the form showed when it opened, to tell whether anything was typed.
     private let initial: TaskItem
@@ -318,17 +320,6 @@ struct TaskEditor: View {
                 pieces.remove(atOffsets: offsets)
             }
             .onMove { pieces.move(fromOffsets: $0, toOffset: $1) }
-            // ばらす: the pieces become a つながり, and this task goes. Offered once what is shown is saved. The
-            // editor closes onto the list, where the つながり shows and 元に戻す is offered for a moment.
-            if isWhole, !changed, store.hasChildren(task.id) {
-                Button {
-                    if store.scatterPieces(of: task.id) != nil { dismiss() }
-                } label: {
-                    Label("ばらして、つながりにする", systemImage: "link").font(.subheadline)
-                }
-                .buttonStyle(.borderless)
-                .accessibilityIdentifier("scatterPieces")
-            }
             HStack(spacing: 6) {
                 Image(systemName: "plus").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.accent).frame(width: 36)
                 TextField(isWhole ? "子タスクを足す" : "子タスクに分ける", text: $newPiece).submitLabel(.done).onSubmit(addPiece)
@@ -336,32 +327,68 @@ struct TaskEditor: View {
                     Button("足す", action: addPiece).buttonStyle(.borderless).fontWeight(.semibold)
                 }
             }
-            if !store.notebook.packages.isEmpty {
-                PackageMenu { addPieces($0.cleanItems) }
-            }
-            // パッケージに保存: offered once what is shown is saved, so it is the split as it stands.
-            if isWhole, !changed, store.hasChildren(task.id) {
-                Button {
-                    packageName = ""
-                    savingPackage = true
-                } label: {
-                    Label("この分け方をパッケージに保存", systemImage: "shippingbox").font(.subheadline)
+        } header: {
+            // The rest of what can be done with the pieces sits beside the heading as icons, with ? to say what
+            // each one does, so the list itself stays a list.
+            HStack(spacing: 12) {
+                Text(isWhole ? "子タスク \(pieces.filter(\.isComplete).count)/\(pieces.count)" : "子タスク")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if !store.notebook.packages.isEmpty {
+                    Menu {
+                        ForEach(store.notebook.packages) { package in
+                            Button { addPieces(package.cleanItems) } label: {
+                                Text(package.name)
+                                Text(package.cleanItems.joined(separator: "・"))
+                            }
+                        }
+                    } label: { PackageGlyph(badge: "arrow.down", filled: false) }
+                    .accessibilityLabel("パッケージから足す")
+                    .accessibilityIdentifier("addFromPackage")
+                }
+                if !pieces.isEmpty {
+                    Button {
+                        packageName = ""
+                        savingPackage = true
+                    } label: { PackageGlyph(badge: "plus", filled: true) }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("この分け方をパッケージに保存")
+                    .accessibilityIdentifier("savePackage")
+                }
+                if isWhole, store.hasChildren(task.id) {
+                    Button { confirmScatter = true } label: {
+                        Image(systemName: "link").font(.system(size: 15, weight: .semibold)).frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(changed)
+                    .accessibilityLabel("ばらして、つながりにする")
+                    .accessibilityHint(changed ? "先に保存すると使えます" : "")
+                    .accessibilityIdentifier("scatterPieces")
+                }
+                Button { piecesHelp = true } label: {
+                    Image(systemName: "questionmark.circle").font(.system(size: 16)).foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.borderless)
-                .accessibilityIdentifier("savePackage")
-                .alert("パッケージに保存", isPresented: $savingPackage) {
-                    TextField("名前（例：旅行の準備）", text: $packageName)
-                    Button("保存") { store.savePackage(fromPiecesOf: task.id, name: packageName) }
-                    Button("キャンセル", role: .cancel) {}
-                } message: {
-                    Text("子タスクの並びだけを保存します。日付や締切は入りません。")
+                .accessibilityLabel("子タスクのボタンの説明")
+                .popover(isPresented: $piecesHelp) {
+                    PiecesHelp(canAdd: !store.notebook.packages.isEmpty).presentationCompactAdaptation(.popover)
                 }
+                if pieces.count > 1 { EditButton().font(.caption.weight(.bold)) }
             }
-        } header: {
-            HStack {
-                Text(isWhole ? "子タスク \(pieces.filter(\.isComplete).count)/\(pieces.count)" : "子タスク")
-                Spacer()
-                if pieces.count > 1 { EditButton().font(.caption) }
+            .textCase(nil)
+            .foregroundStyle(Palette.accent)
+            .alert("パッケージに保存", isPresented: $savingPackage) {
+                TextField("名前（例：旅行の準備）", text: $packageName)
+                Button("保存") { store.savePackage(name: packageName, items: pieces.map(\.title)) }
+                Button("キャンセル", role: .cancel) {}
+            } message: {
+                Text("子タスクの並びだけを保存します。日付や締切は入りません。")
+            }
+            .confirmationDialog("ばらして、つながりにしますか？", isPresented: $confirmScatter, titleVisibility: .visible) {
+                Button("ばらす") { if store.scatterPieces(of: task.id) != nil { dismiss() } }
+            } message: {
+                Text("子タスクが、それぞれ独立したタスクになります。順番はつながりとして残ります。直後なら取り消せます。")
             }
         } footer: {
             if !isWhole {
@@ -572,5 +599,54 @@ private struct FocusRoundButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
+    }
+}
+
+/// A box with a small round badge: ↓ on white for パッケージから足す, ＋ on green for パッケージに保存.
+private struct PackageGlyph: View {
+    let badge: String
+    let filled: Bool
+
+    var body: some View {
+        Image(systemName: "shippingbox").font(.system(size: 16, weight: .medium))
+            .overlay(alignment: .topTrailing) {
+                Image(systemName: badge).font(.system(size: 7, weight: .black))
+                    .foregroundStyle(filled ? Color.white : Palette.accent)
+                    .frame(width: 12, height: 12)
+                    .background(Circle().fill(filled ? Palette.accent : Color(uiColor: .systemBackground)))
+                    .overlay(Circle().strokeBorder(Palette.accent, lineWidth: filled ? 0 : 1.2))
+                    .offset(x: 6, y: -5)
+            }
+            .foregroundStyle(Palette.accent)
+            .frame(width: 28, height: 28)
+    }
+}
+
+/// What the icons beside 子タスク do, in a few words each.
+private struct PiecesHelp: View {
+    let canAdd: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            row(PackageGlyph(badge: "arrow.down", filled: false), "パッケージから足す",
+                canAdd ? "保存してある分け方（例：旅行の準備）の子タスクを、まとめて入れます。"
+                       : "パッケージを保存すると、ここから同じ分け方をまとめて入れられます。")
+            row(PackageGlyph(badge: "plus", filled: true), "パッケージに保存",
+                "いまの子タスクの並びを保存して、次から同じ分け方をワンタップで使えるようにします。")
+            row(Image(systemName: "link").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.accent).frame(width: 28),
+                "ばらして、つながりにする", "子タスクを、それぞれ独立したタスクに戻します。順番はつながりとして残ります。")
+        }
+        .padding(16)
+        .frame(width: 300, alignment: .leading)
+    }
+
+    private func row(_ icon: some View, _ title: String, _ detail: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            icon
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.weight(.bold))
+                Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }

@@ -243,6 +243,16 @@ extension TaskStore {
         }
     }
 
+    /// Saves a list of piece names as a パッケージ: the pieces as they are in the editor, saved or not yet.
+    func savePackage(name: String, items: [String]) {
+        let title = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        var saved: UUID?
+        if commit({ saved = $0.savePackage(name: title, items: items) }), saved != nil {
+            offerUndo("パッケージ「\(title)」を保存しました")
+        }
+    }
+
     /// Puts a パッケージ into a saved task as its pieces, or into an event as its 関連タスク.
     func applyPackage(_ id: UUID, to targetID: UUID) {
         guard let package = notebook.packages.first(where: { $0.id == id }) else { return }
