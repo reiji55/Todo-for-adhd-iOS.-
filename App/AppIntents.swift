@@ -130,9 +130,9 @@ struct GetWeekIntent: AppIntent {
 
 struct AddTaskIntent: AppIntent {
     static var title: LocalizedStringResource = "タスクを追加"
-    static var description = IntentDescription("Hormeにタスクを追加します。日付を指定すると「日」より優先します。")
+    static var description = IntentDescription("Hormeにタスクを追加します。日を選ばなければ日付なし（いつでも）で入ります。日付を指定すると「日」より優先します。")
     @Parameter(title: "タスク名") var name: String
-    @Parameter(title: "日", default: .today) var day: HormeDay
+    @Parameter(title: "日", default: .anytime) var day: HormeDay
     @Parameter(title: "日付") var date: Date?
     @Parameter(title: "開始時刻") var start: Date?
     @Parameter(title: "長さ（分）", default: 60, inclusiveRange: (5, 720)) var minutes: Int
