@@ -258,7 +258,7 @@ struct TimedSchedule: View {
     var suggestions: [NowPick]? = nil
     /// Held time with nothing in it shows as an empty band.
     var allHeld = false
-    @AppStorage(GapSuggestionToggle.key) private var suggestionsOn = true
+    @AppStorage(GapSuggestionToggle.key) private var suggestionsOn = false
 
     struct Part: Identifiable {
         let id: String
@@ -463,10 +463,10 @@ struct TimedSchedule: View {
     }
 }
 
-/// 空き時間に候補: on, the free time in today's timetable shows one thing to do there; off, only a thin line.
+/// 空き時間に候補: on, the free time in today's timetable shows one thing to do there; off (as it starts), only a thin line.
 struct GapSuggestionToggle: View {
     static let key = "gapSuggestions"
-    @AppStorage(Self.key) private var on = true
+    @AppStorage(Self.key) private var on = false
 
     var body: some View {
         Button { withAnimation(.snappy) { on.toggle() } } label: {
