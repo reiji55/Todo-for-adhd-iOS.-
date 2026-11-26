@@ -1,3 +1,4 @@
+import os
 import plistlib
 import shutil
 import sys
@@ -83,8 +84,9 @@ class PrepareProjectTests(unittest.TestCase):
             settings = [item["buildSettings"] for item in plistlib.loads(path.read_bytes())["objects"].values()
                         if "PRODUCT_BUNDLE_IDENTIFIER" in item.get("buildSettings", {})]
         identifiers = {s["PRODUCT_BUNDLE_IDENTIFIER"] for s in settings}
-        self.assertEqual(identifiers, {"io.github.reiji55.threedays", "io.github.reiji55.threedays.widgets",
-                                       "io.github.reiji55.threedays.share"})
+        # The edition being sent (HORME_ID_BASE): the full one unless the App Store one is set up.
+        base = os.environ.get("HORME_ID_BASE", "io.github.reiji55.threedays")
+        self.assertEqual(identifiers, {base, base + ".widgets", base + ".share"})
         self.assertTrue(all(s["CURRENT_PROJECT_VERSION"] == "3.4.1" for s in settings))
 
     def test_unknown_bundle_id_stops_upload(self):
