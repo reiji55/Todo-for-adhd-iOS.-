@@ -1,6 +1,8 @@
 #!/bin/bash
 # Replaces the `screenshots` branch with the latest captures so they can be viewed on GitHub, even from a phone.
 set -euo pipefail
+# The branch to publish to (the App Store screenshots go to their own).
+BRANCH="${1:-screenshots}"
 
 src="$PWD/ci-results"
 work=$(mktemp -d)
@@ -15,9 +17,9 @@ cd "$work"
   echo
   for f in *.png; do echo "## ${f%.png}"; echo; echo "<img src=\"$f\" width=\"320\">"; echo; done
 } > README.md
-git init -q -b screenshots
+git init -q -b "$BRANCH"
 git add .
 git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
   commit -qm "Screenshots from ${GITHUB_SHA::7}"
-git push -qf "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" screenshots
-echo "https://github.com/${GITHUB_REPOSITORY}/tree/screenshots" >> "$GITHUB_STEP_SUMMARY"
+git push -qf "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
+echo "https://github.com/${GITHUB_REPOSITORY}/tree/$BRANCH" >> "$GITHUB_STEP_SUMMARY"

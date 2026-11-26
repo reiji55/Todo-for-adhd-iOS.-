@@ -15,6 +15,15 @@ devices = [d for runtime, devices in groups.items() if '.iOS-' in runtime
            for d in devices if d.get('isAvailable') and family in d['name']]
 if not devices:
     raise SystemExit(f'No available {family} simulator runtime')
+import os
+if os.environ.get('STORE_SHOTS'):
+    # App Store screenshots: the largest screens (iPhone 6.9-inch, iPad 13-inch), the newest model first.
+    want = 'Pro Max' if family == 'iPhone' else '13-inch'
+    best = sorted([d for d in devices if want in d['name']], key=lambda d: d['name'], reverse=True)
+    if not best:
+        raise SystemExit(f'No {want} {family} simulator for App Store screenshots')
+    print(best[0]['udid'])
+    raise SystemExit(0)
 if family == 'iPad':
     devices.sort(key=lambda d: (not ('13-inch' in d['name'] or '12.9-inch' in d['name']), d['name']))
 else:

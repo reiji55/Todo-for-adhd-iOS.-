@@ -1,0 +1,43 @@
+name: App Store用の画面を撮る
+# The largest iPhone (6.9-inch) and iPad (13-inch) with the sample data, at about one in the afternoon on the
+# simulated clock whatever the hour on the runner, published to the store-screenshots branch.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  shots:
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      STORE_SHOTS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pick a time zone where it is early afternoon now
+        run: |
+          hour=$(date -u +%H); off=$(( 13 - 10#$hour ))
+          if [ $off -gt 14 ]; then off=$((off - 24)); fi
+          if [ $off -lt -12 ]; then off=$((off + 24)); fi
+          # Etc/GMT zones count the other way round: Etc/GMT-9 is nine hours ahead of UTC.
+          if [ $off -ge 0 ]; then zone="Etc/GMT-$off"; else zone="Etc/GMT+${off#-}"; fi
+          echo "SIMCTL_CHILD_TZ=$zone" >> "$GITHUB_ENV"
+          echo "Simulated time zone $zone (UTC hour $hour)"
+      - name: Build for the simulator
+        run: >-
+          xcodebuild -project ThreeDays.xcodeproj -scheme ThreeDays -configuration Debug
+          -destination 'generic/platform=iOS Simulator' -derivedDataPath DerivedData CODE_SIGNING_ALLOWED=NO build
+      - name: iPhone 6.9-inch
+        timeout-minutes: 30
+        run: bash scripts/simulator-smoke.sh iPhone
+      - name: iPad 13-inch
+        if: always()
+        timeout-minutes: 30
+        run: bash scripts/simulator-smoke.sh iPad
+      - name: Publish to the store-screenshots branch
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash scripts/publish-screenshots.sh store-screenshots
