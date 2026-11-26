@@ -63,6 +63,8 @@ for mode in ['Debug', 'Release']:
                      'CODE_SIGN_ENTITLEMENTS': 'App/Horme.entitlements',
                      'CLOUDKIT_ENVIRONMENT': 'Development' if mode == 'Debug' else 'Production',
                      'APS_ENVIRONMENT': 'development' if mode == 'Debug' else 'production'})
+    # The full edition wears a small TEST on its icon, so the two can sit side by side on one phone.
+    settings['ASSETCATALOG_COMPILER_APPICON_NAME'] = 'AppIcon' if EDITION == 'store' else 'AppIconTest'
     if EDITION == 'store':
         settings['SWIFT_ACTIVE_COMPILATION_CONDITIONS'] = 'HORME_STORE $(inherited)'
     targetConfigs.append(add('target:' + mode, isa='XCBuildConfiguration', name=mode, buildSettings=settings))
